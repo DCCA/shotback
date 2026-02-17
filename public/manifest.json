@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Shotback",
+  "description": "Capture full-page screenshots, annotate, and generate a local share link for LLM feedback.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "tabs", "scripting", "storage", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Shotback",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

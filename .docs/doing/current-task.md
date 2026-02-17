@@ -1,34 +1,31 @@
-# Current Task Template
+# Current Task
 
 ## Title
-- Short task name
+- Documentation sync for PRD and .docs
 
 ## Date
-- YYYY-MM-DD
+- 2026-02-17
 
 ## Goal
-- What outcome this task must produce
+- Ensure PRD and operational docs reflect actual local-link architecture and latest editor behavior.
 
 ## Scope
 - In scope:
+  - Update `.docs/PRD.md`
+  - Add done note for latest UX/fallback changes
+  - Refresh backlog items in `.docs/todo/next-improvements.md`
 - Out of scope:
+  - Functional code changes
 
 ## Acceptance Criteria
-- [ ] Criterion 1
-- [ ] Criterion 2
-
-## Implementation Plan
-1. Step 1
-2. Step 2
-3. Step 3
+- [x] PRD matches implemented behavior
+- [x] Done logs include latest completed changes
+- [x] Backlog reflects current priorities
 
 ## Validation
-- Commands run:
-- Result summary:
-
-## Risks / Notes
-- Known risks or open questions
+- Commands run: manual review of updated markdown files
+- Result summary: docs updated and aligned
 
 ## Completion
-- Final status:
-- Follow-up items moved to `.docs/todo/`:
+- Final status: completed
+- Follow-up items moved to `.docs/todo/`: yes

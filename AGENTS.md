@@ -1,49 +1,54 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is currently documentation-first and minimal.
-- `FIREHOSE.md`: project operating principles and workflow rules.
-- `AGENTS.md`: this contributor guide.
-- `.docs/` (create when needed): working notes and specs.
-  - `.docs/todo/`: planned work.
-  - `.docs/doing/`: in-progress specs.
-  - `.docs/done/`: completed specs.
-- `excalidraw.log`: local/runtime artifact; do not treat as source.
+This repository contains a Chrome extension built with TypeScript, React, and Vite.
 
-Keep source-like, durable files in the repo root or a clearly named top-level folder. Keep generated or local artifacts out of version control.
+- `src/popup/`: extension popup entry UI.
+- `src/editor/`: capture/annotation editor UI.
+- `src/viewer/`: local share viewer page.
+- `src/lib/`: capture, render, and local storage helpers.
+- `src/types/`: shared type definitions.
+- `public/manifest.json`: MV3 extension manifest.
+- `tests/`: Vitest unit tests.
+- `.docs/`: project planning docs (`PRD`, `todo/doing/done`).
 
 ## Build, Test, and Development Commands
-There is no build system configured yet. Use lightweight checks:
-- `ls -la`: verify expected files and structure.
-- `rg --files`: list tracked workspace files quickly.
-- `markdownlint "**/*.md"` (if installed): lint Markdown style.
+- `npm install`: install dependencies.
+- `npm run dev`: start Vite dev server.
+- `npm run build`: build extension output in `dist/`.
+- `npm run test`: run unit tests.
+- `npm run preview`: preview production build.
 
-If you add runtime code, also add a documented `build`, `test`, and `dev` command set in this file.
+To test in Chrome, load unpacked extension from `dist/` via `chrome://extensions`.
 
 ## Coding Style & Naming Conventions
-- Use clear, direct Markdown with short sections and actionable bullets.
-- Prefer ASCII unless non-ASCII is required.
-- Use descriptive file/folder names in `kebab-case` (e.g., `api-contract.md`).
-- Keep docs easy to scan: short paragraphs, concrete examples, no filler.
-
-For code additions, follow language-standard formatters/linters and document them in this guide.
+- Language: TypeScript with clear, explicit logic.
+- Keep modules focused and easy to reason about.
+- Use `kebab-case` for file names and descriptive identifiers.
+- Prefer small, reviewable changes over broad refactors.
 
 ## Testing Guidelines
-Current repository content is documentation, so validation is mostly structural:
-- Confirm links, paths, and command examples are correct.
-- Run Markdown linting when available.
-- Review changes for clarity and consistency with `FIREHOSE.md`.
-
-If tests are introduced later, place them in a top-level `tests/` folder or language-standard location and adopt explicit naming (e.g., `*.test.*`).
+- Test framework: Vitest.
+- Place tests in `tests/` using `*.test.ts` naming.
+- Minimum pre-PR checks:
+  - `npm run test`
+  - `npm run build`
+- For UI changes, manually verify:
+  - capture flow
+  - annotation create/move/delete
+  - timeline behavior
+  - local share viewer
+  - external LLM fallback
 
 ## Commit & Pull Request Guidelines
-Git metadata is not available in this workspace snapshot, so no historical convention can be inferred here.
-Use these defaults:
-- Commits: imperative, concise subject (e.g., `docs: add contributor guide`).
-- Keep commits focused and limited to one change theme.
-- PRs: include purpose, scope, validation steps, and any follow-up work.
-- Link related issues and include screenshots only when visual output changes.
+- Use concise, imperative commit messages (for example: `feat: improve timeline actions`).
+- Keep each commit scoped to one logical change.
+- PRs should include:
+  - what changed and why
+  - validation steps/results
+  - screenshots for UI updates
 
 ## Security & Configuration Tips
-- Do not commit secrets, tokens, or machine-specific logs.
-- Keep `.gitignore` updated for local artifacts (for example, logs and temporary files).
+- Do not commit secrets or personal data.
+- Keep `.gitignore` current for local artifacts.
+- Local share links (`chrome-extension://...`) are intentionally profile-scoped and not public web links.

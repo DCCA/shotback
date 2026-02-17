@@ -1,7 +1,9 @@
 {
   "name": "shotback-extension",
   "version": "0.1.0",
+  "description": "Chrome extension for full-page screenshot annotation with local share links",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

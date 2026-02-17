@@ -52,12 +52,38 @@ function annotationCommentAnchor(annotation: Annotation): { x: number; y: number
     return { x: Math.min(annotation.x1, annotation.x2), y: Math.min(annotation.y1, annotation.y2) };
   }
 
-  return null;
+  return { x: annotation.x, y: annotation.y };
 }
 
 function annotationSummary(annotation: Annotation): string {
   if (annotation.tool === "text") return annotation.text;
   return annotation.comment?.trim() || "(no comment)";
+}
+
+function buildExternalLlmPrompt(params: {
+  pageUrl: string;
+  generalFeedback: string;
+  annotations: Annotation[];
+}): string {
+  const comments = params.annotations
+    .map((annotation, index) => {
+      if (annotation.tool === "text") {
+        return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
+      }
+
+      return `${index + 1}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
+    })
+    .join("\n");
+
+  return [
+    "Please review this screenshot and provide feedback.",
+    "",
+    `Page URL: ${params.pageUrl || "(unknown)"}`,
+    `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
+    "",
+    "Area comments:",
+    comments || "(none)"
+  ].join("\n");
 }
 
 function EditorApp(): JSX.Element {
@@ -66,7 +92,7 @@ function EditorApp(): JSX.Element {
   const windowId = Number(search.get("windowId"));
 
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const selectedCommentRef = useRef<HTMLTextAreaElement | null>(null);
+  const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
@@ -85,25 +111,30 @@ function EditorApp(): JSX.Element {
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
-  const selectedNote =
-    selectedAnnotation?.tool === "text" ? selectedAnnotation.text : selectedAnnotation?.comment ?? "";
+  const selectedNote = selectedAnnotation
+    ? selectedAnnotation.tool === "text"
+      ? selectedAnnotation.text
+      : selectedAnnotation.comment ?? ""
+    : "";
+  const selectedAnchor = selectedAnnotation ? annotationCommentAnchor(selectedAnnotation) : null;
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
   const timelineItems = [...annotations].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
-  const editorLabel = selectedAnnotation ? "Selected Annotation Comment" : "General Feedback";
-  const editorValue = selectedAnnotation ? selectedNote : generalFeedback;
-  const editorPlaceholder = selectedAnnotation
-    ? "Write the comment linked to this selected annotation"
-    : "Write overall feedback for this screenshot";
+  const inlineEditorPosition = selectedAnchor
+    ? {
+        x: Math.max(10, Math.min(selectedAnchor.x + 14, imageSize.width - 250)),
+        y: Math.max(10, Math.min(selectedAnchor.y + 14, imageSize.height - 90))
+      }
+    : null;
 
   useEffect(() => {
     if (!shouldFocusSelectedComment) return;
     if (!selectedAnnotation) return;
 
-    selectedCommentRef.current?.focus();
-    selectedCommentRef.current?.select();
+    inlineCommentRef.current?.focus();
+    inlineCommentRef.current?.select();
     setShouldFocusSelectedComment(false);
   }, [selectedAnnotation, shouldFocusSelectedComment]);
 
@@ -144,7 +175,7 @@ function EditorApp(): JSX.Element {
     setStatus("");
 
     try {
-      const merged = await exportAnnotatedImage(baseDataUrl, annotations);
+      const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
       const share = await saveLocalShare({
         imageDataUrl: merged,
         annotations,
@@ -301,12 +332,8 @@ function EditorApp(): JSX.Element {
     setDraft(null);
   };
 
-  const onEditorTextChange = (value: string): void => {
-    if (!selectedId) {
-      setGeneralFeedback(value);
-      return;
-    }
-
+  const updateSelectedAnnotationNote = (value: string): void => {
+    if (!selectedId) return;
     setAnnotations((prev) =>
       prev.map((item) => {
         if (item.id !== selectedId) return item;
@@ -334,11 +361,37 @@ function EditorApp(): JSX.Element {
 
   const download = async (): Promise<void> => {
     if (!baseDataUrl) return;
-    const merged = await exportAnnotatedImage(baseDataUrl, annotations);
+    const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
     const a = document.createElement("a");
     a.href = merged;
     a.download = `shotback-${Date.now()}.png`;
     a.click();
+  };
+
+  const prepareExternalLlmPackage = async (): Promise<void> => {
+    if (!baseDataUrl) {
+      setStatus("Capture a screenshot before preparing LLM package.");
+      return;
+    }
+
+    try {
+      const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
+      const prompt = buildExternalLlmPrompt({
+        pageUrl,
+        generalFeedback,
+        annotations
+      });
+
+      const a = document.createElement("a");
+      a.href = merged;
+      a.download = `shotback-llm-${Date.now()}.png`;
+      a.click();
+
+      await navigator.clipboard.writeText(prompt);
+      setStatus("Prompt copied. Annotated image downloaded. Attach image to external LLM manually.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to prepare external LLM package");
+    }
   };
 
   return (
@@ -346,7 +399,7 @@ function EditorApp(): JSX.Element {
       <aside className="controls">
         <h1>Shotback Editor</h1>
         <button disabled={isBusy} onClick={() => void takeScreenshot()}>
-          Capture Full Page
+          Capture Page
         </button>
 
         <label>
@@ -375,37 +428,34 @@ function EditorApp(): JSX.Element {
         </label>
 
         <label>
-          {editorLabel}
+          General Feedback
           <textarea
-            ref={selectedAnnotation ? selectedCommentRef : null}
-            value={editorValue}
-            onChange={(event) => onEditorTextChange(event.target.value)}
+            value={generalFeedback}
+            onChange={(event) => setGeneralFeedback(event.target.value)}
             rows={3}
-            placeholder={editorPlaceholder}
+            placeholder="Write overall feedback for this screenshot"
           />
         </label>
 
         <p className="hint">
-          Draw mode creates annotations. Move mode lets you select/drag. Click empty canvas to edit
-          general feedback.
+          Draw mode creates annotations. Move mode lets you select/drag. Selected annotations are
+          edited directly on the image.
         </p>
-        {selectedAnnotation ? (
-          <button type="button" onClick={() => setSelectedId(null)}>
-            Back to General Feedback
-          </button>
-        ) : null}
 
         <button disabled={!baseDataUrl || isBusy} onClick={removeLast}>
-          Undo Last Annotation
+          Undo Last Change
         </button>
         <button disabled={!selectedId || isBusy} onClick={removeSelected}>
-          Delete Selected Annotation
+          Delete Selected Item
         </button>
         <button disabled={!baseDataUrl || isBusy} onClick={() => void download()}>
-          Download Annotated PNG
+          Download Image (PNG)
+        </button>
+        <button disabled={!baseDataUrl || isBusy} onClick={() => void prepareExternalLlmPackage()}>
+          Prepare for Cloud LLM
         </button>
         <button disabled={!baseDataUrl || isBusy} onClick={() => void createShareUrl()}>
-          Generate Share Link
+          Copy Local Share Link
         </button>
 
         <p className="status">{progress}</p>
@@ -445,7 +495,7 @@ function EditorApp(): JSX.Element {
                         aria-label={`Delete timeline item ${index + 1}`}
                         onClick={() => removeById(item.id)}
                       >
-                        Delete
+                        Remove
                       </button>
                     </div>
                   </li>
@@ -603,6 +653,27 @@ function EditorApp(): JSX.Element {
                   </text>
                 );
               })}
+
+              {selectedAnnotation && inlineEditorPosition ? (
+                <foreignObject
+                  x={inlineEditorPosition.x}
+                  y={inlineEditorPosition.y}
+                  width={240}
+                  height={84}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <div className="inline-editor-shell">
+                    <textarea
+                      ref={inlineCommentRef}
+                      className="inline-editor-textarea"
+                      value={selectedNote}
+                      onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                      placeholder="Add comment for selected area"
+                      rows={3}
+                    />
+                  </div>
+                </foreignObject>
+              ) : null}
 
               {draft && tool === "box" ? (
                 <rect

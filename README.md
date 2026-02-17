@@ -1,43 +1,79 @@
-# Shotback Chrome Extension
+# Shotback
 
-Shotback is a Chrome extension for capturing full-page screenshots, annotating them (box, arrow, text), and generating a local share link.
+A Chrome extension for fast screenshot reviews: capture a full page, annotate specific areas, keep a timeline of comments, and share a local review link.
 
-## Tech Stack
+## Why Shotback
+Shotback is optimized for local-first review workflows. You can annotate UI issues quickly, preserve context with area-linked comments, and keep feedback organized before sending to an LLM.
 
-- Chrome Extension Manifest V3
-- TypeScript + React + Vite
-- Local persistence via `chrome.storage.local`
+## Features
+- Full-page capture (`scroll + stitch`)
+- Area annotations: box, arrow, text
+- Linked comments tied to selected annotation
+- Comment timeline with per-item remove
+- General feedback for screenshot-level notes
+- Local share links (`chrome-extension://.../viewer.html?share=...`)
+- External LLM fallback:
+  - downloads annotated image
+  - copies a structured prompt to clipboard
 
-## Local Development
+## Quick Start
 
+### 1. Install dependencies
 ```bash
 npm install
-npm run dev
-npm run build
-npm run test
 ```
 
-To load in Chrome:
+### 2. Build extension
+```bash
+npm run build
+```
 
-1. Run `npm run build`.
-2. Open `chrome://extensions`.
-3. Enable Developer mode.
-4. Click Load unpacked and select `dist/`.
+### 3. Load in Chrome
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `dist/` folder
 
-## Share Link Behavior
+## Usage
+1. Open a target webpage.
+2. Click the Shotback extension icon and open the editor.
+3. Click **Capture Page**.
+4. Draw annotations and add comments.
+5. Use one of two outputs:
+   - **Copy Local Share Link** for local profile review
+   - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
 
-Generated links are local extension URLs like:
+## Project Structure
+```text
+src/
+  popup/       # extension popup UI
+  editor/      # annotation editor UI
+  viewer/      # local share viewer page
+  lib/         # capture, rendering, storage helpers
+  types/       # shared TS types
+public/
+  manifest.json
+tests/
+  capture.test.ts
+.docs/
+  PRD, todo/doing/done workflow docs
+```
 
-`chrome-extension://<extension-id>/viewer.html?share=<id>`
+## Development Commands
+- `npm run dev` - run Vite dev server
+- `npm run build` - production build to `dist/`
+- `npm run test` - run unit tests (Vitest)
+- `npm run preview` - preview production build
 
-These links only resolve in browser profiles where:
-- the extension is installed, and
-- the share record exists in local extension storage.
+## Local Link Constraint
+Local share links are intentionally local. They only work where:
+- the extension is installed
+- the share exists in that browser profile's `chrome.storage.local`
 
-## Current MVP Limits
+For cloud LLM tools that cannot access local links, use **Prepare for Cloud LLM**.
 
-- Chrome only
-- Full-page capture via scroll-and-stitch
-- Local-only share URLs (no cloud hosting)
-- No user sign-in
-- Share data remains in local storage until manually cleared
+## Contributing
+See `CONTRIBUTING.md`.
+
+## License
+MIT (`LICENSE`).

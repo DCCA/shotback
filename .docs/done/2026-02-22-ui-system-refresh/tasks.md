@@ -20,4 +20,4 @@
 ## 5. Validation
 - [x] 5.1 Run `npm run test`
 - [x] 5.2 Run `npm run build`
-- [ ] 5.3 Manual spot check popup, editor, viewer layout integrity
+- [x] 5.3 Manual spot check popup, editor, viewer layout integrity

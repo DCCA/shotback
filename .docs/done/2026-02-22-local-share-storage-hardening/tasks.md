@@ -30,4 +30,4 @@
 ## 6. Validation
 - [x] 6.1 Run `npm run test`.
 - [x] 6.2 Run `npm run build`.
-- [ ] 6.3 Manually verify editor share creation and viewer link behavior with new storage.
+- [x] 6.3 Manually verify editor share creation and viewer link behavior with new storage.

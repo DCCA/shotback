@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Required Pre-Edit Check
+- Always read `FIREHOSE.md` before making any edit in this repository.
+- If `FIREHOSE.md` conflicts with another local guideline, follow `FIREHOSE.md` unless the user explicitly overrides it.
+
 ## Project Structure & Module Organization
 This repository contains a Chrome extension built with TypeScript, React, and Vite.
 

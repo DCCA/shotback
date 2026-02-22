@@ -1,5 +1,29 @@
 import type { Annotation } from "@/types/annotation";
 
+export const MAX_EXPORT_CANVAS_HEIGHT = 16384;
+export const MAX_EXPORT_CANVAS_AREA = 268000000;
+
+export type FeedbackRenderMode = "footer" | "overlay";
+
+export function selectFeedbackRenderMode(params: {
+  imageWidth: number;
+  imageHeight: number;
+  footerHeight: number;
+  maxCanvasHeight?: number;
+  maxCanvasArea?: number;
+}): FeedbackRenderMode {
+  const maxCanvasHeight = params.maxCanvasHeight ?? MAX_EXPORT_CANVAS_HEIGHT;
+  const maxCanvasArea = params.maxCanvasArea ?? MAX_EXPORT_CANVAS_AREA;
+  const targetHeight = params.imageHeight + params.footerHeight;
+  const targetArea = params.imageWidth * targetHeight;
+
+  if (targetHeight > maxCanvasHeight || targetArea > maxCanvasArea) {
+    return "overlay";
+  }
+
+  return "footer";
+}
+
 function drawArrowHead(
   ctx: CanvasRenderingContext2D,
   x1: number,
@@ -75,6 +99,83 @@ function wrapText(
   return lines;
 }
 
+function withEllipsis(text: string): string {
+  return text.length > 3 ? `${text.slice(0, text.length - 3)}...` : "...";
+}
+
+function drawGeneralFeedbackFooter(params: {
+  ctx: CanvasRenderingContext2D;
+  canvas: HTMLCanvasElement;
+  imageHeight: number;
+  footerHeight: number;
+  feedbackLines: string[];
+}): void {
+  const { ctx, canvas, imageHeight, footerHeight, feedbackLines } = params;
+  const top = imageHeight;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, top, canvas.width, footerHeight);
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, top);
+  ctx.lineTo(canvas.width, top);
+  ctx.stroke();
+
+  const left = 16;
+  let y = top + 28;
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillText("General Feedback", left, y);
+  y += 24;
+
+  ctx.font = "15px sans-serif";
+  ctx.fillStyle = "#1f2937";
+  for (const line of feedbackLines) {
+    ctx.fillText(line, left, y);
+    y += 22;
+  }
+}
+
+function drawGeneralFeedbackOverlay(params: {
+  ctx: CanvasRenderingContext2D;
+  imageWidth: number;
+  imageHeight: number;
+  feedbackLines: string[];
+}): void {
+  const { ctx, imageWidth, imageHeight } = params;
+  const maxLines = 8;
+  const lines = [...params.feedbackLines];
+  if (lines.length > maxLines) {
+    lines.splice(maxLines - 1, lines.length - (maxLines - 1), withEllipsis(lines[maxLines - 1]));
+  }
+
+  const padding = 12;
+  const lineHeight = 20;
+  const titleHeight = 24;
+  const cardWidth = Math.min(Math.max(260, imageWidth * 0.48), imageWidth - 24);
+  const cardHeight = padding * 2 + titleHeight + lines.length * lineHeight;
+  const x = 12;
+  const y = Math.max(12, imageHeight - cardHeight - 12);
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillRect(x, y, cardWidth, cardHeight);
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, cardWidth, cardHeight);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillText("General Feedback", x + padding, y + padding + 14);
+
+  ctx.font = "14px sans-serif";
+  ctx.fillStyle = "#1f2937";
+  let textY = y + padding + titleHeight + 12;
+  for (const line of lines) {
+    ctx.fillText(line, x + padding, textY);
+    textY += lineHeight;
+  }
+}
+
 export async function exportAnnotatedImage(
   baseDataUrl: string,
   annotations: Annotation[],
@@ -99,6 +200,7 @@ export async function exportAnnotatedImage(
 
   let footerHeight = 0;
   let feedbackLines: string[] = [];
+  let feedbackRenderMode: FeedbackRenderMode = "footer";
   if (hasGeneralFeedback) {
     const maxTextWidth = Math.max(200, img.width - 40);
     ctx.font = "15px sans-serif";
@@ -107,7 +209,15 @@ export async function exportAnnotatedImage(
     const lineHeight = 22;
     const padding = 14;
     footerHeight = titleHeight + feedbackLines.length * lineHeight + padding * 2;
-    canvas.height = img.height + footerHeight;
+    feedbackRenderMode = selectFeedbackRenderMode({
+      imageWidth: img.width,
+      imageHeight: img.height,
+      footerHeight
+    });
+
+    if (feedbackRenderMode === "footer") {
+      canvas.height = img.height + footerHeight;
+    }
   }
 
   ctx.drawImage(img, 0, 0);
@@ -142,28 +252,21 @@ export async function exportAnnotatedImage(
   }
 
   if (hasGeneralFeedback) {
-    const top = img.height;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, top, canvas.width, footerHeight);
-    ctx.strokeStyle = "#d1d5db";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, top);
-    ctx.lineTo(canvas.width, top);
-    ctx.stroke();
-
-    const left = 16;
-    let y = top + 28;
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 15px sans-serif";
-    ctx.fillText("General Feedback", left, y);
-    y += 24;
-
-    ctx.font = "15px sans-serif";
-    ctx.fillStyle = "#1f2937";
-    for (const line of feedbackLines) {
-      ctx.fillText(line, left, y);
-      y += 22;
+    if (feedbackRenderMode === "footer") {
+      drawGeneralFeedbackFooter({
+        ctx,
+        canvas,
+        imageHeight: img.height,
+        footerHeight,
+        feedbackLines
+      });
+    } else {
+      drawGeneralFeedbackOverlay({
+        ctx,
+        imageWidth: img.width,
+        imageHeight: img.height,
+        feedbackLines
+      });
     }
   }
 

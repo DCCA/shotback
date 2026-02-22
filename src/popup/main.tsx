@@ -18,15 +18,17 @@ function PopupApp(): JSX.Element {
   };
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-sm p-4">
-      <Card className="mt-2">
-        <CardHeader className="space-y-2">
-          <div className="flex items-center justify-between">
-            <CardTitle>Shotback</CardTitle>
-            <Badge variant="accent">Extension</Badge>
+    <main className="w-[320px] p-3">
+      <Card>
+        <CardHeader className="space-y-2 pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-3xl leading-none">Shotback</CardTitle>
+            <Badge variant="accent" className="shrink-0">
+              New
+            </Badge>
           </div>
           <CardDescription>
-            Capture, annotate, and generate share-ready feedback for LLM workflows.
+            Capture, annotate, and share visual feedback for LLM workflows.
           </CardDescription>
         </CardHeader>
         <CardContent>

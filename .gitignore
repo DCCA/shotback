@@ -1,6 +1,31 @@
 node_modules/
 dist/
+
+# Environment files
 .env
 .env.local
-excalidraw.log
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and cache artifacts
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Local docs scratch space
 .docs/tmp/
+
+# Local tooling artifacts
+.agents/
+skills-lock.json
+
+# OS/editor artifacts
+.DS_Store
+.idea/
+.vscode/

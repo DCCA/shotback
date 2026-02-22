@@ -1,11 +1,18 @@
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { exportAnnotatedImage } from "@/lib/annotate";
 import { captureFullPage } from "@/lib/capture";
 import { buildLocalShareUrl, saveLocalShare } from "@/lib/localStore";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
-import "./editor.css";
+import "@/styles/globals.css";
 
 interface DraftShape {
   xStart: number;
@@ -395,129 +402,167 @@ function EditorApp(): JSX.Element {
   };
 
   return (
-    <div className="editor-shell">
-      <aside className="controls">
-        <h1>Shotback Editor</h1>
-        <button disabled={isBusy} onClick={() => void takeScreenshot()}>
-          Capture Page
-        </button>
+    <div className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
+      <Card className="lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto">
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between">
+            <CardTitle>Shotback Editor</CardTitle>
+            <Badge variant="accent">{annotations.length} notes</Badge>
+          </div>
+          <Button disabled={isBusy} onClick={() => void takeScreenshot()}>
+            Capture Page
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Interaction
+            </span>
+            <Select
+              value={interactionMode}
+              onChange={(event) => setInteractionMode(event.target.value as "draw" | "move")}
+            >
+              <option value="draw">Draw New</option>
+              <option value="move">Move Existing</option>
+            </Select>
+          </label>
 
-        <label>
-          Interaction
-          <select
-            value={interactionMode}
-            onChange={(event) => setInteractionMode(event.target.value as "draw" | "move")}
-          >
-            <option value="draw">Draw New</option>
-            <option value="move">Move Existing</option>
-          </select>
-        </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tool</span>
+            <Select value={tool} onChange={(event) => setTool(event.target.value as AnnotationTool)}>
+              <option value="box">Box</option>
+              <option value="arrow">Arrow</option>
+              <option value="text">Text</option>
+            </Select>
+          </label>
 
-        <label>
-          Tool
-          <select value={tool} onChange={(event) => setTool(event.target.value as AnnotationTool)}>
-            <option value="box">Box</option>
-            <option value="arrow">Arrow</option>
-            <option value="text">Text</option>
-          </select>
-        </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Color</span>
+            <Input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+          </label>
 
-        <label>
-          Color
-          <input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
-        </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              General Feedback
+            </span>
+            <Textarea
+              value={generalFeedback}
+              onChange={(event) => setGeneralFeedback(event.target.value)}
+              rows={3}
+              placeholder="Write overall feedback for this screenshot"
+            />
+          </label>
 
-        <label>
-          General Feedback
-          <textarea
-            value={generalFeedback}
-            onChange={(event) => setGeneralFeedback(event.target.value)}
-            rows={3}
-            placeholder="Write overall feedback for this screenshot"
-          />
-        </label>
+          <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Draw mode creates annotations. Move mode selects or drags existing annotations.
+          </p>
 
-        <p className="hint">
-          Draw mode creates annotations. Move mode lets you select/drag. Selected annotations are
-          edited directly on the image.
-        </p>
+          <div className="grid grid-cols-1 gap-2">
+            <Button variant="secondary" disabled={!baseDataUrl || isBusy} onClick={removeLast}>
+              Undo Last Change
+            </Button>
+            <Button variant="destructive" disabled={!selectedId || isBusy} onClick={removeSelected}>
+              Delete Selected Item
+            </Button>
+            <Button variant="secondary" disabled={!baseDataUrl || isBusy} onClick={() => void download()}>
+              Download Image (PNG)
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!baseDataUrl || isBusy}
+              onClick={() => void prepareExternalLlmPackage()}
+            >
+              Prepare for Cloud LLM
+            </Button>
+            <Button
+              variant="default"
+              disabled={!baseDataUrl || isBusy}
+              onClick={() => void createShareUrl()}
+            >
+              Copy Local Share Link
+            </Button>
+          </div>
 
-        <button disabled={!baseDataUrl || isBusy} onClick={removeLast}>
-          Undo Last Change
-        </button>
-        <button disabled={!selectedId || isBusy} onClick={removeSelected}>
-          Delete Selected Item
-        </button>
-        <button disabled={!baseDataUrl || isBusy} onClick={() => void download()}>
-          Download Image (PNG)
-        </button>
-        <button disabled={!baseDataUrl || isBusy} onClick={() => void prepareExternalLlmPackage()}>
-          Prepare for Cloud LLM
-        </button>
-        <button disabled={!baseDataUrl || isBusy} onClick={() => void createShareUrl()}>
-          Copy Local Share Link
-        </button>
+          <div className="space-y-1 text-sm">
+            {progress ? <p className="m-0 text-slate-700">{progress}</p> : null}
+            {status ? <p className="m-0 font-medium text-red-700">{status}</p> : null}
+            <p className="m-0 text-slate-700">Annotations: {annotations.length}</p>
+          </div>
 
-        <p className="status">{progress}</p>
-        <p className="status error">{status}</p>
-        <p className="status">Annotations: {annotations.length}</p>
-        <section className="timeline">
-          <h2>Comment Timeline</h2>
-          {timelineItems.length === 0 ? (
-            <p className="hint">No comments yet.</p>
-          ) : (
-            <ol>
-              {timelineItems.map((item, index) => {
-                const selected = item.id === selectedId;
-                return (
-                  <li key={item.id}>
-                    <div className="timeline-row">
-                      <button
-                        type="button"
-                        className={`timeline-item ${selected ? "timeline-item-selected" : ""}`}
-                        onClick={() => {
-                          setSelectedId(item.id);
-                          setInteractionMode("move");
-                          setShouldFocusSelectedComment(true);
-                        }}
-                      >
-                        <span className="timeline-head">
-                          #{index + 1} {item.tool}
-                        </span>
-                        <span className="timeline-time">
-                          {new Date(item.createdAt).toLocaleTimeString()}
-                        </span>
-                        <span className="timeline-text">{annotationSummary(item)}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="timeline-delete"
-                        aria-label={`Delete timeline item ${index + 1}`}
-                        onClick={() => removeById(item.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
-        {shareUrl ? (
-          <a href={shareUrl} target="_blank" rel="noreferrer">
-            {shareUrl}
-          </a>
-        ) : null}
-      </aside>
+          <Separator />
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
+              <Badge>{timelineItems.length}</Badge>
+            </div>
+            {timelineItems.length === 0 ? (
+              <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                No comments yet.
+              </p>
+            ) : (
+              <ol className="m-0 grid list-none gap-2 p-0">
+                {timelineItems.map((item, index) => {
+                  const selected = item.id === selectedId;
+                  return (
+                    <li key={item.id}>
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <button
+                          type="button"
+                          className={`rounded-lg border px-3 py-2 text-left transition ${
+                            selected
+                              ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200"
+                              : "border-slate-200 bg-white hover:bg-slate-50"
+                          }`}
+                          onClick={() => {
+                            setSelectedId(item.id);
+                            setInteractionMode("move");
+                            setShouldFocusSelectedComment(true);
+                          }}
+                        >
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            #{index + 1} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-800">{annotationSummary(item)}</div>
+                        </button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="self-start text-red-700 hover:bg-red-50"
+                          aria-label={`Delete timeline item ${index + 1}`}
+                          onClick={() => removeById(item.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
+          {shareUrl ? (
+            <a
+              href={shareUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-sm font-medium text-emerald-700 underline underline-offset-2"
+            >
+              {shareUrl}
+            </a>
+          ) : null}
+        </CardContent>
+      </Card>
 
-      <main className="workspace">
-        {baseDataUrl ? (
-          <div className="canvas-wrap">
+      <Card className="overflow-hidden">
+        <CardContent className="p-4">
+          {baseDataUrl ? (
+            <div className="relative inline-block rounded-lg border border-slate-200 bg-white">
             <img
               id="capture-image"
               src={baseDataUrl}
               alt="Captured page"
+              className="block h-auto max-w-none"
               onLoad={(event) => {
                 const img = event.currentTarget;
                 setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -525,7 +570,9 @@ function EditorApp(): JSX.Element {
             />
             <svg
               ref={svgRef}
-              className={`overlay ${interactionMode === "move" ? "overlay-move" : "overlay-draw"}`}
+              className={`absolute inset-0 h-full w-full ${
+                interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
+              }`}
               viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
@@ -647,11 +694,11 @@ function EditorApp(): JSX.Element {
                     fill={item.color}
                     fontSize="18"
                     fontWeight={isSelected ? "700" : "500"}
-                    onPointerDown={onAnnotationPointerDown(item)}
-                  >
-                    {item.text}
-                  </text>
-                );
+                  onPointerDown={onAnnotationPointerDown(item)}
+                >
+                  {item.text}
+                </text>
+              );
               })}
 
               {selectedAnnotation && inlineEditorPosition ? (
@@ -662,10 +709,10 @@ function EditorApp(): JSX.Element {
                   height={84}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
-                  <div className="inline-editor-shell">
+                  <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
                     <textarea
                       ref={inlineCommentRef}
-                      className="inline-editor-textarea"
+                      className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
                       value={selectedNote}
                       onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
                       placeholder="Add comment for selected area"
@@ -702,9 +749,12 @@ function EditorApp(): JSX.Element {
             </svg>
           </div>
         ) : (
-          <div className="empty-state">Capture a page to start annotating.</div>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
+            Capture a page to start annotating.
+          </div>
         )}
-      </main>
+        </CardContent>
+      </Card>
     </div>
   );
 }

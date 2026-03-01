@@ -9,9 +9,16 @@ import { Select } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { exportAnnotatedImage } from "@/lib/annotate";
+import {
+  applyBoxResizeDelta,
+  BOX_RESIZE_HANDLES,
+  getBoxHandlePosition,
+  getBoxResizeCursor,
+  type BoxResizeHandle
+} from "@/lib/boxResize";
 import { captureFullPage } from "@/lib/capture";
 import { buildLocalShareUrl, saveLocalShare } from "@/lib/localStore";
-import type { Annotation, AnnotationTool } from "@/types/annotation";
+import type { Annotation, AnnotationTool, BoxAnnotation } from "@/types/annotation";
 import "@/styles/globals.css";
 
 interface DraftShape {
@@ -27,6 +34,18 @@ interface DragState {
   startY: number;
   original: Annotation;
 }
+
+interface ResizeState {
+  id: string;
+  handle: BoxResizeHandle;
+  pointerX: number;
+  pointerY: number;
+  box: Pick<BoxAnnotation, "x" | "y" | "width" | "height">;
+}
+
+const RESIZE_HANDLE_SIZE = 9;
+const RESIZE_HANDLE_HIT_SIZE = 16;
+const MIN_RESIZE_BOX_SIZE = 8;
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -114,6 +133,7 @@ function EditorApp(): JSX.Element {
   const [shareUrl, setShareUrl] = useState<string>("");
   const [draft, setDraft] = useState<DraftShape | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [resize, setResize] = useState<ResizeState | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
@@ -157,6 +177,9 @@ function EditorApp(): JSX.Element {
     setAnnotations([]);
     setSelectedId(null);
     setGeneralFeedback("");
+    setDrag(null);
+    setResize(null);
+    setDraft(null);
 
     try {
       const result = await captureFullPage(tabId, windowId, (index, total) => {
@@ -268,7 +291,64 @@ function EditorApp(): JSX.Element {
       });
     };
 
+  const onResizeHandlePointerDown =
+    (item: BoxAnnotation, handle: BoxResizeHandle) =>
+    (event: React.PointerEvent<SVGElement>): void => {
+      event.stopPropagation();
+      if (interactionMode !== "move") return;
+
+      event.preventDefault();
+      setSelectedId(item.id);
+
+      const { x, y } = pointerPos(event);
+      setResize({
+        id: item.id,
+        handle,
+        pointerX: x,
+        pointerY: y,
+        box: {
+          x: item.x,
+          y: item.y,
+          width: item.width,
+          height: item.height
+        }
+      });
+    };
+
   const onCanvasPointerMove = (event: React.PointerEvent<SVGSVGElement>): void => {
+    if (resize) {
+      const { x, y } = pointerPos(event);
+      const deltaX = x - resize.pointerX;
+      const deltaY = y - resize.pointerY;
+
+      if (deltaX === 0 && deltaY === 0) return;
+
+      const result = applyBoxResizeDelta({
+        box: resize.box,
+        handle: resize.handle,
+        deltaX,
+        deltaY,
+        boundsWidth: imageSize.width,
+        boundsHeight: imageSize.height,
+        minSize: MIN_RESIZE_BOX_SIZE
+      });
+
+      setAnnotations((prev) =>
+        prev.map((item) =>
+          item.id === resize.id && item.tool === "box" ? { ...item, ...result.box } : item
+        )
+      );
+
+      setResize({
+        id: resize.id,
+        handle: result.handle,
+        pointerX: x,
+        pointerY: y,
+        box: result.box
+      });
+      return;
+    }
+
     if (drag) {
       const { x, y } = pointerPos(event);
       const dx = x - drag.startX;
@@ -286,6 +366,11 @@ function EditorApp(): JSX.Element {
   };
 
   const onCanvasPointerUp = (): void => {
+    if (resize) {
+      setResize(null);
+      return;
+    }
+
     if (drag) {
       setDrag(null);
       return;
@@ -351,18 +436,28 @@ function EditorApp(): JSX.Element {
   };
 
   const removeLast = (): void => {
+    const removed = annotations[annotations.length - 1];
     setAnnotations((prev) => prev.slice(0, -1));
-    setSelectedId(null);
+    if (removed && resize?.id === removed.id) {
+      setResize(null);
+    }
+    setSelectedId((prevSelected) => (prevSelected === removed?.id ? null : prevSelected));
   };
 
   const removeSelected = (): void => {
     if (!selectedId) return;
     setAnnotations((prev) => prev.filter((item) => item.id !== selectedId));
+    if (resize?.id === selectedId) {
+      setResize(null);
+    }
     setSelectedId(null);
   };
 
   const removeById = (id: string): void => {
     setAnnotations((prev) => prev.filter((item) => item.id !== id));
+    if (resize?.id === id) {
+      setResize(null);
+    }
     setSelectedId((prev) => (prev === id ? null : prev));
   };
 
@@ -633,6 +728,34 @@ function EditorApp(): JSX.Element {
                           </text>
                         </g>
                       ) : null}
+                      {isSelected && interactionMode === "move"
+                        ? BOX_RESIZE_HANDLES.map((handle) => {
+                            const position = getBoxHandlePosition(item, handle);
+                            return (
+                              <g key={`${item.id}-${handle}`}>
+                                <rect
+                                  x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
+                                  y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
+                                  width={RESIZE_HANDLE_HIT_SIZE}
+                                  height={RESIZE_HANDLE_HIT_SIZE}
+                                  fill="transparent"
+                                  style={{ cursor: getBoxResizeCursor(handle) }}
+                                  onPointerDown={onResizeHandlePointerDown(item, handle)}
+                                />
+                                <rect
+                                  x={position.x - RESIZE_HANDLE_SIZE / 2}
+                                  y={position.y - RESIZE_HANDLE_SIZE / 2}
+                                  width={RESIZE_HANDLE_SIZE}
+                                  height={RESIZE_HANDLE_SIZE}
+                                  fill="white"
+                                  stroke={item.color}
+                                  strokeWidth="1.5"
+                                  pointerEvents="none"
+                                />
+                              </g>
+                            );
+                          })
+                        : null}
                     </g>
                   );
                 }

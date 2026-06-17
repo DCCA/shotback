@@ -2,7 +2,7 @@
 
 # 📸 Shotback
 
-### A Chrome extension for fast screenshot reviews: capture a full page, annotate specific areas, keep a timeline of comments, and share a local review link.
+### A Chrome extension for AI-assisted screenshot reviews: capture a full page, annotate specific areas, keep a timeline of comments, and prepare feedback for humans or LLMs.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://developer.chrome.com/docs/extensions/)
@@ -13,7 +13,21 @@
 
 ## 🎯 Why Shotback
 
-Shotback is optimized for **local-first review workflows**. You can annotate UI issues quickly, preserve context with area-linked comments, and keep feedback organized before sending to an LLM.
+Shotback is optimized for **local-first review workflows**. You can annotate UI issues quickly, preserve context with area-linked comments, and keep feedback organized before sending to a teammate or an LLM.
+
+It is useful when a product/design review needs more context than a plain screenshot but less ceremony than a full ticketing workflow.
+
+## 🧠 Product Workflow
+
+Shotback turns visual feedback into a compact review artifact:
+
+1. capture the real page state;
+2. mark the exact UI areas that need attention;
+3. attach comments to each annotation;
+4. keep a timeline of feedback decisions; and
+5. export a structured prompt + image for cloud LLM review when local links are not accessible.
+
+This keeps human feedback and AI review grounded in the same visual evidence.
 
 ## ✨ Features
 

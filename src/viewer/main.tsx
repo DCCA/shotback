@@ -45,7 +45,7 @@ function ViewerApp(): JSX.Element {
       <main className="mx-auto min-h-screen w-full max-w-5xl p-4 md:p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Shotback Share</CardTitle>
+            <CardTitle as="h1">Shotback Share</CardTitle>
             <CardDescription>{status}</CardDescription>
           </CardHeader>
         </Card>
@@ -63,7 +63,7 @@ function ViewerApp(): JSX.Element {
         <Card>
           <CardHeader className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Shotback Share</CardTitle>
+              <CardTitle as="h1">Shotback Share</CardTitle>
               <Badge variant="accent">Local</Badge>
             </div>
             <CardDescription>
@@ -93,7 +93,7 @@ function ViewerApp(): JSX.Element {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base">Annotated Image</CardTitle>
+              <CardTitle as="h2" className="text-base">Annotated Image</CardTitle>
               <Button
                 variant="secondary"
                 size="sm"

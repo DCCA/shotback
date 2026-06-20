@@ -3,19 +3,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/50 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-semibold transition-[transform,background-color,box-shadow] duration-200 ease-swift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-emerald-700 text-emerald-50 hover:bg-emerald-800",
-        secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 border border-slate-200",
-        ghost: "text-slate-700 hover:bg-slate-100",
-        destructive: "bg-red-600 text-white hover:bg-red-700"
+        default:
+          "bg-primary text-primary-foreground shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.12)] hover:bg-primary-hover",
+        secondary:
+          "border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover",
+        ghost: "text-secondary-foreground hover:bg-secondary",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.15)] hover:bg-destructive-hover"
       },
       size: {
         default: "h-10 px-4 py-2",
-        sm: "h-9 px-3",
-        lg: "h-11 px-6"
+        sm: "h-9 px-3 text-[13px]",
+        lg: "h-11 px-6 text-base"
       }
     },
     defaultVariants: {

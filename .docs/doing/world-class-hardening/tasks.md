@@ -11,9 +11,9 @@
 - [x] 2.2 Add `typecheck` script
 - [x] 2.3 Add ESLint flat config + `lint` script
 - [x] 2.4 Add Prettier config + `format`/`format:check` scripts
-- [ ] 2.5 Fix arrow-head color bug in editor preview
-- [ ] 2.6 Harden `download()` with error handling
-- [ ] 2.7 Add tests: external LLM prompt, base64↔blob round-trip, handle geometry
+- [x] 2.5 Fix arrow-head color bug in editor preview
+- [x] 2.6 Harden `download()` with error handling
+- [x] 2.7 Add tests: external LLM prompt, base64↔blob round-trip, handle geometry
 - [x] 2.8 Wire typecheck + lint into CI
 - [x] 2.9 Add `engines` field + `.nvmrc`
 

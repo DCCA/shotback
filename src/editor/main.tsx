@@ -17,6 +17,7 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { captureFullPage } from "@/lib/capture";
+import { annotationSummary, buildExternalLlmPrompt } from "@/lib/feedback";
 import { buildLocalShareUrl, saveLocalShare } from "@/lib/localStore";
 import type { Annotation, AnnotationTool, BoxAnnotation } from "@/types/annotation";
 import "@/styles/globals.css";
@@ -79,37 +80,6 @@ function annotationCommentAnchor(annotation: Annotation): { x: number; y: number
   }
 
   return { x: annotation.x, y: annotation.y };
-}
-
-function annotationSummary(annotation: Annotation): string {
-  if (annotation.tool === "text") return annotation.text;
-  return annotation.comment?.trim() || "(no comment)";
-}
-
-function buildExternalLlmPrompt(params: {
-  pageUrl: string;
-  generalFeedback: string;
-  annotations: Annotation[];
-}): string {
-  const comments = params.annotations
-    .map((annotation, index) => {
-      if (annotation.tool === "text") {
-        return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
-      }
-
-      return `${index + 1}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
-    })
-    .join("\n");
-
-  return [
-    "Please review this screenshot and provide feedback.",
-    "",
-    `Page URL: ${params.pageUrl || "(unknown)"}`,
-    `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
-    "",
-    "Area comments:",
-    comments || "(none)"
-  ].join("\n");
 }
 
 function EditorApp(): JSX.Element {
@@ -463,12 +433,21 @@ function EditorApp(): JSX.Element {
   };
 
   const download = async (): Promise<void> => {
-    if (!baseDataUrl) return;
-    const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
-    const a = document.createElement("a");
-    a.href = merged;
-    a.download = `shotback-${Date.now()}.png`;
-    a.click();
+    if (!baseDataUrl) {
+      setStatus("Capture a screenshot before downloading.");
+      return;
+    }
+
+    try {
+      const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
+      const a = document.createElement("a");
+      a.href = merged;
+      a.download = `shotback-${Date.now()}.png`;
+      a.click();
+      setStatus("Annotated image downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to download image");
+    }
   };
 
   const prepareExternalLlmPackage = async (): Promise<void> => {
@@ -798,6 +777,9 @@ function EditorApp(): JSX.Element {
                           markerEnd="url(#arrow-head)"
                           strokeDasharray={isSelected ? "8 5" : undefined}
                           pointerEvents="none"
+                          // The arrow-head marker fills with currentColor; set it so the
+                          // head matches the arrow stroke instead of inheriting page text color.
+                          style={{ color: item.color }}
                         />
                         {item.comment && anchor ? (
                           <g pointerEvents="none">

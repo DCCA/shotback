@@ -132,6 +132,21 @@ describe("localStore", () => {
     expect(getImageBlob).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves arbitrary binary bytes through the base64 round-trip", async () => {
+    const bytes = new Uint8Array([0, 1, 2, 127, 128, 200, 254, 255]);
+    const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+
+    const meta = await saveLocalShare({
+      pageUrl: "https://example.test/binary",
+      imageDataUrl: dataUrl,
+      annotations: [],
+      generalFeedback: ""
+    });
+
+    const resolved = await getLocalShare(meta.id);
+    expect(resolved?.imageDataUrl).toBe(dataUrl);
+  });
+
   it("migrates legacy inlined image records on read", async () => {
     const id = "legacy-1";
     const dataUrl = createDataUrl("legacy");

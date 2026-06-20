@@ -34,10 +34,13 @@ draws heads correctly and is unchanged.
 Capture relies on `activeTab` + `scripting` + `tabs` + `captureVisibleTab`, plus
 a static content script. Reducing `host_permissions`/`content_scripts` from
 `<all_urls>` risks breaking capture and cannot be verified from CI, so those are
-left intact and documented. `web_accessible_resources` is narrowed: the viewer
-only needs its own assets, and exposing them to every origin enables extension
-fingerprinting. We keep `assets/*` (the built viewer chunks load from there) but
-record the trade-off; matches stay broad only where the built viewer requires it.
+left intact and documented. `web_accessible_resources` is **removed entirely**:
+`editor.html`/`viewer.html` open as top-level `chrome-extension://` pages, so
+their `assets/*` chunks load as same-origin extension resources and never need to
+be web-accessible; the content script injects no extension resources into pages.
+The block was therefore dead config whose only effect was exposing `assets/*` to
+every origin (an extension-fingerprinting vector). See `SECURITY.md` for the
+shipped rationale.
 
 ## Local-share management
 `listLocalShares()` / `deleteLocalShare()` already exist but have no UI. Add a

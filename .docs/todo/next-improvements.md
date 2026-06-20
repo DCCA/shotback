@@ -1,8 +1,17 @@
 # Backlog: Next Improvements
 
-- Add keyboard shortcuts for delete/select/undo in editor.
+## Open
+
 - Improve comment badge placement to avoid overlap for long comments.
 - Add import/export JSON for annotations and feedback.
 - Add optional cloud-share mode behind explicit user opt-in.
-- Add integration tests for annotation edit, timeline delete, and single-editor mode.
-- Add user-facing storage usage indicator and cleanup tools for local shares.
+- Add integration-style tests for the editor (annotation edit, timeline delete,
+  single-editor mode) — current coverage is unit-level on pure helpers.
+- Show a total local-storage usage indicator (per-share size is shown today).
+- Evaluate moving the content script fully to on-demand injection (drop the
+  static `<all_urls>` registration). See `SECURITY.md` → Known follow-up.
+
+## Done (see `.docs/done/2026-06-20-world-class-hardening/`)
+
+- Keyboard shortcuts for select/delete in the editor (Esc / Delete).
+- Local-share management UI (list / open / delete).

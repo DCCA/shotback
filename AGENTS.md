@@ -1,10 +1,12 @@
 # Repository Guidelines
 
 ## Required Pre-Edit Check
+
 - Always read `FIREHOSE.md` before making any edit in this repository.
 - If `FIREHOSE.md` conflicts with another local guideline, follow `FIREHOSE.md` unless the user explicitly overrides it.
 
 ## Project Structure & Module Organization
+
 This repository contains a Chrome extension built with TypeScript, React, and Vite.
 
 - `src/popup/`: extension popup entry UI.
@@ -17,6 +19,7 @@ This repository contains a Chrome extension built with TypeScript, React, and Vi
 - `.docs/`: project planning docs (`PRD`, `todo/doing/done`).
 
 ## Build, Test, and Development Commands
+
 - `npm install`: install dependencies.
 - `npm run dev`: start Vite dev server.
 - `npm run build`: build extension output in `dist/`.
@@ -26,12 +29,14 @@ This repository contains a Chrome extension built with TypeScript, React, and Vi
 To test in Chrome, load unpacked extension from `dist/` via `chrome://extensions`.
 
 ## Coding Style & Naming Conventions
+
 - Language: TypeScript with clear, explicit logic.
 - Keep modules focused and easy to reason about.
 - Use `kebab-case` for file names and descriptive identifiers.
 - Prefer small, reviewable changes over broad refactors.
 
 ## Testing Guidelines
+
 - Test framework: Vitest.
 - Place tests in `tests/` using `*.test.ts` naming.
 - Minimum pre-PR checks:
@@ -45,6 +50,7 @@ To test in Chrome, load unpacked extension from `dist/` via `chrome://extensions
   - external LLM fallback
 
 ## Commit & Pull Request Guidelines
+
 - Use concise, imperative commit messages (for example: `feat: improve timeline actions`).
 - Keep each commit scoped to one logical change.
 - PRs should include:
@@ -53,6 +59,7 @@ To test in Chrome, load unpacked extension from `dist/` via `chrome://extensions
   - screenshots for UI updates
 
 ## Security & Configuration Tips
+
 - Do not commit secrets or personal data.
 - Keep `.gitignore` current for local artifacts.
 - Local share links (`chrome-extension://...`) are intentionally profile-scoped and not public web links.

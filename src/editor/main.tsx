@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,14 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { captureFullPage } from "@/lib/capture";
-import { buildLocalShareUrl, saveLocalShare } from "@/lib/localStore";
+import { annotationSummary, buildExternalLlmPrompt } from "@/lib/feedback";
+import {
+  buildLocalShareUrl,
+  deleteLocalShare,
+  listLocalShares,
+  saveLocalShare,
+  type LocalShareMeta
+} from "@/lib/localStore";
 import type { Annotation, AnnotationTool, BoxAnnotation } from "@/types/annotation";
 import "@/styles/globals.css";
 
@@ -81,35 +88,19 @@ function annotationCommentAnchor(annotation: Annotation): { x: number; y: number
   return { x: annotation.x, y: annotation.y };
 }
 
-function annotationSummary(annotation: Annotation): string {
-  if (annotation.tool === "text") return annotation.text;
-  return annotation.comment?.trim() || "(no comment)";
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
-function buildExternalLlmPrompt(params: {
-  pageUrl: string;
-  generalFeedback: string;
-  annotations: Annotation[];
-}): string {
-  const comments = params.annotations
-    .map((annotation, index) => {
-      if (annotation.tool === "text") {
-        return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
-      }
-
-      return `${index + 1}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
-    })
-    .join("\n");
-
-  return [
-    "Please review this screenshot and provide feedback.",
-    "",
-    `Page URL: ${params.pageUrl || "(unknown)"}`,
-    `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
-    "",
-    "Area comments:",
-    comments || "(none)"
-  ].join("\n");
+function shareLabel(pageUrl: string): string {
+  try {
+    return new URL(pageUrl).hostname || pageUrl;
+  } catch {
+    return pageUrl || "(unknown page)";
+  }
 }
 
 function EditorApp(): JSX.Element {
@@ -137,11 +128,15 @@ function EditorApp(): JSX.Element {
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
+  const [savedShares, setSavedShares] = useState<LocalShareMeta[]>([]);
+  const [showSavedShares, setShowSavedShares] = useState(false);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedNote = selectedAnnotation
     ? selectedAnnotation.tool === "text"
       ? selectedAnnotation.text
-      : selectedAnnotation.comment ?? ""
+      : (selectedAnnotation.comment ?? "")
     : "";
   const selectedAnchor = selectedAnnotation ? annotationCommentAnchor(selectedAnnotation) : null;
 
@@ -164,6 +159,50 @@ function EditorApp(): JSX.Element {
     inlineCommentRef.current?.select();
     setShouldFocusSelectedComment(false);
   }, [selectedAnnotation, shouldFocusSelectedComment]);
+
+  const refreshSavedShares = useCallback(async (): Promise<void> => {
+    try {
+      setSavedShares(await listLocalShares());
+    } catch {
+      // Listing saved shares is best-effort; ignore transient storage errors.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedShares();
+  }, [refreshSavedShares]);
+
+  // Editor keyboard shortcuts: Escape clears selection/in-progress gestures,
+  // Delete/Backspace removes the selected annotation (unless typing in a field).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        !!target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if (event.key === "Escape") {
+        if (isTyping) target.blur();
+        setSelectedId(null);
+        setDraft(null);
+        setDrag(null);
+        setResize(null);
+        return;
+      }
+
+      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping) {
+        const id = selectedIdRef.current;
+        if (!id) return;
+        event.preventDefault();
+        setAnnotations((prev) => prev.filter((item) => item.id !== id));
+        setResize((current) => (current?.id === id ? null : current));
+        setSelectedId(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
@@ -216,10 +255,21 @@ function EditorApp(): JSX.Element {
       setShareUrl(localUrl);
       await navigator.clipboard.writeText(localUrl);
       setStatus("Local share link generated and copied to clipboard.");
+      await refreshSavedShares();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Share creation failed");
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const removeSavedShare = async (id: string): Promise<void> => {
+    try {
+      await deleteLocalShare(id);
+      await refreshSavedShares();
+      setShareUrl((current) => (current === buildLocalShareUrl(id) ? "" : current));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to delete saved share");
     }
   };
 
@@ -272,7 +322,8 @@ function EditorApp(): JSX.Element {
   };
 
   const onAnnotationPointerDown =
-    (item: Annotation) => (event: React.PointerEvent<SVGElement>): void => {
+    (item: Annotation) =>
+    (event: React.PointerEvent<SVGElement>): void => {
       event.stopPropagation();
       setSelectedId(item.id);
 
@@ -462,12 +513,21 @@ function EditorApp(): JSX.Element {
   };
 
   const download = async (): Promise<void> => {
-    if (!baseDataUrl) return;
-    const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
-    const a = document.createElement("a");
-    a.href = merged;
-    a.download = `shotback-${Date.now()}.png`;
-    a.click();
+    if (!baseDataUrl) {
+      setStatus("Capture a screenshot before downloading.");
+      return;
+    }
+
+    try {
+      const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
+      const a = document.createElement("a");
+      a.href = merged;
+      a.download = `shotback-${Date.now()}.png`;
+      a.click();
+      setStatus("Annotated image downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to download image");
+    }
   };
 
   const prepareExternalLlmPackage = async (): Promise<void> => {
@@ -490,7 +550,9 @@ function EditorApp(): JSX.Element {
       a.click();
 
       await navigator.clipboard.writeText(prompt);
-      setStatus("Prompt copied. Annotated image downloaded. Attach image to external LLM manually.");
+      setStatus(
+        "Prompt copied. Annotated image downloaded. Attach image to external LLM manually."
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to prepare external LLM package");
     }
@@ -523,8 +585,13 @@ function EditorApp(): JSX.Element {
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tool</span>
-            <Select value={tool} onChange={(event) => setTool(event.target.value as AnnotationTool)}>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Tool
+            </span>
+            <Select
+              value={tool}
+              onChange={(event) => setTool(event.target.value as AnnotationTool)}
+            >
               <option value="box">Box</option>
               <option value="arrow">Arrow</option>
               <option value="text">Text</option>
@@ -532,7 +599,9 @@ function EditorApp(): JSX.Element {
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Color</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Color
+            </span>
             <Input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
           </label>
 
@@ -549,7 +618,11 @@ function EditorApp(): JSX.Element {
           </label>
 
           <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Draw mode creates annotations. Move mode selects or drags existing annotations.
+            Draw mode creates annotations. Move mode selects or drags existing annotations. Press{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Esc</kbd> to
+            deselect and{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Del</kbd> to
+            remove the selected item.
           </p>
 
           <div className="grid grid-cols-1 gap-2">
@@ -559,7 +632,11 @@ function EditorApp(): JSX.Element {
             <Button variant="destructive" disabled={!selectedId || isBusy} onClick={removeSelected}>
               Delete Selected Item
             </Button>
-            <Button variant="secondary" disabled={!baseDataUrl || isBusy} onClick={() => void download()}>
+            <Button
+              variant="secondary"
+              disabled={!baseDataUrl || isBusy}
+              onClick={() => void download()}
+            >
               Download Image (PNG)
             </Button>
             <Button
@@ -615,9 +692,12 @@ function EditorApp(): JSX.Element {
                           }}
                         >
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            #{index + 1} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
+                            #{index + 1} {item.tool} •{" "}
+                            {new Date(item.createdAt).toLocaleTimeString()}
                           </div>
-                          <div className="mt-1 text-sm text-slate-800">{annotationSummary(item)}</div>
+                          <div className="mt-1 text-sm text-slate-800">
+                            {annotationSummary(item)}
+                          </div>
                         </button>
                         <Button
                           type="button"
@@ -646,6 +726,69 @@ function EditorApp(): JSX.Element {
               {shareUrl}
             </a>
           ) : null}
+
+          <Separator />
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
+              <div className="flex items-center gap-2">
+                <Badge>{savedShares.length}</Badge>
+                {savedShares.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowSavedShares((value) => !value)}
+                  >
+                    {showSavedShares ? "Hide" : "Show"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            {savedShares.length === 0 ? (
+              <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                No saved shares yet. Use “Copy Local Share Link” to save one.
+              </p>
+            ) : showSavedShares ? (
+              <ul className="m-0 grid list-none gap-2 p-0">
+                {savedShares.map((share) => (
+                  <li key={share.id}>
+                    <div className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-800">
+                          {shareLabel(share.pageUrl)}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {new Date(share.createdAt).toLocaleString()} •{" "}
+                          {formatBytes(share.imageByteSize)}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => window.open(buildLocalShareUrl(share.id), "_blank")}
+                        >
+                          Open
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="text-red-700 hover:bg-red-50"
+                          aria-label={`Delete saved share for ${shareLabel(share.pageUrl)}`}
+                          onClick={() => void removeSavedShare(share.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
         </CardContent>
       </Card>
 
@@ -653,229 +796,232 @@ function EditorApp(): JSX.Element {
         <CardContent className="p-4">
           {baseDataUrl ? (
             <div className="relative inline-block rounded-lg border border-slate-200 bg-white">
-            <img
-              id="capture-image"
-              src={baseDataUrl}
-              alt="Captured page"
-              className="block h-auto max-w-none"
-              onLoad={(event) => {
-                const img = event.currentTarget;
-                setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-              }}
-            />
-            <svg
-              ref={svgRef}
-              className={`absolute inset-0 h-full w-full ${
-                interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
-              }`}
-              viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onCanvasPointerMove}
-              onPointerUp={onCanvasPointerUp}
-              onPointerLeave={onCanvasPointerUp}
-            >
-              <defs>
-                <marker
-                  id="arrow-head"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="7"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 8 3, 0 6" fill="currentColor" />
-                </marker>
-              </defs>
+              <img
+                id="capture-image"
+                src={baseDataUrl}
+                alt="Captured page"
+                className="block h-auto max-w-none"
+                onLoad={(event) => {
+                  const img = event.currentTarget;
+                  setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+                }}
+              />
+              <svg
+                ref={svgRef}
+                className={`absolute inset-0 h-full w-full ${
+                  interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
+                }`}
+                viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                onPointerDown={onCanvasPointerDown}
+                onPointerMove={onCanvasPointerMove}
+                onPointerUp={onCanvasPointerUp}
+                onPointerLeave={onCanvasPointerUp}
+              >
+                <defs>
+                  <marker
+                    id="arrow-head"
+                    markerWidth="10"
+                    markerHeight="10"
+                    refX="7"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <polygon points="0 0, 8 3, 0 6" fill="currentColor" />
+                  </marker>
+                </defs>
 
-              {annotations.map((item) => {
-                const isSelected = selectedId === item.id;
-                const anchor = annotationCommentAnchor(item);
+                {annotations.map((item) => {
+                  const isSelected = selectedId === item.id;
+                  const anchor = annotationCommentAnchor(item);
 
-                if (item.tool === "box") {
+                  if (item.tool === "box") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <rect
+                          x={item.x}
+                          y={item.y}
+                          width={item.width}
+                          height={item.height}
+                          fill="transparent"
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="all"
+                        />
+                        {item.comment && anchor ? (
+                          <g pointerEvents="none">
+                            <rect
+                              x={anchor.x}
+                              y={Math.max(0, anchor.y - 24)}
+                              width={Math.max(52, item.comment.length * 8 + 14)}
+                              height={22}
+                              rx={4}
+                              fill="rgba(255,255,255,0.92)"
+                              stroke={item.color}
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={anchor.x + 7}
+                              y={Math.max(14, anchor.y - 9)}
+                              fill={item.color}
+                              fontSize="13"
+                              fontWeight="600"
+                            >
+                              {item.comment}
+                            </text>
+                          </g>
+                        ) : null}
+                        {isSelected && interactionMode === "move"
+                          ? BOX_RESIZE_HANDLES.map((handle) => {
+                              const position = getBoxHandlePosition(item, handle);
+                              return (
+                                <g key={`${item.id}-${handle}`}>
+                                  <rect
+                                    x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
+                                    y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
+                                    width={RESIZE_HANDLE_HIT_SIZE}
+                                    height={RESIZE_HANDLE_HIT_SIZE}
+                                    fill="transparent"
+                                    style={{ cursor: getBoxResizeCursor(handle) }}
+                                    onPointerDown={onResizeHandlePointerDown(item, handle)}
+                                  />
+                                  <rect
+                                    x={position.x - RESIZE_HANDLE_SIZE / 2}
+                                    y={position.y - RESIZE_HANDLE_SIZE / 2}
+                                    width={RESIZE_HANDLE_SIZE}
+                                    height={RESIZE_HANDLE_SIZE}
+                                    fill="white"
+                                    stroke={item.color}
+                                    strokeWidth="1.5"
+                                    pointerEvents="none"
+                                  />
+                                </g>
+                              );
+                            })
+                          : null}
+                      </g>
+                    );
+                  }
+
+                  if (item.tool === "arrow") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke="transparent"
+                          strokeWidth="14"
+                        />
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          markerEnd="url(#arrow-head)"
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="none"
+                          // The arrow-head marker fills with currentColor; set it so the
+                          // head matches the arrow stroke instead of inheriting page text color.
+                          style={{ color: item.color }}
+                        />
+                        {item.comment && anchor ? (
+                          <g pointerEvents="none">
+                            <rect
+                              x={anchor.x}
+                              y={Math.max(0, anchor.y - 24)}
+                              width={Math.max(52, item.comment.length * 8 + 14)}
+                              height={22}
+                              rx={4}
+                              fill="rgba(255,255,255,0.92)"
+                              stroke={item.color}
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={anchor.x + 7}
+                              y={Math.max(14, anchor.y - 9)}
+                              fill={item.color}
+                              fontSize="13"
+                              fontWeight="600"
+                            >
+                              {item.comment}
+                            </text>
+                          </g>
+                        ) : null}
+                      </g>
+                    );
+                  }
+
                   return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <rect
-                        x={item.x}
-                        y={item.y}
-                        width={item.width}
-                        height={item.height}
-                        fill="transparent"
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="all"
-                      />
-                      {item.comment && anchor ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
-                      {isSelected && interactionMode === "move"
-                        ? BOX_RESIZE_HANDLES.map((handle) => {
-                            const position = getBoxHandlePosition(item, handle);
-                            return (
-                              <g key={`${item.id}-${handle}`}>
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  width={RESIZE_HANDLE_HIT_SIZE}
-                                  height={RESIZE_HANDLE_HIT_SIZE}
-                                  fill="transparent"
-                                  style={{ cursor: getBoxResizeCursor(handle) }}
-                                  onPointerDown={onResizeHandlePointerDown(item, handle)}
-                                />
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_SIZE / 2}
-                                  width={RESIZE_HANDLE_SIZE}
-                                  height={RESIZE_HANDLE_SIZE}
-                                  fill="white"
-                                  stroke={item.color}
-                                  strokeWidth="1.5"
-                                  pointerEvents="none"
-                                />
-                              </g>
-                            );
-                          })
-                        : null}
-                    </g>
+                    <text
+                      key={item.id}
+                      x={item.x}
+                      y={item.y}
+                      fill={item.color}
+                      fontSize="18"
+                      fontWeight={isSelected ? "700" : "500"}
+                      onPointerDown={onAnnotationPointerDown(item)}
+                    >
+                      {item.text}
+                    </text>
                   );
-                }
+                })}
 
-                if (item.tool === "arrow") {
-                  return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke="transparent"
-                        strokeWidth="14"
+                {selectedAnnotation && inlineEditorPosition ? (
+                  <foreignObject
+                    x={inlineEditorPosition.x}
+                    y={inlineEditorPosition.y}
+                    width={240}
+                    height={84}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
+                      <textarea
+                        ref={inlineCommentRef}
+                        className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
+                        value={selectedNote}
+                        onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                        placeholder="Add comment for selected area"
+                        rows={3}
                       />
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        markerEnd="url(#arrow-head)"
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="none"
-                      />
-                      {item.comment && anchor ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
-                    </g>
-                  );
-                }
+                    </div>
+                  </foreignObject>
+                ) : null}
 
-                return (
-                  <text
-                    key={item.id}
-                    x={item.x}
-                    y={item.y}
-                    fill={item.color}
-                    fontSize="18"
-                    fontWeight={isSelected ? "700" : "500"}
-                  onPointerDown={onAnnotationPointerDown(item)}
-                >
-                  {item.text}
-                </text>
-              );
-              })}
+                {draft && tool === "box" ? (
+                  <rect
+                    x={Math.min(draft.xStart, draft.xCurrent)}
+                    y={Math.min(draft.yStart, draft.yCurrent)}
+                    width={Math.abs(draft.xCurrent - draft.xStart)}
+                    height={Math.abs(draft.yCurrent - draft.yStart)}
+                    fill="transparent"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
 
-              {selectedAnnotation && inlineEditorPosition ? (
-                <foreignObject
-                  x={inlineEditorPosition.x}
-                  y={inlineEditorPosition.y}
-                  width={240}
-                  height={84}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
-                    <textarea
-                      ref={inlineCommentRef}
-                      className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
-                      value={selectedNote}
-                      onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                      placeholder="Add comment for selected area"
-                      rows={3}
-                    />
-                  </div>
-                </foreignObject>
-              ) : null}
-
-              {draft && tool === "box" ? (
-                <rect
-                  x={Math.min(draft.xStart, draft.xCurrent)}
-                  y={Math.min(draft.yStart, draft.yCurrent)}
-                  width={Math.abs(draft.xCurrent - draft.xStart)}
-                  height={Math.abs(draft.yCurrent - draft.yStart)}
-                  fill="transparent"
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
-
-              {draft && tool === "arrow" ? (
-                <line
-                  x1={draft.xStart}
-                  y1={draft.yStart}
-                  x2={draft.xCurrent}
-                  y2={draft.yCurrent}
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
-            </svg>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
-            Capture a page to start annotating.
-          </div>
-        )}
+                {draft && tool === "arrow" ? (
+                  <line
+                    x1={draft.xStart}
+                    y1={draft.yStart}
+                    x2={draft.xCurrent}
+                    y2={draft.yCurrent}
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
+              </svg>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
+              Capture a page to start annotating.
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

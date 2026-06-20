@@ -1,5 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { applyBoxResizeDelta } from "../src/lib/boxResize";
+import {
+  applyBoxResizeDelta,
+  BOX_RESIZE_HANDLES,
+  getBoxHandlePosition,
+  getBoxResizeCursor
+} from "../src/lib/boxResize";
+
+describe("getBoxHandlePosition", () => {
+  const box = { x: 10, y: 20, width: 40, height: 60 };
+
+  it("places each handle at the expected edge or corner", () => {
+    expect(getBoxHandlePosition(box, "nw")).toEqual({ x: 10, y: 20 });
+    expect(getBoxHandlePosition(box, "n")).toEqual({ x: 30, y: 20 });
+    expect(getBoxHandlePosition(box, "ne")).toEqual({ x: 50, y: 20 });
+    expect(getBoxHandlePosition(box, "e")).toEqual({ x: 50, y: 50 });
+    expect(getBoxHandlePosition(box, "se")).toEqual({ x: 50, y: 80 });
+    expect(getBoxHandlePosition(box, "s")).toEqual({ x: 30, y: 80 });
+    expect(getBoxHandlePosition(box, "sw")).toEqual({ x: 10, y: 80 });
+    expect(getBoxHandlePosition(box, "w")).toEqual({ x: 10, y: 50 });
+  });
+});
+
+describe("getBoxResizeCursor", () => {
+  it("maps every handle to a valid CSS resize cursor", () => {
+    const expected: Record<string, string> = {
+      n: "ns-resize",
+      s: "ns-resize",
+      e: "ew-resize",
+      w: "ew-resize",
+      ne: "nesw-resize",
+      sw: "nesw-resize",
+      nw: "nwse-resize",
+      se: "nwse-resize"
+    };
+
+    for (const handle of BOX_RESIZE_HANDLES) {
+      expect(getBoxResizeCursor(handle)).toBe(expected[handle]);
+    }
+  });
+});
 
 describe("applyBoxResizeDelta", () => {
   it("flips to east handle when west handle crosses the opposite side", () => {

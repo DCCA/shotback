@@ -22,7 +22,7 @@
 - [x] 3.2 Document permission rationale in SECURITY.md and README.md
 
 ## 4. Polish & features
-- [ ] 4.1 Add extension icons (16/32/48/128) + manifest wiring
+- [x] 4.1 Add extension icons (16/32/48/128) + manifest wiring
 - [ ] 4.2 Keyboard shortcuts: Esc deselect, Delete/Backspace remove selected
 - [ ] 4.3 Local-share management UI (list/open/delete) in editor
 - [ ] 4.4 Doc/process cleanup (CONTRIBUTING, archive completed changes, TODO sync)

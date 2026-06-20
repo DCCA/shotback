@@ -36,7 +36,10 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Three 
 - `src/lib/annotate.ts` — `exportAnnotatedImage` rasterizes annotations onto the screenshot; `selectFeedbackRenderMode` picks footer vs. overlay so the export canvas never exceeds `MAX_EXPORT_CANVAS_HEIGHT`/`AREA` limits.
 - `src/lib/feedback.ts` — `buildExternalLlmPrompt` (the structured prompt copied for the cloud-LLM fallback) and `annotationSummary`.
 - `src/lib/boxResize.ts` — box drag/resize geometry.
+- `src/lib/selectNavigation.ts` — `getNextIndex`/`matchTypeahead` keyboard-navigation rules for the custom `Select` listbox (so the interaction logic is testable apart from the DOM).
 - `src/types/annotation.ts` — the `Annotation` discriminated union (`box` | `arrow` | `text`).
+
+**Design system (`src/components/ui/*` + `src/styles/globals.css` + `tailwind.config.js`):** components are driven by semantic HSL **CSS-variable tokens** (`--primary`, `--secondary`, `--muted`, `--accent`, `--destructive` + `-hover`, `--border`, `--input`, `--ring`) mapped to Tailwind color utilities — use `bg-primary`/`border-input`/`ring-ring` etc., never hardcoded `emerald-*`/`slate-*` literals, in the primitives. A `.dark` token block exists (opt-in via `class="dark"`; light is the default) and is kept **outside `@layer base`** so Tailwind does not tree-shake the unreferenced selector. `Select` is a **custom WAI-ARIA listbox** (not a native `<select>`): pass `value` + `onValueChange` + `options`, not `<option>` children — the native option popup is unstylable, which is why it was replaced.
 
 **Two outputs from the editor:** (1) *Copy Local Share Link* → `saveLocalShare` + viewer URL; (2) *Prepare for Cloud LLM* → downloads the annotated PNG and copies `buildExternalLlmPrompt` output to the clipboard. The extension makes **no network requests of its own**; data leaves the device only via that explicit manual export.
 

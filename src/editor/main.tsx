@@ -587,32 +587,42 @@ function EditorApp(): JSX.Element {
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="space-y-1.5">
+            <span
+              id="interaction-label"
+              className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
               Interaction
             </span>
             <Select
+              aria-labelledby="interaction-label"
               value={interactionMode}
-              onChange={(event) => setInteractionMode(event.target.value as "draw" | "move")}
-            >
-              <option value="draw">Draw New</option>
-              <option value="move">Move Existing</option>
-            </Select>
-          </label>
+              onValueChange={(value) => setInteractionMode(value as "draw" | "move")}
+              options={[
+                { value: "draw", label: "Draw New" },
+                { value: "move", label: "Move Existing" }
+              ]}
+            />
+          </div>
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="space-y-1.5">
+            <span
+              id="tool-label"
+              className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
               Tool
             </span>
             <Select
+              aria-labelledby="tool-label"
               value={tool}
-              onChange={(event) => setTool(event.target.value as AnnotationTool)}
-            >
-              <option value="box">Box</option>
-              <option value="arrow">Arrow</option>
-              <option value="text">Text</option>
-            </Select>
-          </label>
+              onValueChange={(value) => setTool(value as AnnotationTool)}
+              options={[
+                { value: "box", label: "Box" },
+                { value: "arrow", label: "Arrow" },
+                { value: "text", label: "Text" }
+              ]}
+            />
+          </div>
 
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">

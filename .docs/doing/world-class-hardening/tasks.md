@@ -18,8 +18,8 @@
 - [x] 2.9 Add `engines` field + `.nvmrc`
 
 ## 3. Permission tightening
-- [ ] 3.1 Narrow `web_accessible_resources` matches
-- [ ] 3.2 Document permission rationale in SECURITY.md and README.md
+- [x] 3.1 Remove unused `web_accessible_resources` (dead config; fingerprinting vector)
+- [x] 3.2 Document permission rationale in SECURITY.md and README.md
 
 ## 4. Polish & features
 - [ ] 4.1 Add extension icons (16/32/48/128) + manifest wiring

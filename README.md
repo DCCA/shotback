@@ -91,12 +91,16 @@ tests/
 
 ## 🛠️ Development Commands
 
-| Command           | Description                 |
-| ----------------- | --------------------------- |
-| `npm run dev`     | Run Vite dev server         |
-| `npm run build`   | Production build to `dist/` |
-| `npm run test`    | Run unit tests (Vitest)     |
-| `npm run preview` | Preview production build    |
+| Command             | Description                                     |
+| ------------------- | ----------------------------------------------- |
+| `npm run dev`       | Run Vite dev server                             |
+| `npm run build`     | Production build to `dist/`                     |
+| `npm run test`      | Run unit tests (Vitest)                         |
+| `npm run typecheck` | Type-check with `tsc --noEmit`                  |
+| `npm run lint`      | Lint with ESLint                                |
+| `npm run format`    | Format with Prettier (`format:check` to verify) |
+| `npm run check`     | Run typecheck + lint + test + build             |
+| `npm run preview`   | Preview production build                        |
 
 ## ⚠️ Local Link Constraint
 
@@ -106,6 +110,19 @@ Local share links are **intentionally local**. They only work where:
 - ✅ the share exists in that browser profile's `chrome.storage.local`
 
 > **Note:** For cloud LLM tools that cannot access local links, use **Prepare for Cloud LLM**.
+
+## 🔐 Permissions & Privacy
+
+Shotback is local-first and makes **no network requests of its own**. Captured
+images, annotations, and feedback stay in your browser profile. Data leaves the
+device only when you explicitly use **Prepare for Cloud LLM**, which downloads
+the annotated image and copies a prompt for you to paste manually.
+
+It requests only the permissions full-page capture needs — `activeTab`, `tabs`,
+`scripting`, `storage`/`unlimitedStorage`, and `<all_urls>` host access so it can
+capture whatever page you are viewing. Page access is used **only when you start
+a capture**. See [`SECURITY.md`](SECURITY.md) for the full per-permission
+rationale.
 
 ## 🤝 Contributing
 

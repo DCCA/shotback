@@ -8,11 +8,33 @@
   :root {
     --background: 210 40% 98%;
     --foreground: 222 47% 11%;
+
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --border: 214 32% 91%;
-    --ring: 160 84% 39%;
-    --radius: 0.8rem;
+
+    --primary: 163 94% 24%; /* emerald-700 */
+    --primary-hover: 162 88% 20%; /* emerald-800 */
+    --primary-foreground: 152 81% 96%; /* emerald-50 */
+
+    --secondary: 210 40% 96%; /* slate-100 */
+    --secondary-hover: 214 32% 91%; /* slate-200 */
+    --secondary-foreground: 222 47% 11%; /* slate-900 */
+
+    --muted: 210 40% 96%; /* slate-100 */
+    --muted-foreground: 215 16% 47%; /* slate-500 */
+
+    --accent: 149 80% 90%; /* emerald-100 */
+    --accent-foreground: 162 88% 20%; /* emerald-800 */
+
+    --destructive: 0 72% 51%; /* red-600 */
+    --destructive-hover: 0 74% 42%; /* red-700 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%; /* slate-200 — structural hairlines */
+    --input: 213 27% 84%; /* slate-300 — form-control borders */
+    --ring: 161 94% 30%; /* emerald-600 — focus ring */
+
+    --radius: 0.75rem;
   }
 
   * {
@@ -27,4 +49,39 @@
       radial-gradient(circle at 92% -28%, rgba(191, 219, 254, 0.5), transparent 42%),
       hsl(var(--background));
   }
+}
+
+/*
+ * Dark theme tokens. Kept OUTSIDE @layer base so Tailwind does not tree-shake
+ * the `.dark` selector (no `dark` reference exists in content yet). Opt-in:
+ * add `class="dark"` to <html>. Light remains the default.
+ */
+.dark {
+  --background: 222 47% 6%;
+  --foreground: 210 40% 96%;
+
+  --card: 222 44% 9%;
+  --card-foreground: 210 40% 96%;
+
+  --primary: 161 94% 30%; /* emerald-600 */
+  --primary-hover: 161 94% 36%;
+  --primary-foreground: 222 47% 6%;
+
+  --secondary: 215 25% 17%; /* slate-800 */
+  --secondary-hover: 215 19% 22%;
+  --secondary-foreground: 210 40% 96%;
+
+  --muted: 215 25% 17%;
+  --muted-foreground: 215 20% 65%; /* slate-400 */
+
+  --accent: 162 88% 16%;
+  --accent-foreground: 152 76% 80%; /* emerald-200 */
+
+  --destructive: 0 72% 51%;
+  --destructive-hover: 0 74% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 215 25% 17%;
+  --input: 215 25% 20%;
+  --ring: 161 94% 36%;
 }

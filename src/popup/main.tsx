@@ -26,8 +26,10 @@ function PopupApp(): JSX.Element {
       <Card>
         <CardHeader className="space-y-2 pb-3">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-3xl leading-none">Shotback</CardTitle>
-            <Badge variant="accent" className="shrink-0">
+            <CardTitle as="h1" className="text-3xl leading-none">
+              Shotback
+            </CardTitle>
+            <Badge variant="accent" shape="square" className="shrink-0">
               New
             </Badge>
           </div>

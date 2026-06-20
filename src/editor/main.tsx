@@ -579,7 +579,7 @@ function EditorApp(): JSX.Element {
       <Card className="lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto">
         <CardHeader className="space-y-3">
           <div className="flex items-center justify-between">
-            <CardTitle>Shotback Editor</CardTitle>
+            <CardTitle as="h1">Shotback Editor</CardTitle>
             <Badge variant="accent">{annotations.length} notes</Badge>
           </div>
           <Button disabled={isBusy} onClick={() => void takeScreenshot()}>
@@ -618,7 +618,13 @@ function EditorApp(): JSX.Element {
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Color
             </span>
-            <Input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+            <Input
+              type="color"
+              aria-label="Annotation color"
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+              className="h-10 cursor-pointer p-1"
+            />
           </label>
 
           <label className="block space-y-1.5">
@@ -688,7 +694,7 @@ function EditorApp(): JSX.Element {
           <Separator />
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h4 className="m-0 text-sm font-semibold">Comment Timeline</h4>
+              <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
               <Badge>{timelineItems.length}</Badge>
             </div>
             {timelineItems.length === 0 ? (
@@ -754,7 +760,7 @@ function EditorApp(): JSX.Element {
           <Separator />
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h4 className="m-0 text-sm font-semibold">Saved Shares</h4>
+              <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
               <div className="flex items-center gap-2">
                 <Badge>{savedShares.length}</Badge>
                 {savedShares.length > 0 ? (

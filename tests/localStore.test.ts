@@ -25,20 +25,27 @@ vi.mock("@/lib/shareDb", () => {
 let storageState: Record<string, unknown>;
 let nextSetError: string | null;
 
+function setLastError(message: string | undefined): void {
+  (
+    globalThis as unknown as { chrome: { runtime: { lastError?: { message: string } } } }
+  ).chrome.runtime.lastError = message ? { message } : undefined;
+}
+
 function installChromeMock(): void {
-  const runtimeState: { lastError?: { message: string } } = {};
-  (globalThis as unknown as { chrome: chrome }).chrome = {
+  (globalThis as unknown as { chrome: typeof chrome }).chrome = {
     runtime: {
       getURL: (path: string) => `chrome-extension://test/${path}`,
       lastError: undefined
     },
     storage: {
       local: {
-        get: (keys: string[] | string | null, callback: (items: Record<string, unknown>) => void) => {
-          runtimeState.lastError = undefined;
+        get: (
+          keys: string[] | string | null,
+          callback: (items: Record<string, unknown>) => void
+        ) => {
           const all = { ...storageState };
           if (keys === null) {
-            (globalThis as unknown as { chrome: chrome }).chrome.runtime.lastError = undefined;
+            setLastError(undefined);
             callback(all);
             return;
           }
@@ -50,21 +57,19 @@ function installChromeMock(): void {
               picked[key] = storageState[key];
             }
           }
-          (globalThis as unknown as { chrome: chrome }).chrome.runtime.lastError = undefined;
+          setLastError(undefined);
           callback(picked);
         },
         set: (items: Record<string, unknown>, callback: () => void) => {
           if (nextSetError) {
-            (globalThis as unknown as { chrome: chrome }).chrome.runtime.lastError = {
-              message: nextSetError
-            };
+            setLastError(nextSetError);
             nextSetError = null;
             callback();
             return;
           }
 
           Object.assign(storageState, items);
-          (globalThis as unknown as { chrome: chrome }).chrome.runtime.lastError = undefined;
+          setLastError(undefined);
           callback();
         },
         remove: (keys: string[] | string, callback: () => void) => {
@@ -72,23 +77,19 @@ function installChromeMock(): void {
           for (const key of keyList) {
             delete storageState[key];
           }
-          (globalThis as unknown as { chrome: chrome }).chrome.runtime.lastError = undefined;
+          setLastError(undefined);
           callback();
         }
       }
     }
-  } as unknown as chrome;
+  } as unknown as typeof chrome;
 }
 
 function createDataUrl(body: string): string {
   return `data:image/png;base64,${Buffer.from(body, "utf8").toString("base64")}`;
 }
 
-function setMetaRecord(params: {
-  id: string;
-  createdAt: string;
-  blobKey?: string;
-}): void {
+function setMetaRecord(params: { id: string; createdAt: string; blobKey?: string }): void {
   const key = `share:${params.id}`;
   storageState[key] = {
     id: params.id,

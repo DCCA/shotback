@@ -21,7 +21,10 @@ function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElem
   return <h3 className={cn("text-lg font-extrabold tracking-tight", className)} {...props} />;
 }
 
-function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>): JSX.Element {
+function CardDescription({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLParagraphElement>): JSX.Element {
   return <p className={cn("text-sm text-slate-600", className)} {...props} />;
 }
 

@@ -7,15 +7,15 @@
 - [x] 1.4 Verify `npm run test` and `npm run build`
 
 ## 2. Foundational hardening
-- [ ] 2.1 Fix tsconfig so `tsc --noEmit` passes (node types, test/config typing)
-- [ ] 2.2 Add `typecheck` script
-- [ ] 2.3 Add ESLint flat config + `lint` script
-- [ ] 2.4 Add Prettier config + `format`/`format:check` scripts
+- [x] 2.1 Fix tsconfig so `tsc --noEmit` passes (node types, test/config typing)
+- [x] 2.2 Add `typecheck` script
+- [x] 2.3 Add ESLint flat config + `lint` script
+- [x] 2.4 Add Prettier config + `format`/`format:check` scripts
 - [ ] 2.5 Fix arrow-head color bug in editor preview
 - [ ] 2.6 Harden `download()` with error handling
 - [ ] 2.7 Add tests: external LLM prompt, base64↔blob round-trip, handle geometry
-- [ ] 2.8 Wire typecheck + lint into CI
-- [ ] 2.9 Add `engines` field + `.nvmrc`
+- [x] 2.8 Wire typecheck + lint into CI
+- [x] 2.9 Add `engines` field + `.nvmrc`
 
 ## 3. Permission tightening
 - [ ] 3.1 Narrow `web_accessible_resources` matches

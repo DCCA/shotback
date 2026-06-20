@@ -1,4 +1,5 @@
 # FIREHOSE PRINCIPLES
+
 These are the operating rules for this project.
 They are non-negotiable unless the user explicitly approves a change.
 
@@ -53,9 +54,11 @@ Template:
 
 ```markdown
 ### Requirement: Descriptive Name
+
 The system SHALL ...
 
 #### Scenario: Example
+
 - GIVEN ...
 - WHEN ...
 - THEN ...

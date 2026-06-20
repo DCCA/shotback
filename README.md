@@ -44,11 +44,13 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 ## 🚀 Quick Start
 
 ### 1️⃣ Install dependencies
+
 ```bash
 npm install
 ```
 
 ### 2️⃣ Build extension
+
 ```bash
 npm run build
 ```
@@ -89,16 +91,17 @@ tests/
 
 ## 🛠️ Development Commands
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Run Vite dev server |
-| `npm run build` | Production build to `dist/` |
-| `npm run test` | Run unit tests (Vitest) |
-| `npm run preview` | Preview production build |
+| Command           | Description                 |
+| ----------------- | --------------------------- |
+| `npm run dev`     | Run Vite dev server         |
+| `npm run build`   | Production build to `dist/` |
+| `npm run test`    | Run unit tests (Vitest)     |
+| `npm run preview` | Preview production build    |
 
 ## ⚠️ Local Link Constraint
 
 Local share links are **intentionally local**. They only work where:
+
 - ✅ the extension is installed
 - ✅ the share exists in that browser profile's `chrome.storage.local`
 

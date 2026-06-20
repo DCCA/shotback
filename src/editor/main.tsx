@@ -141,7 +141,7 @@ function EditorApp(): JSX.Element {
   const selectedNote = selectedAnnotation
     ? selectedAnnotation.tool === "text"
       ? selectedAnnotation.text
-      : selectedAnnotation.comment ?? ""
+      : (selectedAnnotation.comment ?? "")
     : "";
   const selectedAnchor = selectedAnnotation ? annotationCommentAnchor(selectedAnnotation) : null;
 
@@ -272,7 +272,8 @@ function EditorApp(): JSX.Element {
   };
 
   const onAnnotationPointerDown =
-    (item: Annotation) => (event: React.PointerEvent<SVGElement>): void => {
+    (item: Annotation) =>
+    (event: React.PointerEvent<SVGElement>): void => {
       event.stopPropagation();
       setSelectedId(item.id);
 
@@ -490,7 +491,9 @@ function EditorApp(): JSX.Element {
       a.click();
 
       await navigator.clipboard.writeText(prompt);
-      setStatus("Prompt copied. Annotated image downloaded. Attach image to external LLM manually.");
+      setStatus(
+        "Prompt copied. Annotated image downloaded. Attach image to external LLM manually."
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to prepare external LLM package");
     }
@@ -523,8 +526,13 @@ function EditorApp(): JSX.Element {
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tool</span>
-            <Select value={tool} onChange={(event) => setTool(event.target.value as AnnotationTool)}>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Tool
+            </span>
+            <Select
+              value={tool}
+              onChange={(event) => setTool(event.target.value as AnnotationTool)}
+            >
               <option value="box">Box</option>
               <option value="arrow">Arrow</option>
               <option value="text">Text</option>
@@ -532,7 +540,9 @@ function EditorApp(): JSX.Element {
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Color</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Color
+            </span>
             <Input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
           </label>
 
@@ -559,7 +569,11 @@ function EditorApp(): JSX.Element {
             <Button variant="destructive" disabled={!selectedId || isBusy} onClick={removeSelected}>
               Delete Selected Item
             </Button>
-            <Button variant="secondary" disabled={!baseDataUrl || isBusy} onClick={() => void download()}>
+            <Button
+              variant="secondary"
+              disabled={!baseDataUrl || isBusy}
+              onClick={() => void download()}
+            >
               Download Image (PNG)
             </Button>
             <Button
@@ -615,9 +629,12 @@ function EditorApp(): JSX.Element {
                           }}
                         >
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            #{index + 1} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
+                            #{index + 1} {item.tool} •{" "}
+                            {new Date(item.createdAt).toLocaleTimeString()}
                           </div>
-                          <div className="mt-1 text-sm text-slate-800">{annotationSummary(item)}</div>
+                          <div className="mt-1 text-sm text-slate-800">
+                            {annotationSummary(item)}
+                          </div>
                         </button>
                         <Button
                           type="button"
@@ -653,229 +670,229 @@ function EditorApp(): JSX.Element {
         <CardContent className="p-4">
           {baseDataUrl ? (
             <div className="relative inline-block rounded-lg border border-slate-200 bg-white">
-            <img
-              id="capture-image"
-              src={baseDataUrl}
-              alt="Captured page"
-              className="block h-auto max-w-none"
-              onLoad={(event) => {
-                const img = event.currentTarget;
-                setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-              }}
-            />
-            <svg
-              ref={svgRef}
-              className={`absolute inset-0 h-full w-full ${
-                interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
-              }`}
-              viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onCanvasPointerMove}
-              onPointerUp={onCanvasPointerUp}
-              onPointerLeave={onCanvasPointerUp}
-            >
-              <defs>
-                <marker
-                  id="arrow-head"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="7"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 8 3, 0 6" fill="currentColor" />
-                </marker>
-              </defs>
+              <img
+                id="capture-image"
+                src={baseDataUrl}
+                alt="Captured page"
+                className="block h-auto max-w-none"
+                onLoad={(event) => {
+                  const img = event.currentTarget;
+                  setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+                }}
+              />
+              <svg
+                ref={svgRef}
+                className={`absolute inset-0 h-full w-full ${
+                  interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
+                }`}
+                viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                onPointerDown={onCanvasPointerDown}
+                onPointerMove={onCanvasPointerMove}
+                onPointerUp={onCanvasPointerUp}
+                onPointerLeave={onCanvasPointerUp}
+              >
+                <defs>
+                  <marker
+                    id="arrow-head"
+                    markerWidth="10"
+                    markerHeight="10"
+                    refX="7"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <polygon points="0 0, 8 3, 0 6" fill="currentColor" />
+                  </marker>
+                </defs>
 
-              {annotations.map((item) => {
-                const isSelected = selectedId === item.id;
-                const anchor = annotationCommentAnchor(item);
+                {annotations.map((item) => {
+                  const isSelected = selectedId === item.id;
+                  const anchor = annotationCommentAnchor(item);
 
-                if (item.tool === "box") {
+                  if (item.tool === "box") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <rect
+                          x={item.x}
+                          y={item.y}
+                          width={item.width}
+                          height={item.height}
+                          fill="transparent"
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="all"
+                        />
+                        {item.comment && anchor ? (
+                          <g pointerEvents="none">
+                            <rect
+                              x={anchor.x}
+                              y={Math.max(0, anchor.y - 24)}
+                              width={Math.max(52, item.comment.length * 8 + 14)}
+                              height={22}
+                              rx={4}
+                              fill="rgba(255,255,255,0.92)"
+                              stroke={item.color}
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={anchor.x + 7}
+                              y={Math.max(14, anchor.y - 9)}
+                              fill={item.color}
+                              fontSize="13"
+                              fontWeight="600"
+                            >
+                              {item.comment}
+                            </text>
+                          </g>
+                        ) : null}
+                        {isSelected && interactionMode === "move"
+                          ? BOX_RESIZE_HANDLES.map((handle) => {
+                              const position = getBoxHandlePosition(item, handle);
+                              return (
+                                <g key={`${item.id}-${handle}`}>
+                                  <rect
+                                    x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
+                                    y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
+                                    width={RESIZE_HANDLE_HIT_SIZE}
+                                    height={RESIZE_HANDLE_HIT_SIZE}
+                                    fill="transparent"
+                                    style={{ cursor: getBoxResizeCursor(handle) }}
+                                    onPointerDown={onResizeHandlePointerDown(item, handle)}
+                                  />
+                                  <rect
+                                    x={position.x - RESIZE_HANDLE_SIZE / 2}
+                                    y={position.y - RESIZE_HANDLE_SIZE / 2}
+                                    width={RESIZE_HANDLE_SIZE}
+                                    height={RESIZE_HANDLE_SIZE}
+                                    fill="white"
+                                    stroke={item.color}
+                                    strokeWidth="1.5"
+                                    pointerEvents="none"
+                                  />
+                                </g>
+                              );
+                            })
+                          : null}
+                      </g>
+                    );
+                  }
+
+                  if (item.tool === "arrow") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke="transparent"
+                          strokeWidth="14"
+                        />
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          markerEnd="url(#arrow-head)"
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="none"
+                        />
+                        {item.comment && anchor ? (
+                          <g pointerEvents="none">
+                            <rect
+                              x={anchor.x}
+                              y={Math.max(0, anchor.y - 24)}
+                              width={Math.max(52, item.comment.length * 8 + 14)}
+                              height={22}
+                              rx={4}
+                              fill="rgba(255,255,255,0.92)"
+                              stroke={item.color}
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={anchor.x + 7}
+                              y={Math.max(14, anchor.y - 9)}
+                              fill={item.color}
+                              fontSize="13"
+                              fontWeight="600"
+                            >
+                              {item.comment}
+                            </text>
+                          </g>
+                        ) : null}
+                      </g>
+                    );
+                  }
+
                   return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <rect
-                        x={item.x}
-                        y={item.y}
-                        width={item.width}
-                        height={item.height}
-                        fill="transparent"
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="all"
-                      />
-                      {item.comment && anchor ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
-                      {isSelected && interactionMode === "move"
-                        ? BOX_RESIZE_HANDLES.map((handle) => {
-                            const position = getBoxHandlePosition(item, handle);
-                            return (
-                              <g key={`${item.id}-${handle}`}>
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  width={RESIZE_HANDLE_HIT_SIZE}
-                                  height={RESIZE_HANDLE_HIT_SIZE}
-                                  fill="transparent"
-                                  style={{ cursor: getBoxResizeCursor(handle) }}
-                                  onPointerDown={onResizeHandlePointerDown(item, handle)}
-                                />
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_SIZE / 2}
-                                  width={RESIZE_HANDLE_SIZE}
-                                  height={RESIZE_HANDLE_SIZE}
-                                  fill="white"
-                                  stroke={item.color}
-                                  strokeWidth="1.5"
-                                  pointerEvents="none"
-                                />
-                              </g>
-                            );
-                          })
-                        : null}
-                    </g>
+                    <text
+                      key={item.id}
+                      x={item.x}
+                      y={item.y}
+                      fill={item.color}
+                      fontSize="18"
+                      fontWeight={isSelected ? "700" : "500"}
+                      onPointerDown={onAnnotationPointerDown(item)}
+                    >
+                      {item.text}
+                    </text>
                   );
-                }
+                })}
 
-                if (item.tool === "arrow") {
-                  return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke="transparent"
-                        strokeWidth="14"
+                {selectedAnnotation && inlineEditorPosition ? (
+                  <foreignObject
+                    x={inlineEditorPosition.x}
+                    y={inlineEditorPosition.y}
+                    width={240}
+                    height={84}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
+                      <textarea
+                        ref={inlineCommentRef}
+                        className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
+                        value={selectedNote}
+                        onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                        placeholder="Add comment for selected area"
+                        rows={3}
                       />
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        markerEnd="url(#arrow-head)"
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="none"
-                      />
-                      {item.comment && anchor ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
-                    </g>
-                  );
-                }
+                    </div>
+                  </foreignObject>
+                ) : null}
 
-                return (
-                  <text
-                    key={item.id}
-                    x={item.x}
-                    y={item.y}
-                    fill={item.color}
-                    fontSize="18"
-                    fontWeight={isSelected ? "700" : "500"}
-                  onPointerDown={onAnnotationPointerDown(item)}
-                >
-                  {item.text}
-                </text>
-              );
-              })}
+                {draft && tool === "box" ? (
+                  <rect
+                    x={Math.min(draft.xStart, draft.xCurrent)}
+                    y={Math.min(draft.yStart, draft.yCurrent)}
+                    width={Math.abs(draft.xCurrent - draft.xStart)}
+                    height={Math.abs(draft.yCurrent - draft.yStart)}
+                    fill="transparent"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
 
-              {selectedAnnotation && inlineEditorPosition ? (
-                <foreignObject
-                  x={inlineEditorPosition.x}
-                  y={inlineEditorPosition.y}
-                  width={240}
-                  height={84}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
-                    <textarea
-                      ref={inlineCommentRef}
-                      className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
-                      value={selectedNote}
-                      onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                      placeholder="Add comment for selected area"
-                      rows={3}
-                    />
-                  </div>
-                </foreignObject>
-              ) : null}
-
-              {draft && tool === "box" ? (
-                <rect
-                  x={Math.min(draft.xStart, draft.xCurrent)}
-                  y={Math.min(draft.yStart, draft.yCurrent)}
-                  width={Math.abs(draft.xCurrent - draft.xStart)}
-                  height={Math.abs(draft.yCurrent - draft.yStart)}
-                  fill="transparent"
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
-
-              {draft && tool === "arrow" ? (
-                <line
-                  x1={draft.xStart}
-                  y1={draft.yStart}
-                  x2={draft.xCurrent}
-                  y2={draft.yCurrent}
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
-            </svg>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
-            Capture a page to start annotating.
-          </div>
-        )}
+                {draft && tool === "arrow" ? (
+                  <line
+                    x1={draft.xStart}
+                    y1={draft.yStart}
+                    x2={draft.xCurrent}
+                    y2={draft.yCurrent}
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
+              </svg>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
+              Capture a page to start annotating.
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

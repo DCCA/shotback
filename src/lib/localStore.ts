@@ -144,9 +144,11 @@ function decodeBase64(input: string): string {
   if (typeof atob === "function") {
     return atob(input);
   }
-  const bufferCtor = (globalThis as unknown as {
-    Buffer?: { from(value: string, encoding: string): { toString(encoding: string): string } };
-  }).Buffer;
+  const bufferCtor = (
+    globalThis as unknown as {
+      Buffer?: { from(value: string, encoding: string): { toString(encoding: string): string } };
+    }
+  ).Buffer;
   if (bufferCtor) {
     return bufferCtor.from(input, "base64").toString("binary");
   }
@@ -157,9 +159,11 @@ function encodeBase64(binary: string): string {
   if (typeof btoa === "function") {
     return btoa(binary);
   }
-  const bufferCtor = (globalThis as unknown as {
-    Buffer?: { from(value: string, encoding: string): { toString(encoding: string): string } };
-  }).Buffer;
+  const bufferCtor = (
+    globalThis as unknown as {
+      Buffer?: { from(value: string, encoding: string): { toString(encoding: string): string } };
+    }
+  ).Buffer;
   if (bufferCtor) {
     return bufferCtor.from(binary, "binary").toString("base64");
   }
@@ -186,14 +190,17 @@ function shareStorageKey(id: string): string {
   return `${PREFIX}${id}`;
 }
 
-function toLocalShareMeta(id: string, input: {
-  pageUrl: string;
-  annotations: Annotation[];
-  generalFeedback: string;
-  createdAt: string;
-  blobKey: string;
-  imageByteSize: number;
-}): LocalShareMeta {
+function toLocalShareMeta(
+  id: string,
+  input: {
+    pageUrl: string;
+    annotations: Annotation[];
+    generalFeedback: string;
+    createdAt: string;
+    blobKey: string;
+    imageByteSize: number;
+  }
+): LocalShareMeta {
   return {
     id,
     pageUrl: input.pageUrl,
@@ -206,7 +213,10 @@ function toLocalShareMeta(id: string, input: {
   };
 }
 
-async function migrateLegacyRecord(key: string, legacy: LegacyLocalShareRecord): Promise<LocalShareMeta> {
+async function migrateLegacyRecord(
+  key: string,
+  legacy: LegacyLocalShareRecord
+): Promise<LocalShareMeta> {
   const blob = dataUrlToBlob(legacy.imageDataUrl);
   const blobKey = imageBlobKey(legacy.id);
   await putImageBlob(blobKey, blob);
@@ -234,7 +244,9 @@ async function readLocalShareMeta(id: string): Promise<LocalShareMeta | null> {
   throw new Error("Share record has unsupported format");
 }
 
-function getMetaEntries(items: Record<string, unknown>): Array<{ key: string; meta: LocalShareMeta }> {
+function getMetaEntries(
+  items: Record<string, unknown>
+): Array<{ key: string; meta: LocalShareMeta }> {
   const entries: Array<{ key: string; meta: LocalShareMeta }> = [];
   for (const [key, value] of Object.entries(items)) {
     if (!key.startsWith(PREFIX)) continue;

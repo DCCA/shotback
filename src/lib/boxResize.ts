@@ -2,16 +2,7 @@ import type { BoxAnnotation } from "@/types/annotation";
 
 export type BoxResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
-export const BOX_RESIZE_HANDLES: BoxResizeHandle[] = [
-  "n",
-  "ne",
-  "e",
-  "se",
-  "s",
-  "sw",
-  "w",
-  "nw"
-];
+export const BOX_RESIZE_HANDLES: BoxResizeHandle[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 
 const HORIZONTAL_FLIP_MAP: Record<BoxResizeHandle, BoxResizeHandle> = {
   n: "n",

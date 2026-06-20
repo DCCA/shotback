@@ -1,0 +1,6 @@
+dist/
+coverage/
+package-lock.json
+
+# Planning / historical docs are prose; keep their authored formatting.
+.docs/

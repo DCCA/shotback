@@ -13,10 +13,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     originalScrollY = window.scrollY;
 
     const metrics: PageMetrics = {
-      fullHeight: Math.max(
-        document.documentElement.scrollHeight,
-        document.body?.scrollHeight ?? 0
-      ),
+      fullHeight: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
       viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
       devicePixelRatio: window.devicePixelRatio,

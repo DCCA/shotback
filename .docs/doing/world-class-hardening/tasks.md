@@ -23,8 +23,8 @@
 
 ## 4. Polish & features
 - [x] 4.1 Add extension icons (16/32/48/128) + manifest wiring
-- [ ] 4.2 Keyboard shortcuts: Esc deselect, Delete/Backspace remove selected
-- [ ] 4.3 Local-share management UI (list/open/delete) in editor
+- [x] 4.2 Keyboard shortcuts: Esc deselect, Delete/Backspace remove selected
+- [x] 4.3 Local-share management UI (list/open/delete) in editor
 - [ ] 4.4 Doc/process cleanup (CONTRIBUTING, archive completed changes, TODO sync)
 
 ## 5. Validation

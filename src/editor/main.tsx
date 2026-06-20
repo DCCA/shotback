@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,13 @@ import {
 } from "@/lib/boxResize";
 import { captureFullPage } from "@/lib/capture";
 import { annotationSummary, buildExternalLlmPrompt } from "@/lib/feedback";
-import { buildLocalShareUrl, saveLocalShare } from "@/lib/localStore";
+import {
+  buildLocalShareUrl,
+  deleteLocalShare,
+  listLocalShares,
+  saveLocalShare,
+  type LocalShareMeta
+} from "@/lib/localStore";
 import type { Annotation, AnnotationTool, BoxAnnotation } from "@/types/annotation";
 import "@/styles/globals.css";
 
@@ -82,6 +88,21 @@ function annotationCommentAnchor(annotation: Annotation): { x: number; y: number
   return { x: annotation.x, y: annotation.y };
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function shareLabel(pageUrl: string): string {
+  try {
+    return new URL(pageUrl).hostname || pageUrl;
+  } catch {
+    return pageUrl || "(unknown page)";
+  }
+}
+
 function EditorApp(): JSX.Element {
   const search = new URLSearchParams(window.location.search);
   const tabId = Number(search.get("tabId"));
@@ -107,6 +128,10 @@ function EditorApp(): JSX.Element {
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
+  const [savedShares, setSavedShares] = useState<LocalShareMeta[]>([]);
+  const [showSavedShares, setShowSavedShares] = useState(false);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedNote = selectedAnnotation
     ? selectedAnnotation.tool === "text"
@@ -134,6 +159,50 @@ function EditorApp(): JSX.Element {
     inlineCommentRef.current?.select();
     setShouldFocusSelectedComment(false);
   }, [selectedAnnotation, shouldFocusSelectedComment]);
+
+  const refreshSavedShares = useCallback(async (): Promise<void> => {
+    try {
+      setSavedShares(await listLocalShares());
+    } catch {
+      // Listing saved shares is best-effort; ignore transient storage errors.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedShares();
+  }, [refreshSavedShares]);
+
+  // Editor keyboard shortcuts: Escape clears selection/in-progress gestures,
+  // Delete/Backspace removes the selected annotation (unless typing in a field).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        !!target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if (event.key === "Escape") {
+        if (isTyping) target.blur();
+        setSelectedId(null);
+        setDraft(null);
+        setDrag(null);
+        setResize(null);
+        return;
+      }
+
+      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping) {
+        const id = selectedIdRef.current;
+        if (!id) return;
+        event.preventDefault();
+        setAnnotations((prev) => prev.filter((item) => item.id !== id));
+        setResize((current) => (current?.id === id ? null : current));
+        setSelectedId(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
@@ -186,10 +255,21 @@ function EditorApp(): JSX.Element {
       setShareUrl(localUrl);
       await navigator.clipboard.writeText(localUrl);
       setStatus("Local share link generated and copied to clipboard.");
+      await refreshSavedShares();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Share creation failed");
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const removeSavedShare = async (id: string): Promise<void> => {
+    try {
+      await deleteLocalShare(id);
+      await refreshSavedShares();
+      setShareUrl((current) => (current === buildLocalShareUrl(id) ? "" : current));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to delete saved share");
     }
   };
 
@@ -538,7 +618,11 @@ function EditorApp(): JSX.Element {
           </label>
 
           <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Draw mode creates annotations. Move mode selects or drags existing annotations.
+            Draw mode creates annotations. Move mode selects or drags existing annotations. Press{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Esc</kbd> to
+            deselect and{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Del</kbd> to
+            remove the selected item.
           </p>
 
           <div className="grid grid-cols-1 gap-2">
@@ -642,6 +726,69 @@ function EditorApp(): JSX.Element {
               {shareUrl}
             </a>
           ) : null}
+
+          <Separator />
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
+              <div className="flex items-center gap-2">
+                <Badge>{savedShares.length}</Badge>
+                {savedShares.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowSavedShares((value) => !value)}
+                  >
+                    {showSavedShares ? "Hide" : "Show"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            {savedShares.length === 0 ? (
+              <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                No saved shares yet. Use “Copy Local Share Link” to save one.
+              </p>
+            ) : showSavedShares ? (
+              <ul className="m-0 grid list-none gap-2 p-0">
+                {savedShares.map((share) => (
+                  <li key={share.id}>
+                    <div className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-800">
+                          {shareLabel(share.pageUrl)}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {new Date(share.createdAt).toLocaleString()} •{" "}
+                          {formatBytes(share.imageByteSize)}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => window.open(buildLocalShareUrl(share.id), "_blank")}
+                        >
+                          Open
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="text-red-700 hover:bg-red-50"
+                          aria-label={`Delete saved share for ${shareLabel(share.pageUrl)}`}
+                          onClick={() => void removeSavedShare(share.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
         </CardContent>
       </Card>
 

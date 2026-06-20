@@ -120,7 +120,7 @@ function EditorApp(): JSX.Element {
   const [color, setColor] = useState("#ff3333");
   const [generalFeedback, setGeneralFeedback] = useState("");
   const [progress, setProgress] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [shareUrl, setShareUrl] = useState<string>("");
   const [draft, setDraft] = useState<DraftShape | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -206,12 +206,15 @@ function EditorApp(): JSX.Element {
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
-      setStatus("Missing target tab information. Open this page from the extension popup.");
+      setStatus({
+        kind: "error",
+        message: "Missing target tab information. Open this page from the extension popup."
+      });
       return;
     }
 
     setIsBusy(true);
-    setStatus("");
+    setStatus(null);
     setShareUrl("");
     setAnnotations([]);
     setSelectedId(null);
@@ -228,7 +231,7 @@ function EditorApp(): JSX.Element {
       setPageUrl(result.pageUrl);
       setProgress("Capture completed");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Capture failed");
+      setStatus({ kind: "error", message: error instanceof Error ? error.message : "Capture failed" });
     } finally {
       setIsBusy(false);
     }
@@ -236,12 +239,12 @@ function EditorApp(): JSX.Element {
 
   const createShareUrl = async (): Promise<void> => {
     if (!baseDataUrl) {
-      setStatus("Capture a screenshot before creating a share link.");
+      setStatus({ kind: "error", message: "Capture a screenshot before creating a share link." });
       return;
     }
 
     setIsBusy(true);
-    setStatus("");
+    setStatus(null);
 
     try {
       const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
@@ -254,10 +257,13 @@ function EditorApp(): JSX.Element {
       const localUrl = buildLocalShareUrl(share.id);
       setShareUrl(localUrl);
       await navigator.clipboard.writeText(localUrl);
-      setStatus("Local share link generated and copied to clipboard.");
+      setStatus({ kind: "success", message: "Local share link generated and copied to clipboard." });
       await refreshSavedShares();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Share creation failed");
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Share creation failed"
+      });
     } finally {
       setIsBusy(false);
     }
@@ -269,7 +275,10 @@ function EditorApp(): JSX.Element {
       await refreshSavedShares();
       setShareUrl((current) => (current === buildLocalShareUrl(id) ? "" : current));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to delete saved share");
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to delete saved share"
+      });
     }
   };
 
@@ -514,7 +523,7 @@ function EditorApp(): JSX.Element {
 
   const download = async (): Promise<void> => {
     if (!baseDataUrl) {
-      setStatus("Capture a screenshot before downloading.");
+      setStatus({ kind: "error", message: "Capture a screenshot before downloading." });
       return;
     }
 
@@ -524,15 +533,18 @@ function EditorApp(): JSX.Element {
       a.href = merged;
       a.download = `shotback-${Date.now()}.png`;
       a.click();
-      setStatus("Annotated image downloaded.");
+      setStatus({ kind: "success", message: "Annotated image downloaded." });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to download image");
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to download image"
+      });
     }
   };
 
   const prepareExternalLlmPackage = async (): Promise<void> => {
     if (!baseDataUrl) {
-      setStatus("Capture a screenshot before preparing LLM package.");
+      setStatus({ kind: "error", message: "Capture a screenshot before preparing LLM package." });
       return;
     }
 
@@ -550,16 +562,20 @@ function EditorApp(): JSX.Element {
       a.click();
 
       await navigator.clipboard.writeText(prompt);
-      setStatus(
-        "Prompt copied. Annotated image downloaded. Attach image to external LLM manually."
-      );
+      setStatus({
+        kind: "success",
+        message: "Prompt copied. Annotated image downloaded. Attach image to external LLM manually."
+      });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to prepare external LLM package");
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to prepare external LLM package"
+      });
     }
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
+    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
       <Card className="lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto">
         <CardHeader className="space-y-3">
           <div className="flex items-center justify-between">
@@ -655,16 +671,24 @@ function EditorApp(): JSX.Element {
             </Button>
           </div>
 
-          <div className="space-y-1 text-sm">
+          <div className="space-y-1 text-sm" aria-live="polite">
             {progress ? <p className="m-0 text-slate-700">{progress}</p> : null}
-            {status ? <p className="m-0 font-medium text-red-700">{status}</p> : null}
+            {status ? (
+              <p
+                className={`m-0 font-medium ${
+                  status.kind === "success" ? "text-emerald-700" : "text-red-700"
+                }`}
+              >
+                {status.message}
+              </p>
+            ) : null}
             <p className="m-0 text-slate-700">Annotations: {annotations.length}</p>
           </div>
 
           <Separator />
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
+              <h4 className="m-0 text-sm font-semibold">Comment Timeline</h4>
               <Badge>{timelineItems.length}</Badge>
             </div>
             {timelineItems.length === 0 ? (
@@ -730,7 +754,7 @@ function EditorApp(): JSX.Element {
           <Separator />
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
+              <h4 className="m-0 text-sm font-semibold">Saved Shares</h4>
               <div className="flex items-center gap-2">
                 <Badge>{savedShares.length}</Badge>
                 {savedShares.length > 0 ? (
@@ -1024,7 +1048,7 @@ function EditorApp(): JSX.Element {
           )}
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }
 

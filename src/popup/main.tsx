@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,10 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import "@/styles/globals.css";
 
 function PopupApp(): JSX.Element {
+  const [error, setError] = useState<string>("");
+
   const openEditor = async (): Promise<void> => {
+    setError("");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      window.alert("No active tab available");
+      setError("No active tab available. Focus a page tab, then try again.");
       return;
     }
 
@@ -31,10 +35,15 @@ function PopupApp(): JSX.Element {
             Capture, annotate, and share visual feedback for LLM workflows.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           <Button className="w-full" onClick={() => void openEditor()}>
             Open Capture Editor
           </Button>
+          {error ? (
+            <p className="m-0 text-sm font-medium text-red-700" aria-live="polite">
+              {error}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </main>

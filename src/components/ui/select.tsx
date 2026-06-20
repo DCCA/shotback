@@ -87,6 +87,14 @@ function Select({
     el?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
 
+  // Clear any pending typeahead reset timer on unmount.
+  useEffect(() => {
+    const state = typeahead.current;
+    return () => {
+      if (state.timer) window.clearTimeout(state.timer);
+    };
+  }, []);
+
   const runTypeahead = useCallback(
     (char: string): void => {
       const state = typeahead.current;

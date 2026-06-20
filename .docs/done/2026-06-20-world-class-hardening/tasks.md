@@ -25,8 +25,8 @@
 - [x] 4.1 Add extension icons (16/32/48/128) + manifest wiring
 - [x] 4.2 Keyboard shortcuts: Esc deselect, Delete/Backspace remove selected
 - [x] 4.3 Local-share management UI (list/open/delete) in editor
-- [ ] 4.4 Doc/process cleanup (CONTRIBUTING, archive completed changes, TODO sync)
+- [x] 4.4 Doc/process cleanup (CONTRIBUTING, archive completed changes, TODO sync)
 
 ## 5. Validation
-- [ ] 5.1 `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` all pass
-- [ ] 5.2 Completion summary added
+- [x] 5.1 `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` all pass
+- [x] 5.2 Completion summary added

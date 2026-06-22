@@ -231,7 +231,10 @@ function EditorApp(): JSX.Element {
       setPageUrl(result.pageUrl);
       setProgress("Capture completed");
     } catch (error) {
-      setStatus({ kind: "error", message: error instanceof Error ? error.message : "Capture failed" });
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Capture failed"
+      });
     } finally {
       setIsBusy(false);
     }
@@ -257,7 +260,10 @@ function EditorApp(): JSX.Element {
       const localUrl = buildLocalShareUrl(share.id);
       setShareUrl(localUrl);
       await navigator.clipboard.writeText(localUrl);
-      setStatus({ kind: "success", message: "Local share link generated and copied to clipboard." });
+      setStatus({
+        kind: "success",
+        message: "Local share link generated and copied to clipboard."
+      });
       await refreshSavedShares();
     } catch (error) {
       setStatus({

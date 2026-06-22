@@ -10,6 +10,11 @@
 - Show a total local-storage usage indicator (per-share size is shown today).
 - Evaluate moving the content script fully to on-demand injection (drop the
   static `<all_urls>` registration). See `SECURITY.md` → Known follow-up.
+- **Protect `main`** (repo-settings action, needs admin): require the `validate`
+  status check to pass and require a PR before merging, so changes can't land on
+  `main` while CI is red. This gate is what would have blocked the unformatted
+  UI PRs (#3–#5) that broke `main`. Configure under **Settings → Branches →
+  Branch protection rules** (or a Ruleset) for `main`.
 
 ## Done (see `.docs/done/2026-06-20-world-class-hardening/`)
 

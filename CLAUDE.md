@@ -23,16 +23,18 @@ To run the extension: `npm run build`, then load the `dist/` folder via `chrome:
 A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Three HTML entry points plus two extension scripts, all bundled by `vite.config.ts` (which fixes `background.js`/`content.js` output names so the manifest can reference them). `@/*` aliases `src/*`.
 
 **Four surfaces:**
+
 - `src/popup/` — toolbar popup; its only job is to open the editor in a new tab, passing `?tabId=&windowId=` of the active tab.
 - `src/editor/main.tsx` — the heart of the app (~1000 lines). Drives capture, hosts the annotation canvas, the comment timeline, general feedback, and the two output actions.
 - `src/viewer/` — renders a saved share from `?share=<id>` (local-only page).
 - `src/background.ts` — service worker; currently just an install log. `src/content.ts` — injected on `<all_urls>`; responds to `SB_GET_PAGE_METRICS` / `SB_SCROLL_TO` / `SB_RESTORE_SCROLL` messages.
 
-**Full-page capture flow** (`src/lib/capture.ts`, called from the editor — *not* from the background): activates the target tab → `ensureInjectable` re-injects `content.js` → reads page metrics → `buildScrollSteps` computes viewport-sized scroll offsets → for each step, scrolls the page (via content-script message) and calls `chrome.tabs.captureVisibleTab` → stitches the PNG segments onto a single canvas scaled by `devicePixelRatio`. Restores scroll and the previously-active tab in `finally` blocks.
+**Full-page capture flow** (`src/lib/capture.ts`, called from the editor — _not_ from the background): activates the target tab → `ensureInjectable` re-injects `content.js` → reads page metrics → `buildScrollSteps` computes viewport-sized scroll offsets → for each step, scrolls the page (via content-script message) and calls `chrome.tabs.captureVisibleTab` → stitches the PNG segments onto a single canvas scaled by `devicePixelRatio`. Restores scroll and the previously-active tab in `finally` blocks.
 
-**Storage (two-tier, see `src/lib/localStore.ts` + `src/lib/shareDb.ts`):** share *metadata* (annotations, feedback, page URL, blob key) lives in `chrome.storage.local` under `share:<id>` keys; the large PNG *blob* lives in IndexedDB (`shotback`/`shareImages`) keyed by `share-image:<id>`. `localStore` is the only module that touches both; it converts dataURL↔Blob, enforces `schemaVersion: 2`, transparently migrates legacy v1 records (inline `imageDataUrl`) on read, and prunes via `DEFAULT_RETENTION_POLICY` (50 shares / 30 days) after each save. A share link is `chrome.runtime.getURL("viewer.html?share=<id>")` — intentionally profile-scoped, never a public URL.
+**Storage (two-tier, see `src/lib/localStore.ts` + `src/lib/shareDb.ts`):** share _metadata_ (annotations, feedback, page URL, blob key) lives in `chrome.storage.local` under `share:<id>` keys; the large PNG _blob_ lives in IndexedDB (`shotback`/`shareImages`) keyed by `share-image:<id>`. `localStore` is the only module that touches both; it converts dataURL↔Blob, enforces `schemaVersion: 2`, transparently migrates legacy v1 records (inline `imageDataUrl`) on read, and prunes via `DEFAULT_RETENTION_POLICY` (50 shares / 30 days) after each save. A share link is `chrome.runtime.getURL("viewer.html?share=<id>")` — intentionally profile-scoped, never a public URL.
 
 **Pure, unit-tested helpers** (these are where the real logic and the tests live — `tests/*.test.ts` mirror them):
+
 - `src/lib/annotate.ts` — `exportAnnotatedImage` rasterizes annotations onto the screenshot; `selectFeedbackRenderMode` picks footer vs. overlay so the export canvas never exceeds `MAX_EXPORT_CANVAS_HEIGHT`/`AREA` limits.
 - `src/lib/feedback.ts` — `buildExternalLlmPrompt` (the structured prompt copied for the cloud-LLM fallback) and `annotationSummary`.
 - `src/lib/boxResize.ts` — box drag/resize geometry.
@@ -41,7 +43,7 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Three 
 
 **Design system (`src/components/ui/*` + `src/styles/globals.css` + `tailwind.config.js`):** components are driven by semantic HSL **CSS-variable tokens** (`--primary`, `--secondary`, `--muted`, `--accent`, `--destructive` + `-hover`, `--border`, `--input`, `--ring`) mapped to Tailwind color utilities — use `bg-primary`/`border-input`/`ring-ring` etc., never hardcoded `emerald-*`/`slate-*` literals, in the primitives. A `.dark` token block exists (opt-in via `class="dark"`; light is the default) and is kept **outside `@layer base`** so Tailwind does not tree-shake the unreferenced selector. `Select` is a **custom WAI-ARIA listbox** (not a native `<select>`): pass `value` + `onValueChange` + `options`, not `<option>` children — the native option popup is unstylable, which is why it was replaced.
 
-**Two outputs from the editor:** (1) *Copy Local Share Link* → `saveLocalShare` + viewer URL; (2) *Prepare for Cloud LLM* → downloads the annotated PNG and copies `buildExternalLlmPrompt` output to the clipboard. The extension makes **no network requests of its own**; data leaves the device only via that explicit manual export.
+**Two outputs from the editor:** (1) _Copy Local Share Link_ → `saveLocalShare` + viewer URL; (2) _Prepare for Cloud LLM_ → downloads the annotated PNG and copies `buildExternalLlmPrompt` output to the clipboard. The extension makes **no network requests of its own**; data leaves the device only via that explicit manual export.
 
 ## Conventions
 

@@ -93,7 +93,9 @@ function ViewerApp(): JSX.Element {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle as="h2" className="text-base">Annotated Image</CardTitle>
+              <CardTitle as="h2" className="text-base">
+                Annotated Image
+              </CardTitle>
               <Button
                 variant="secondary"
                 size="sm"

@@ -63,6 +63,43 @@ export function isNoReceiverError(error: unknown): boolean {
 }
 
 /**
+ * True for the transient error Chrome throws from tab edits while the tab strip
+ * is mid-operation (a real drag, or — for one-click capture — the strip still
+ * settling right after the editor tab was created).
+ */
+export function isTabsBusyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /tabs cannot be edited right now|user may be dragging a tab/i.test(message);
+}
+
+/**
+ * Activate a tab, retrying while the tab strip is transiently locked. Without
+ * this, one-click auto-capture fails with "Tabs cannot be edited right now"
+ * because it runs while the just-opened editor tab is still being inserted.
+ */
+export async function activateTab(
+  tabId: number,
+  options: { retries?: number; delayMs?: number } = {}
+): Promise<void> {
+  const retries = options.retries ?? 8;
+  const delayMs = options.delayMs ?? 150;
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      await chrome.tabs.update(tabId, { active: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTabsBusyError(error)) throw error;
+      await wait(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Could not activate tab");
+}
+
+/**
  * Send a message to a tab's content script, re-injecting it and retrying while
  * the receiving end is not ready. This is the difference between manual capture
  * (the user clicks seconds later, script is ready) and one-click auto-capture
@@ -99,7 +136,7 @@ export async function captureFullPage(
   const [activeTab] = await chrome.tabs.query({ active: true, windowId });
   const previousActiveTabId = activeTab?.id;
 
-  await chrome.tabs.update(tabId, { active: true });
+  await activateTab(tabId);
   await wait(150);
 
   try {
@@ -147,7 +184,8 @@ export async function captureFullPage(
     };
   } finally {
     if (previousActiveTabId && previousActiveTabId !== tabId) {
-      await chrome.tabs.update(previousActiveTabId, { active: true });
+      // Best-effort: a failed restore must not mask the capture result.
+      await activateTab(previousActiveTabId).catch(() => undefined);
     }
   }
 }

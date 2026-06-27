@@ -12,11 +12,12 @@ Non-trivial work is tracked as a change folder under `.docs/`: `proposal.md` (wh
 
 - `npm run check` — the gate: `typecheck && lint && test && build`. Run before any PR.
 - `npm run dev` / `npm run build` — Vite dev server / production build into `dist/`.
-- `npm run test` — Vitest (`vitest run`). Single file: `npx vitest run tests/capture.test.ts`. Single test: `npx vitest run -t "name substring"`. Watch: `npx vitest`.
+- `npm run test` — Vitest unit tests (`vitest run`, scoped to `tests/**/*.test.ts` by `vitest.config.ts`). Single file: `npx vitest run tests/capture.test.ts`. Single test: `npx vitest run -t "name substring"`. Watch: `npx vitest`.
+- `npm run test:e2e` — Playwright end-to-end smoke test (`tests/e2e/extension.spec.ts`, config `playwright.config.ts`). Builds `dist/`, then launches **real Chromium in new-headless with the unpacked extension loaded** (`--load-extension`) and asserts: the extension/service worker loads (no popup, `downloads` permission), the on-page capture notice shows → hides cleanly → is removed (driven through the real content script via `SB_CAPTURE_*` messages), and the editor page renders. Requires a one-time `npx playwright install chromium`. **Deliberately excluded from `npm run check`/CI** (needs downloaded browsers + new-headless) — run it locally on demand.
 - `npm run typecheck`, `npm run lint` (`lint:fix`), `npm run format` (`format:check`).
 - `npm run gen:icons` — regenerate `public/icons/*` from `scripts/generate-icons.mjs`.
 
-To run the extension: `npm run build`, then load the `dist/` folder via `chrome://extensions` (Developer mode → Load unpacked). There is no test runner for the live extension — UI flows are verified manually (capture, annotate/comment, timeline select/remove, viewer, cloud-LLM fallback).
+To run the extension: `npm run build`, then load the `dist/` folder via `chrome://extensions` (Developer mode → Load unpacked). `npm run test:e2e` automates the page-side flows; the parts it can't (clicking the toolbar icon, real `captureVisibleTab`) are still verified manually (capture, annotate/comment, timeline select/remove, viewer, cloud-LLM fallback).
 
 ## Architecture
 

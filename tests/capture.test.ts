@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildScrollSteps, isNoReceiverError, sendToContentScript } from "../src/lib/capture";
+import {
+  activateTab,
+  buildScrollSteps,
+  isNoReceiverError,
+  isTabsBusyError,
+  sendToContentScript
+} from "../src/lib/capture";
 
 describe("buildScrollSteps", () => {
   it("returns single step when content fits viewport", () => {
@@ -80,5 +86,61 @@ describe("sendToContentScript", () => {
       "Receiving end does not exist"
     );
     expect(sendMessage).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("isTabsBusyError", () => {
+  it("matches the transient tab-strip-locked errors", () => {
+    expect(
+      isTabsBusyError(new Error("Tabs cannot be edited right now (user may be dragging a tab)."))
+    ).toBe(true);
+    expect(isTabsBusyError(new Error("User may be dragging a tab"))).toBe(true);
+  });
+
+  it("does not match unrelated errors", () => {
+    expect(isTabsBusyError(new Error("No tab with id: 7"))).toBe(false);
+  });
+});
+
+describe("activateTab", () => {
+  function stubTabsUpdate(update: ReturnType<typeof vi.fn>) {
+    (globalThis as unknown as { chrome: unknown }).chrome = { tabs: { update } };
+  }
+
+  it("activates on the first try", async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    stubTabsUpdate(update);
+    await expect(activateTab(5, { delayMs: 0 })).resolves.toBeUndefined();
+    expect(update).toHaveBeenCalledWith(5, { active: true });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries while the tab strip is busy, then succeeds", async () => {
+    const update = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Tabs cannot be edited right now (user may be dragging a tab).")
+      )
+      .mockRejectedValueOnce(new Error("Tabs cannot be edited right now"))
+      .mockResolvedValue(undefined);
+    stubTabsUpdate(update);
+    await expect(activateTab(5, { delayMs: 0 })).resolves.toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(3);
+  });
+
+  it("rethrows unrelated errors immediately", async () => {
+    const update = vi.fn().mockRejectedValue(new Error("No tab with id: 5"));
+    stubTabsUpdate(update);
+    await expect(activateTab(5, { delayMs: 0 })).rejects.toThrow("No tab with id");
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up after exhausting retries", async () => {
+    const update = vi.fn().mockRejectedValue(new Error("Tabs cannot be edited right now"));
+    stubTabsUpdate(update);
+    await expect(activateTab(5, { retries: 2, delayMs: 0 })).rejects.toThrow(
+      "Tabs cannot be edited right now"
+    );
+    expect(update).toHaveBeenCalledTimes(3);
   });
 });

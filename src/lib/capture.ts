@@ -29,6 +29,15 @@ async function sendMessage<T>(tabId: number, message: unknown): Promise<T> {
   return chrome.tabs.sendMessage(tabId, message) as Promise<T>;
 }
 
+/** Send a best-effort, cosmetic message (the capture notice). Never throws. */
+async function notify(tabId: number, message: unknown): Promise<void> {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // The on-page notice is purely cosmetic; ignore if the receiver is absent.
+  }
+}
+
 async function wait(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -147,18 +156,27 @@ export async function captureFullPage(
     const metrics = await sendToContentScript<PageMetrics>(tabId, { type: "SB_GET_PAGE_METRICS" });
     const steps = buildScrollSteps(metrics.fullHeight, metrics.viewportHeight);
 
+    // Show an on-page notice (the user is looking at this tab, not the editor)
+    // and give them a moment to read it. Overlay messages are cosmetic, so a
+    // failure must never abort the capture.
+    await notify(tabId, { type: "SB_CAPTURE_BEGIN" });
+    await wait(450);
+
     const segments: Array<{ y: number; dataUrl: string }> = [];
     try {
       for (let i = 0; i < steps.length; i += 1) {
         const y = steps[i];
         await sendMessage(tabId, { type: "SB_SCROLL_TO", y });
         await wait(120);
+        // Hide the notice so it is not baked into this frame, then capture.
+        await notify(tabId, { type: "SB_SET_OVERLAY", visible: false });
         const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
         segments.push({ y, dataUrl });
         onProgress?.(i + 1, steps.length);
       }
     } finally {
       await sendMessage(tabId, { type: "SB_RESTORE_SCROLL" }).catch(() => undefined);
+      await notify(tabId, { type: "SB_CAPTURE_END" });
     }
 
     const images = await Promise.all(segments.map((segment) => loadImage(segment.dataUrl)));

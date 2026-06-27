@@ -169,7 +169,10 @@ export async function captureFullPage(
         await sendMessage(tabId, { type: "SB_SCROLL_TO", y });
         await wait(120);
         // Hide the notice so it is not baked into this frame, then capture.
+        // notify resolves only after the hide has painted (double-rAF in the
+        // content script); a short extra settle covers compositor lag.
         await notify(tabId, { type: "SB_SET_OVERLAY", visible: false });
+        await wait(60);
         const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
         segments.push({ y, dataUrl });
         onProgress?.(i + 1, steps.length);

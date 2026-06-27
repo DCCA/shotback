@@ -22,8 +22,10 @@
 
 ## 3. UI Refinement Follow-ups
 
-- [ ] Run manual QA pass across popup/editor/viewer (not runnable in CI):
-  - popup sizing on different Chrome zoom levels
+- [ ] Run manual QA pass across editor/viewer (not runnable in CI; the popup was
+      removed in favor of one-click capture):
+  - one-click capture: toolbar icon opens the editor and auto-captures
+  - on-page capture notice is visible while scrolling and absent from the saved PNG
   - editor timeline readability and button hierarchy
   - viewer metadata readability on narrow widths
 

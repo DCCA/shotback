@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { annotationSummary, buildExternalLlmPrompt } from "../src/lib/feedback";
+import {
+  annotationSummary,
+  buildClaudeCodePrompt,
+  buildExternalLlmPrompt
+} from "../src/lib/feedback";
 import type { ArrowAnnotation, BoxAnnotation, TextAnnotation } from "../src/types/annotation";
 
 const baseTimestamp = "2026-02-21T00:00:00.000Z";
@@ -95,5 +99,37 @@ describe("buildExternalLlmPrompt", () => {
 
     expect(prompt).toContain("1. [box] (no comment)");
     expect(prompt).toContain("2. [text] (empty)");
+  });
+});
+
+describe("buildClaudeCodePrompt", () => {
+  it("leads with the saved file path", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Users/dcca/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "looks off",
+      annotations: [box("fix padding")]
+    });
+
+    expect(
+      prompt.startsWith("Review this screenshot: /mnt/c/Users/dcca/Downloads/shotback/cap.png")
+    ).toBe(true);
+    expect(prompt).toContain("Page URL: https://example.test/page");
+    expect(prompt).toContain("General feedback context: looks off");
+    expect(prompt).toContain("1. [box] fix padding");
+  });
+
+  it("uses placeholders when context is empty", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "Downloads/shotback/cap.png",
+      pageUrl: "",
+      generalFeedback: "",
+      annotations: []
+    });
+
+    expect(prompt).toContain("Review this screenshot: Downloads/shotback/cap.png");
+    expect(prompt).toContain("Page URL: (unknown)");
+    expect(prompt).toContain("General feedback context: (none)");
+    expect(prompt).toContain("Area comments:\n(none)");
   });
 });

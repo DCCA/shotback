@@ -6,16 +6,9 @@ export function annotationSummary(annotation: Annotation): string {
   return annotation.comment?.trim() || "(no comment)";
 }
 
-/**
- * Build the structured prompt handed to an external/cloud LLM alongside the
- * downloaded annotated image. Kept pure so it can be unit tested.
- */
-export function buildExternalLlmPrompt(params: {
-  pageUrl: string;
-  generalFeedback: string;
-  annotations: Annotation[];
-}): string {
-  const comments = params.annotations
+/** Numbered, tool-tagged list of area comments shared by the prompt builders. */
+function formatAreaComments(annotations: Annotation[]): string {
+  const comments = annotations
     .map((annotation, index) => {
       if (annotation.tool === "text") {
         return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
@@ -25,6 +18,18 @@ export function buildExternalLlmPrompt(params: {
     })
     .join("\n");
 
+  return comments || "(none)";
+}
+
+/**
+ * Build the structured prompt handed to an external/cloud LLM alongside the
+ * downloaded annotated image. Kept pure so it can be unit tested.
+ */
+export function buildExternalLlmPrompt(params: {
+  pageUrl: string;
+  generalFeedback: string;
+  annotations: Annotation[];
+}): string {
   return [
     "Please review this screenshot and provide feedback.",
     "",
@@ -32,6 +37,28 @@ export function buildExternalLlmPrompt(params: {
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
-    comments || "(none)"
+    formatAreaComments(params.annotations)
+  ].join("\n");
+}
+
+/**
+ * Build the prompt copied to the clipboard for a Claude Code session. Leads with
+ * the saved file's path so Claude can read the image directly from disk (e.g. a
+ * Windows Downloads path translated to its WSL `/mnt/...` equivalent).
+ */
+export function buildClaudeCodePrompt(params: {
+  filePath: string;
+  pageUrl: string;
+  generalFeedback: string;
+  annotations: Annotation[];
+}): string {
+  return [
+    `Review this screenshot: ${params.filePath}`,
+    "",
+    `Page URL: ${params.pageUrl || "(unknown)"}`,
+    `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
+    "",
+    "Area comments:",
+    formatAreaComments(params.annotations)
   ].join("\n");
 }

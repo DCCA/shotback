@@ -65,10 +65,9 @@ npm run build
 ## 📖 Usage
 
 1. **Open** a target webpage.
-2. **Click** the Shotback extension icon and open the editor.
-3. **Click** **Capture Page**.
-4. **Draw** annotations and add comments.
-5. **Use** one of two outputs:
+2. **Click** the Shotback extension icon — the editor opens and captures the page automatically.
+3. **Draw** annotations and add comments.
+4. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
 
@@ -76,8 +75,7 @@ npm run build
 
 ```text
 src/
-  popup/       # extension popup UI
-  editor/      # annotation editor UI
+  editor/      # annotation editor UI (opened by the toolbar icon)
   viewer/      # local share viewer page
   lib/         # capture, rendering, storage helpers
   types/       # shared TS types

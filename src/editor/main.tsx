@@ -107,9 +107,11 @@ function EditorApp(): JSX.Element {
   const search = new URLSearchParams(window.location.search);
   const tabId = Number(search.get("tabId"));
   const windowId = Number(search.get("windowId"));
+  const autoCapture = search.get("autocapture") === "1";
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
+  const autoCaptureFiredRef = useRef(false);
 
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
@@ -208,7 +210,8 @@ function EditorApp(): JSX.Element {
     if (!canCapture) {
       setStatus({
         kind: "error",
-        message: "Missing target tab information. Open this page from the extension popup."
+        message:
+          "Missing target tab information. Click the Shotback toolbar icon on the page you want to capture."
       });
       return;
     }
@@ -239,6 +242,16 @@ function EditorApp(): JSX.Element {
       setIsBusy(false);
     }
   };
+
+  // When opened directly from the toolbar icon (autocapture=1), start the
+  // full-page capture once on load so a single click yields a ready screenshot.
+  // The manual Capture button remains available for re-capture.
+  useEffect(() => {
+    if (!autoCapture || autoCaptureFiredRef.current || !canCapture) return;
+    autoCaptureFiredRef.current = true;
+    void takeScreenshot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const createShareUrl = async (): Promise<void> => {
     if (!baseDataUrl) {

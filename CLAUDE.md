@@ -20,11 +20,11 @@ To run the extension: `npm run build`, then load the `dist/` folder via `chrome:
 
 ## Architecture
 
-A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Three HTML entry points plus two extension scripts, all bundled by `vite.config.ts` (which fixes `background.js`/`content.js` output names so the manifest can reference them). `@/*` aliases `src/*`.
+A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Two HTML entry points (editor, viewer) plus two extension scripts, all bundled by `vite.config.ts` (which fixes `background.js`/`content.js` output names so the manifest can reference them). `@/*` aliases `src/*`.
 
-**Four surfaces:**
+**Three surfaces:**
 
-- `src/popup/` — toolbar popup; its only job is to open the editor in a new tab, passing `?tabId=&windowId=` of the active tab.
+- The toolbar icon has **no popup**: `src/background.ts`'s `chrome.action.onClicked` handler opens the editor in a new tab with `?tabId=&windowId=&autocapture=1` of the active tab, and the editor auto-captures once on load (one-click capture).
 - `src/editor/main.tsx` — the heart of the app (~1000 lines). Drives capture, hosts the annotation canvas, the comment timeline, general feedback, and the two output actions.
 - `src/viewer/` — renders a saved share from `?share=<id>` (local-only page).
 - `src/background.ts` — service worker; currently just an install log. `src/content.ts` — injected on `<all_urls>`; responds to `SB_GET_PAGE_METRICS` / `SB_SCROLL_TO` / `SB_RESTORE_SCROLL` messages.
@@ -49,6 +49,6 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Three 
 
 - TypeScript `strict` with `noUnusedLocals`/`noUnusedParameters`; explicit over clever.
 - `kebab-case` file names; small, low-blast-radius diffs over broad refactors.
-- Keep pure logic in `src/lib/*` (testable, no `chrome.*`); confine `chrome.*` calls to the editor/popup/viewer/background/content boundaries.
+- Keep pure logic in `src/lib/*` (testable, no `chrome.*`); confine `chrome.*` calls to the editor/viewer/background/content boundaries.
 - Conventional-commit style messages (`feat:`, `fix:`, `chore:`, `security:`); one logical change per commit.
 - Permissions are deliberately minimal (`activeTab`, `tabs`, `scripting`, `storage`, `unlimitedStorage`, `<all_urls>` host access) — see `SECURITY.md` before touching `public/manifest.json`.

@@ -3,7 +3,7 @@
   "name": "Shotback",
   "description": "Capture full-page screenshots, annotate, and generate a local share link for LLM feedback.",
   "version": "0.1.0",
-  "permissions": ["activeTab", "tabs", "scripting", "storage", "unlimitedStorage"],
+  "permissions": ["activeTab", "tabs", "scripting", "storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icons/icon16.png",

@@ -15,13 +15,14 @@ Security-sensitive areas:
 Shotback requests only what full-page capture requires. Each permission and its
 justification:
 
-| Permission                     | Why it is needed                                                                                                      |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `activeTab`                    | Access the tab the user is viewing when they invoke capture.                                                          |
-| `tabs`                         | Coordinate capture: query the active tab, focus the target tab, and open the editor/viewer. Uses tab/window ids only. |
-| `scripting`                    | Inject the capture helper that measures the page and drives scroll-and-stitch.                                        |
-| `storage` + `unlimitedStorage` | Persist share metadata in `chrome.storage.local` and large annotated images in IndexedDB without quota errors.        |
-| `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.            |
+| Permission                     | Why it is needed                                                                                                                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activeTab`                    | Access the tab the user is viewing when they invoke capture.                                                                                                                                                           |
+| `tabs`                         | Coordinate capture: query the active tab, focus the target tab, and open the editor/viewer. Uses tab/window ids only.                                                                                                  |
+| `scripting`                    | Inject the capture helper that measures the page and drives scroll-and-stitch.                                                                                                                                         |
+| `storage` + `unlimitedStorage` | Persist share metadata in `chrome.storage.local` and large annotated images in IndexedDB without quota errors.                                                                                                         |
+| `downloads`                    | Save the annotated PNG to `Downloads/shotback/` and read back its on-disk path for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the path of the file it just created. |
+| `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.                                                                                                             |
 
 Access to page content is exercised **only at user-initiated capture time**, not
 in the background.
@@ -42,7 +43,9 @@ to avoid running on every page load.
 - Screenshots, annotations, and feedback stay in the local browser profile.
 - The extension makes no network requests of its own.
 - Data leaves the device only when the user explicitly uses the cloud LLM
-  fallback (manual image download + clipboard paste).
+  fallback (manual image download + clipboard paste). The "Copy for Claude Code"
+  action likewise only writes a PNG to `Downloads/shotback/` and copies a text
+  prompt to the clipboard — it makes no network request.
 
 ## Reporting a Vulnerability
 

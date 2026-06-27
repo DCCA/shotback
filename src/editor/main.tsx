@@ -17,7 +17,7 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { captureFullPage } from "@/lib/capture";
-import { annotationSummary, buildExternalLlmPrompt } from "@/lib/feedback";
+import { annotationSummary, buildClaudeCodePrompt, buildExternalLlmPrompt } from "@/lib/feedback";
 import {
   buildLocalShareUrl,
   deleteLocalShare,
@@ -25,8 +25,27 @@ import {
   saveLocalShare,
   type LocalShareMeta
 } from "@/lib/localStore";
+import { toClaudePath } from "@/lib/wslPath";
 import type { Annotation, AnnotationTool, BoxAnnotation } from "@/types/annotation";
 import "@/styles/globals.css";
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Resolve a completed download's absolute on-disk path. Polls because the path
+ * is only populated once Chrome finishes writing the file. Returns "" if the
+ * path cannot be resolved (interrupted, or still pending after the timeout).
+ */
+async function resolveDownloadPath(downloadId: number): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const [item] = await chrome.downloads.search({ id: downloadId });
+    if (item?.state === "complete" && item.filename) return item.filename;
+    if (item?.state === "interrupted") return "";
+    await delay(150);
+  }
+  const [item] = await chrome.downloads.search({ id: downloadId });
+  return item?.state === "complete" ? (item.filename ?? "") : "";
+}
 
 interface DraftShape {
   xStart: number;
@@ -593,6 +612,61 @@ function EditorApp(): JSX.Element {
     }
   };
 
+  // Save the annotated image to Downloads/shotback and copy a Claude Code prompt
+  // that references the file by path — translating a Windows path to its WSL
+  // /mnt equivalent so a WSL session can read it directly. No network involved.
+  const copyForClaudeCode = async (): Promise<void> => {
+    if (!baseDataUrl) {
+      setStatus({ kind: "error", message: "Capture a screenshot before copying for Claude Code." });
+      return;
+    }
+
+    setIsBusy(true);
+    setStatus(null);
+    let objectUrl = "";
+
+    try {
+      const merged = await exportAnnotatedImage(baseDataUrl, annotations, { generalFeedback });
+      const blob = await (await fetch(merged)).blob();
+      objectUrl = URL.createObjectURL(blob);
+      const relativeName = `shotback/cap-${Date.now()}.png`;
+
+      const downloadId = await chrome.downloads.download({
+        url: objectUrl,
+        filename: relativeName,
+        conflictAction: "uniquify",
+        saveAs: false
+      });
+
+      const absolutePath = await resolveDownloadPath(downloadId);
+      const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${relativeName}`;
+      const prompt = buildClaudeCodePrompt({ filePath, pageUrl, generalFeedback, annotations });
+      await navigator.clipboard.writeText(prompt);
+
+      setStatus(
+        absolutePath
+          ? {
+              kind: "success",
+              message:
+                "Copied a Claude Code prompt with the image's path. Paste it into your session."
+            }
+          : {
+              kind: "error",
+              message:
+                "Image saved to Downloads/shotback, but its full path could not be resolved. Copied a prompt with the relative path — fix it if your Claude session needs an absolute path."
+            }
+      );
+    } catch (error) {
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to copy for Claude Code"
+      });
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setIsBusy(false);
+    }
+  };
+
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
       <Card className="lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto">
@@ -696,6 +770,13 @@ function EditorApp(): JSX.Element {
               onClick={() => void prepareExternalLlmPackage()}
             >
               Prepare for Cloud LLM
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!baseDataUrl || isBusy}
+              onClick={() => void copyForClaudeCode()}
+            >
+              Copy for Claude Code
             </Button>
             <Button
               variant="default"

@@ -25,7 +25,7 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Two HT
 **Three surfaces:**
 
 - The toolbar icon has **no popup**: `src/background.ts`'s `chrome.action.onClicked` handler opens the editor in a new tab with `?tabId=&windowId=&autocapture=1` of the active tab, and the editor auto-captures once on load (one-click capture).
-- `src/editor/main.tsx` — the heart of the app (~1000 lines). Drives capture, hosts the annotation canvas, the comment timeline, general feedback, and the two output actions.
+- `src/editor/main.tsx` — the heart of the app (~1000 lines). Drives capture, hosts the annotation canvas, the comment timeline, general feedback, and the three output actions.
 - `src/viewer/` — renders a saved share from `?share=<id>` (local-only page).
 - `src/background.ts` — service worker; currently just an install log. `src/content.ts` — injected on `<all_urls>`; responds to `SB_GET_PAGE_METRICS` / `SB_SCROLL_TO` / `SB_RESTORE_SCROLL` messages.
 
@@ -43,7 +43,7 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Two HT
 
 **Design system (`src/components/ui/*` + `src/styles/globals.css` + `tailwind.config.js`):** components are driven by semantic HSL **CSS-variable tokens** (`--primary`, `--secondary`, `--muted`, `--accent`, `--destructive` + `-hover`, `--border`, `--input`, `--ring`) mapped to Tailwind color utilities — use `bg-primary`/`border-input`/`ring-ring` etc., never hardcoded `emerald-*`/`slate-*` literals, in the primitives. A `.dark` token block exists (opt-in via `class="dark"`; light is the default) and is kept **outside `@layer base`** so Tailwind does not tree-shake the unreferenced selector. `Select` is a **custom WAI-ARIA listbox** (not a native `<select>`): pass `value` + `onValueChange` + `options`, not `<option>` children — the native option popup is unstylable, which is why it was replaced.
 
-**Two outputs from the editor:** (1) _Copy Local Share Link_ → `saveLocalShare` + viewer URL; (2) _Prepare for Cloud LLM_ → downloads the annotated PNG and copies `buildExternalLlmPrompt` output to the clipboard. The extension makes **no network requests of its own**; data leaves the device only via that explicit manual export.
+**Three outputs from the editor:** (1) _Copy Local Share Link_ → `saveLocalShare` + viewer URL; (2) _Prepare for Cloud LLM_ → downloads the annotated PNG and copies `buildExternalLlmPrompt` output to the clipboard; (3) _Copy for Claude Code_ → saves the PNG to `Downloads/shotback/` via `chrome.downloads`, reads back its absolute path, and copies `buildClaudeCodePrompt` output with the path translated by `toClaudePath` (`src/lib/wslPath.ts`, `C:\… → /mnt/c/…`) so a WSL Claude Code session can read the file directly. The extension makes **no network requests of its own**; data leaves the device only via these explicit manual exports.
 
 ## Conventions
 

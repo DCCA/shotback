@@ -70,6 +70,7 @@ npm run build
 4. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
+   - **Copy for Claude Code** saves the PNG to `Downloads/shotback/` and copies a prompt that points to the file by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read it directly
 
 ## 📁 Project Structure
 

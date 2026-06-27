@@ -12,8 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Shotback",
-    "default_popup": "popup.html",
+    "default_title": "Shotback — capture this page",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

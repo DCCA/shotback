@@ -9,8 +9,7 @@
 
 This repository contains a Chrome extension built with TypeScript, React, and Vite.
 
-- `src/popup/`: extension popup entry UI.
-- `src/editor/`: capture/annotation editor UI.
+- `src/editor/`: capture/annotation editor UI (opened directly by the toolbar icon).
 - `src/viewer/`: local share viewer page.
 - `src/lib/`: capture, render, and local storage helpers.
 - `src/types/`: shared type definitions.

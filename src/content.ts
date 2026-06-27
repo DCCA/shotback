@@ -94,6 +94,16 @@ function removeCaptureOverlay(): void {
   captureOverlay = null;
 }
 
+/**
+ * Run after the next paint. A single rAF fires *before* the frame is painted,
+ * so the overlay's display change would not yet be on screen; a second rAF
+ * guarantees the change has been painted before we report back — otherwise the
+ * notice can leak into the captured frame.
+ */
+function afterPaint(callback: () => void): void {
+  window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SB_CAPTURE_BEGIN") {
     ensureCaptureOverlay().style.display = "flex";
@@ -103,7 +113,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SB_SET_OVERLAY") {
     setCaptureOverlayDisplay(Boolean(message.visible));
-    window.requestAnimationFrame(() => sendResponse({ ok: true }));
+    // Wait for the hide/show to actually paint before the orchestrator captures.
+    afterPaint(() => sendResponse({ ok: true }));
     return true;
   }
 

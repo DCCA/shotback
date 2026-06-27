@@ -31,7 +31,8 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 
 ## ✨ Features
 
-- 📷 **Full-page capture** (`scroll + stitch`)
+- ⚡ **One-click capture** — clicking the toolbar icon opens the editor and captures immediately (no popup, no second click)
+- 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
 - ✏️ **Area annotations**: box, arrow, text
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
@@ -40,6 +41,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🤖 **External LLM fallback**:
   - downloads annotated image
   - copies a structured prompt to clipboard
+- 🧑‍💻 **Copy for Claude Code** — saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
 
 ## 🚀 Quick Start
 

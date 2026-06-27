@@ -53,6 +53,44 @@ async function ensureInjectable(tabId: number): Promise<void> {
   }
 }
 
+/**
+ * True for the transient error Chrome throws when a message is sent to a tab
+ * whose content script has not registered its listener yet.
+ */
+export function isNoReceiverError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /receiving end does not exist|could not establish connection/i.test(message);
+}
+
+/**
+ * Send a message to a tab's content script, re-injecting it and retrying while
+ * the receiving end is not ready. This is the difference between manual capture
+ * (the user clicks seconds later, script is ready) and one-click auto-capture
+ * (fires immediately on editor load, before the listener has registered).
+ */
+export async function sendToContentScript<T>(
+  tabId: number,
+  message: unknown,
+  options: { retries?: number; delayMs?: number } = {}
+): Promise<T> {
+  const retries = options.retries ?? 6;
+  const delayMs = options.delayMs ?? 150;
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return (await chrome.tabs.sendMessage(tabId, message)) as T;
+    } catch (error) {
+      lastError = error;
+      if (!isNoReceiverError(error)) throw error;
+      await ensureInjectable(tabId);
+      await wait(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Content script did not respond");
+}
+
 export async function captureFullPage(
   tabId: number,
   windowId: number,
@@ -67,7 +105,9 @@ export async function captureFullPage(
   try {
     await ensureInjectable(tabId);
 
-    const metrics = await sendMessage<PageMetrics>(tabId, { type: "SB_GET_PAGE_METRICS" });
+    // The first message races content-script startup on one-click auto-capture,
+    // so retry it (re-injecting) until the listener is ready.
+    const metrics = await sendToContentScript<PageMetrics>(tabId, { type: "SB_GET_PAGE_METRICS" });
     const steps = buildScrollSteps(metrics.fullHeight, metrics.viewportHeight);
 
     const segments: Array<{ y: number; dataUrl: string }> = [];

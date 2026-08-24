@@ -1,9 +1,16 @@
+/**
+ * Geometry of whatever actually scrolls: the document, or - for SPA shells
+ * with `html,body{overflow:hidden}` - the largest scrollable element.
+ * `fullHeight`/`viewportHeight` are that scroller's scrollHeight/clientHeight;
+ * `scrollerTop` is where it starts in the viewport (0 for the document).
+ */
 export interface PageMetrics {
   fullHeight: number;
   viewportHeight: number;
   viewportWidth: number;
   devicePixelRatio: number;
   pageUrl: string;
+  scrollerTop: number;
 }
 
 export interface CaptureResult {
@@ -23,6 +30,22 @@ export function buildScrollSteps(fullHeight: number, viewportHeight: number): nu
   steps.push(fullHeight - viewportHeight);
 
   return Array.from(new Set(steps));
+}
+
+/**
+ * Where frame `index` (captured at scroll offset `y`) lands on the stitched
+ * canvas, in CSS px. The first frame is drawn whole so any chrome above an
+ * inner scroller (a header) is kept once; later frames are cropped to the
+ * scroller's rows. With `scrollerTop: 0` every frame is drawn whole at `y`.
+ */
+export function segmentPlacement(
+  index: number,
+  y: number,
+  metrics: Pick<PageMetrics, "viewportHeight" | "scrollerTop">
+): { sy: number; sh: number; dy: number } {
+  const { viewportHeight, scrollerTop } = metrics;
+  if (index === 0) return { sy: 0, sh: scrollerTop + viewportHeight, dy: 0 };
+  return { sy: scrollerTop, sh: viewportHeight, dy: scrollerTop + y };
 }
 
 async function sendMessage<T>(tabId: number, message: unknown): Promise<T> {
@@ -188,15 +211,27 @@ export async function captureFullPage(
 
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(metrics.viewportWidth * scale);
-    canvas.height = Math.round(metrics.fullHeight * scale);
+    canvas.height = Math.round((metrics.scrollerTop + metrics.fullHeight) * scale);
 
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to create drawing context");
 
     for (let i = 0; i < segments.length; i += 1) {
-      const segment = segments[i];
       const image = images[i];
-      ctx.drawImage(image, 0, Math.round(segment.y * scale));
+      const { sy, sh, dy } = segmentPlacement(i, segments[i].y, metrics);
+      const sourceY = Math.round(sy * scale);
+      const height = Math.min(Math.round(sh * scale), image.height - sourceY);
+      ctx.drawImage(
+        image,
+        0,
+        sourceY,
+        image.width,
+        height,
+        0,
+        Math.round(dy * scale),
+        image.width,
+        height
+      );
     }
 
     return {

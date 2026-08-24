@@ -13,7 +13,7 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { placeInlineEditor } from "@/lib/editor-placement";
-import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
+import { canvasScale, numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -38,11 +38,15 @@ interface ResizeState {
   box: Pick<BoxAnnotation, "x" | "y" | "width" | "height">;
 }
 
-const RESIZE_HANDLE_SIZE = 9;
-const RESIZE_HANDLE_HIT_SIZE = 16;
+// Base sizes at canvasScale(1200) === 1; scaled by the image width the same
+// way pinRadius is, so they stay a readable on-screen size in fit mode
+// instead of shrinking along with a wide capture.
+const BASE_RESIZE_HANDLE_SIZE = 9;
+const BASE_RESIZE_HANDLE_HIT_SIZE = 16;
 const MIN_RESIZE_BOX_SIZE = 8;
 /** Image-space size of the inline comment editor; also what its placement is solved for. */
-const INLINE_EDITOR_SIZE = { width: 240, height: 84 };
+const BASE_INLINE_EDITOR_SIZE = { width: 240, height: 84 };
+const BASE_INLINE_EDITOR_FONT_SIZE = 13;
 
 interface AnnotationCanvasProps {
   state: EditorState;
@@ -109,6 +113,14 @@ export function AnnotationCanvas({
     numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
   );
   const pinR = pinRadius(imageSize.width);
+  const scale = canvasScale(imageSize.width);
+  const resizeHandleSize = BASE_RESIZE_HANDLE_SIZE * scale;
+  const resizeHandleHitSize = BASE_RESIZE_HANDLE_HIT_SIZE * scale;
+  const inlineEditorSize = {
+    width: BASE_INLINE_EDITOR_SIZE.width * scale,
+    height: BASE_INLINE_EDITOR_SIZE.height * scale
+  };
+  const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
 
   const renderPin = (item: Annotation): JSX.Element => {
     const center = pinCenter(item, pinR, imageSize);
@@ -138,7 +150,7 @@ export function AnnotationCanvas({
   };
 
   const inlineEditorPosition = selectedAnnotation
-    ? placeInlineEditor(annotationBounds(selectedAnnotation), imageSize, INLINE_EDITOR_SIZE)
+    ? placeInlineEditor(annotationBounds(selectedAnnotation), imageSize, inlineEditorSize)
     : null;
 
   // Layout effect, not a plain effect: the first keystroke after the shape is
@@ -460,7 +472,9 @@ export function AnnotationCanvas({
             id="capture-viewport"
             className="w-full overflow-auto rounded-lg border border-border bg-card"
           >
-            <div className={`relative ${zoom === "fit" ? "block w-full" : "inline-block"}`}>
+            <div
+              className={`relative ${zoom === "fit" ? "block w-full" : "inline-block align-bottom"}`}
+            >
               <img
                 id="capture-image"
                 src={baseDataUrl}
@@ -468,6 +482,10 @@ export function AnnotationCanvas({
                 className={
                   zoom === "fit" ? "block h-auto w-full max-w-full" : "block h-auto max-w-none"
                 }
+                // Fit mode is "shrink to fit, never upscale": a capture
+                // narrower than the pane should render at its real size, not
+                // stretch to fill it.
+                style={zoom === "fit" ? { maxWidth: imageSize.width } : undefined}
                 onLoad={(event) => {
                   const img = event.currentTarget;
                   setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -510,19 +528,19 @@ export function AnnotationCanvas({
                               return (
                                 <g key={`${item.id}-${handle}`}>
                                   <rect
-                                    x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
-                                    y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
-                                    width={RESIZE_HANDLE_HIT_SIZE}
-                                    height={RESIZE_HANDLE_HIT_SIZE}
+                                    x={position.x - resizeHandleHitSize / 2}
+                                    y={position.y - resizeHandleHitSize / 2}
+                                    width={resizeHandleHitSize}
+                                    height={resizeHandleHitSize}
                                     fill="transparent"
                                     style={{ cursor: getBoxResizeCursor(handle) }}
                                     onPointerDown={onResizeHandlePointerDown(item, handle)}
                                   />
                                   <rect
-                                    x={position.x - RESIZE_HANDLE_SIZE / 2}
-                                    y={position.y - RESIZE_HANDLE_SIZE / 2}
-                                    width={RESIZE_HANDLE_SIZE}
-                                    height={RESIZE_HANDLE_SIZE}
+                                    x={position.x - resizeHandleSize / 2}
+                                    y={position.y - resizeHandleSize / 2}
+                                    width={resizeHandleSize}
+                                    height={resizeHandleSize}
                                     fill="white"
                                     stroke={item.color}
                                     strokeWidth="1.5"
@@ -600,14 +618,15 @@ export function AnnotationCanvas({
                   <foreignObject
                     x={inlineEditorPosition.x}
                     y={inlineEditorPosition.y}
-                    width={INLINE_EDITOR_SIZE.width}
-                    height={INLINE_EDITOR_SIZE.height}
+                    width={inlineEditorSize.width}
+                    height={inlineEditorSize.height}
                     onPointerDown={(event) => event.stopPropagation()}
                   >
                     <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
                       <textarea
                         ref={inlineCommentRef}
-                        className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        style={{ fontSize: `${inlineEditorFontSize}px` }}
                         value={selectedNote}
                         onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
                         onBlur={commitNoteIfDirty}

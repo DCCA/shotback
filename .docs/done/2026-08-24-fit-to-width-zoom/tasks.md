@@ -24,3 +24,23 @@
   - [x] 7.1 `.docs/done/2026-08-24-fit-to-width-zoom/` (this folder).
   - [x] 7.2 README features list mentions fit-to-width default + 1:1 toggle.
 - [x] **8. Commit, push, PR**
+
+## Fix round (review feedback on PR #27)
+
+- [x] **9. Checked-in overlay-coverage regression test**
+  - [x] 9.1 `overlayMatchesImage()` in the `inner` e2e test: asserts the SVG's `getBoundingClientRect()` matches `#capture-image`'s within 1px, in fit mode, in actual mode, and again after scrolling `#capture-viewport` fully right.
+  - [x] 9.2 Proved it catches the regression: temporarily collapsed the two-level wrapper back to one div, ran the `inner` test, quoted the RED (failed on the fit-mode check, before even reaching actual mode), restored the real implementation, reran - GREEN.
+- [x] **10. Scale fixed-px-in-image-space affordances with the image**
+  - [x] 10.1 `canvasScale(imageWidth)` in `src/lib/numbering.ts` = `pinRadius(imageWidth) / 20` (same clamp curve, normalised to 1 at 1200px). Unit-tested: 1200 -> 1, 600 -> 0.7, 4000 -> 1.4.
+  - [x] 10.2 `annotation-canvas.tsx`: resize handle size/hit-size, the inline comment editor's width/height (passed to `placeInlineEditor`) and its textarea font size all multiply by `canvasScale(imageSize.width)`.
+- [x] **11. Fold-ins**
+  - [x] 11.1 Fit mode never upscales: `style={{ maxWidth: imageSize.width }}` on the `<img>` in fit mode.
+  - [x] 11.2 Actual mode's `inline-block` inner wrapper baseline gap: added `align-bottom` to it.
+  - [x] 11.3 README wording: "shrink to fit, never upscale a narrower capture".
+- [x] **12. Re-verify and re-screenshot**
+  - [x] 12.1 `npx vitest run tests/numbering.test.ts` - green (7 tests).
+  - [x] 12.2 `npm run check` - green (82 unit tests total).
+  - [x] 12.3 `npm run format:check` - green.
+  - [x] 12.4 `npm run test:e2e` - 6/6 green.
+  - [x] 12.5 Regenerated `fit-1920.png` (now capped at natural size, not stretched), `fit-1280.png` and `actual-1280.png` (same fix, for consistency), and added `fit-900-selected.png` (box selected, comment editor legible at a sub-1200px capture's scale factor).
+- [x] **13. Push**

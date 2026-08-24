@@ -230,8 +230,23 @@ for (const [name, headerHeight] of [
         editor.evaluate(
           () => document.documentElement.scrollWidth > document.documentElement.clientWidth
         );
+      // The SVG annotation overlay must cover the image exactly - not just
+      // the pane's visible width - or pointer hit-testing silently misses
+      // whatever part of the image is only reachable by scrolling.
+      const overlayMatchesImage = () =>
+        editor.evaluate(() => {
+          const img = document.querySelector("#capture-image")!.getBoundingClientRect();
+          const svg = document.querySelector("#capture-viewport svg")!.getBoundingClientRect();
+          return (
+            Math.abs(svg.width - img.width) < 1 &&
+            Math.abs(svg.height - img.height) < 1 &&
+            Math.abs(svg.left - img.left) < 1 &&
+            Math.abs(svg.top - img.top) < 1
+          );
+        });
       expect(await canvasClipped()).toBe(false);
       expect(await pageScrolls()).toBe(false);
+      expect(await overlayMatchesImage()).toBe(true);
 
       // Switching to 1:1 must not clip or scroll the page either - the
       // wrapper around the image scrolls instead.
@@ -239,11 +254,20 @@ for (const [name, headerHeight] of [
       await editor.getByRole("option", { name: "Actual size (100%)" }).click();
       expect(await canvasClipped()).toBe(false);
       expect(await pageScrolls()).toBe(false);
+      expect(await overlayMatchesImage()).toBe(true);
       const wrapScrolls = await editor.evaluate(() => {
         const wrap = document.querySelector("#capture-viewport")!;
         return wrap.scrollWidth > wrap.clientWidth;
       });
       expect(wrapScrolls).toBe(true);
+
+      // The overlay must still cover the image exactly once scrolled - the
+      // part of the image only visible after scrolling must stay annotatable.
+      await editor.evaluate(() => {
+        const el = document.querySelector("#capture-viewport")!;
+        el.scrollLeft = el.scrollWidth;
+      });
+      expect(await overlayMatchesImage()).toBe(true);
 
       await editor.getByRole("combobox", { name: "Zoom" }).click();
       await editor.getByRole("option", { name: "Fit width" }).click();

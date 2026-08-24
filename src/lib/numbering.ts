@@ -17,6 +17,16 @@ export function pinRadius(imageWidth: number): number {
   return Math.min(28, Math.max(14, Math.round(imageWidth / 60)));
 }
 
+/**
+ * Scale factor for fixed-px-in-image-space affordances (resize handles, the
+ * inline comment editor) that are not annotation geometry, so they stay a
+ * sane on-screen size in fit mode instead of shrinking with the image.
+ * Same clamp curve as `pinRadius`, normalised to 1 at 1200px.
+ */
+export function canvasScale(imageWidth: number): number {
+  return pinRadius(imageWidth) / 20;
+}
+
 /** Where the pin sits: top-left corner of a box, the arrow tail, the text baseline start. */
 export function pinAnchor(annotation: Annotation): { x: number; y: number } {
   if (annotation.tool === "arrow") return { x: annotation.x1, y: annotation.y1 };

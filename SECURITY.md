@@ -21,7 +21,7 @@ justification:
 | `tabs`                         | Coordinate capture: query the active tab, focus the target tab, and open the editor/viewer. Uses tab/window ids only.                                                                                                                                                                                                                             |
 | `scripting`                    | Inject the capture helper that measures the page and drives scroll-and-stitch, and - when the user annotates - run a minimal, self-contained function in the page's own JavaScript world (`world: "MAIN"`) to read React component names. No extension state crosses into that world; only sanitised strings (one line, 50 chars each) come back. |
 | `storage` + `unlimitedStorage` | Persist share metadata in `chrome.storage.local` and large annotated images in IndexedDB without quota errors.                                                                                                                                                                                                                                    |
-| `downloads`                    | Save the annotated PNG to `Downloads/shotback/` and read back its on-disk path for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the path of the file it just created.                                                                                                                            |
+| `downloads`                    | Save the annotated PNG and its JSON sidecar to `Downloads/shotback/` and read back their on-disk paths for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the paths of the files it just created.                                                                                                  |
 | `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.                                                                                                                                                                                                                                        |
 
 `commands` (\_execute_action for `Alt+Shift+S`) is not a permission - it only binds a keyboard shortcut to the existing toolbar action.
@@ -80,8 +80,11 @@ to avoid running on every page load.
 - The extension makes no network requests of its own.
 - Data leaves the device only when the user explicitly uses the cloud LLM
   fallback (manual image download + clipboard paste). The "Copy for Claude Code"
-  action likewise only writes a PNG to `Downloads/shotback/` and copies a text
-  prompt to the clipboard - it makes no network request.
+  action likewise only writes a PNG and a JSON sidecar to `Downloads/shotback/`
+  and copies a text prompt to the clipboard - it makes no network request. The
+  sidecar carries the same page-derived data the prompt does (element
+  selectors, page text, failed-request URLs), in a file that stays on disk
+  until the user deletes it.
 
 ## Reporting a Vulnerability
 

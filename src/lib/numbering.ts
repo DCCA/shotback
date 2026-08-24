@@ -46,6 +46,35 @@ export function inspectAnchor(annotation: Annotation): { x: number; y: number } 
 }
 
 /**
+ * The rectangle an annotation occupies on the capture. Text has no measurable
+ * box here, so it is estimated from its length and drawn baseline.
+ */
+export function annotationBounds(annotation: Annotation): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (annotation.tool === "box") {
+    const { x, y, width, height } = annotation;
+    return { x, y, width, height };
+  }
+
+  if (annotation.tool === "arrow") {
+    const x = Math.min(annotation.x1, annotation.x2);
+    const y = Math.min(annotation.y1, annotation.y2);
+    return {
+      x,
+      y,
+      width: Math.abs(annotation.x2 - annotation.x1),
+      height: Math.abs(annotation.y2 - annotation.y1)
+    };
+  }
+
+  return { x: annotation.x, y: annotation.y - 18, width: annotation.text.length * 10, height: 22 };
+}
+
+/**
  * Human-readable position of an annotation in image px plus % of page, for
  * the prompt's per-annotation line. Pure so it can be unit tested apart from
  * the builders that call it.

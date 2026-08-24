@@ -121,10 +121,13 @@ export function buildExternalLlmPrompt(params: {
 /**
  * Build the prompt copied to the clipboard for a Claude Code session. Leads with
  * the saved file's path so Claude can read the image directly from disk (e.g. a
- * Windows Downloads path translated to its WSL `/mnt/...` equivalent).
+ * Windows Downloads path translated to its WSL `/mnt/...` equivalent), followed
+ * by the JSON sidecar written beside it when one was saved.
  */
 export function buildClaudeCodePrompt(params: {
   filePath: string;
+  /** Absolute path of the JSON sidecar; omitted when it could not be written. */
+  sidecarPath?: string;
   pageUrl: string;
   generalFeedback: string;
   annotations: Annotation[];
@@ -134,6 +137,9 @@ export function buildClaudeCodePrompt(params: {
 }): string {
   return [
     `Review this screenshot: ${params.filePath}`,
+    ...(params.sidecarPath
+      ? [`Machine-readable annotations (selectors, rects, diagnostics): ${params.sidecarPath}`]
+      : []),
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,
     ...contextLines(params.environment, params.diagnostics),

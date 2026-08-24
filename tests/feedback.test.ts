@@ -409,6 +409,33 @@ describe("buildClaudeCodePrompt", () => {
     expect(prompt).toContain("1. [box] fix padding");
   });
 
+  it("points at the JSON sidecar right after the image", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap-42.png",
+      sidecarPath: "/mnt/c/Downloads/shotback/cap-42.json",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")]
+    });
+
+    expect(prompt.split("\n").slice(0, 2)).toEqual([
+      "Review this screenshot: /mnt/c/Downloads/shotback/cap-42.png",
+      "Machine-readable annotations (selectors, rects, diagnostics): /mnt/c/Downloads/shotback/cap-42.json"
+    ]);
+  });
+
+  it("omits the sidecar line when no sidecar was written", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap-42.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")]
+    });
+
+    expect(prompt).not.toContain("Machine-readable annotations");
+    expect(prompt.split("\n")[1]).toBe("");
+  });
+
   it("names the element under each annotation when a context was captured", () => {
     const prompt = buildClaudeCodePrompt({
       filePath: "/mnt/c/Downloads/shotback/cap.png",

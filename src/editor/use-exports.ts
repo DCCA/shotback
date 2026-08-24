@@ -9,6 +9,7 @@ import {
   saveLocalShare,
   type LocalShareMeta
 } from "@/lib/localStore";
+import { buildSidecar } from "@/lib/sidecar";
 import { toClaudePath } from "@/lib/wslPath";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,6 +39,52 @@ export async function resolveDownloadPath(downloadId: number): Promise<string> {
   }
   const [item] = await chrome.downloads.search({ id: downloadId });
   return item?.state === "complete" ? (item.filename ?? "") : "";
+}
+
+/**
+ * Save one blob under `Downloads/<relativeName>` and resolve its absolute
+ * on-disk path ("" when Chrome never reported one). The object URL is revoked
+ * as soon as the download has been written.
+ */
+async function downloadBlob(blob: Blob, relativeName: string): Promise<string> {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const downloadId = await chrome.downloads.download({
+      url: objectUrl,
+      filename: relativeName,
+      conflictAction: "uniquify",
+      saveAs: false
+    });
+    return await resolveDownloadPath(downloadId);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * Write the JSON sidecar next to the PNG (same timestamp) and return the path
+ * the prompt should point at, "" when it could not be written. Best effort by
+ * design: the sidecar is an aid, so failing to save it costs the prompt its
+ * machine-readable line and nothing else.
+ */
+async function saveSidecar(state: EditorState, stamp: number, imagePath: string): Promise<string> {
+  try {
+    const sidecar = buildSidecar({
+      capturedAt: state.environment?.capturedAt ?? new Date(stamp).toISOString(),
+      pageUrl: state.pageUrl,
+      generalFeedback: state.generalFeedback,
+      annotations: state.annotations,
+      image: state.imageSize,
+      imagePath,
+      environment: state.environment,
+      diagnostics: state.diagnostics
+    });
+    const blob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
+    const absolutePath = await downloadBlob(blob, `shotback/cap-${stamp}.json`);
+    return absolutePath ? toClaudePath(absolutePath) : "";
+  } catch {
+    return "";
+  }
 }
 
 export interface EditorExports {
@@ -208,9 +255,10 @@ export function useExports(state: EditorState): EditorExports {
     }
   };
 
-  // Save the annotated image to Downloads/shotback and copy a Claude Code prompt
-  // that references the file by path - translating a Windows path to its WSL
-  // /mnt equivalent so a WSL session can read it directly. No network involved.
+  // Save the annotated image plus a JSON sidecar to Downloads/shotback and copy
+  // a Claude Code prompt that references both by path - translating a Windows
+  // path to its WSL /mnt equivalent so a WSL session can read them directly. No
+  // network involved.
   const copyForClaudeCode = async (): Promise<void> => {
     if (!state.baseDataUrl) {
       state.setStatus({
@@ -222,27 +270,21 @@ export function useExports(state: EditorState): EditorExports {
 
     state.setIsBusy(true);
     state.setStatus(null);
-    let objectUrl = "";
 
     try {
       const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
         generalFeedback: state.generalFeedback
       });
-      const blob = await (await fetch(merged)).blob();
-      objectUrl = URL.createObjectURL(blob);
-      const relativeName = `shotback/cap-${Date.now()}.png`;
+      const stamp = Date.now();
+      const imageName = `shotback/cap-${stamp}.png`;
 
-      const downloadId = await chrome.downloads.download({
-        url: objectUrl,
-        filename: relativeName,
-        conflictAction: "uniquify",
-        saveAs: false
-      });
+      const absolutePath = await downloadBlob(await (await fetch(merged)).blob(), imageName);
+      const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${imageName}`;
+      const sidecarPath = await saveSidecar(state, stamp, imageName);
 
-      const absolutePath = await resolveDownloadPath(downloadId);
-      const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${relativeName}`;
       const prompt = buildClaudeCodePrompt({
         filePath,
+        sidecarPath: sidecarPath || undefined,
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
         annotations: state.annotations,
@@ -252,18 +294,21 @@ export function useExports(state: EditorState): EditorExports {
       });
       await navigator.clipboard.writeText(prompt);
 
-      state.setStatus(
+      const problems = [
         absolutePath
+          ? ""
+          : "the image's full path could not be resolved, so the prompt carries a relative one",
+        sidecarPath ? "" : "the JSON sidecar could not be saved, so the prompt does not link one"
+      ].filter(Boolean);
+
+      state.setStatus(
+        problems.length === 0
           ? {
               kind: "success",
               message:
-                "Copied a Claude Code prompt with the image's path. Paste it into your session."
+                "Copied a Claude Code prompt with the image and JSON paths. Paste it into your session."
             }
-          : {
-              kind: "error",
-              message:
-                "Image saved to Downloads/shotback, but its full path could not be resolved. Copied a prompt with the relative path — fix it if your Claude session needs an absolute path."
-            }
+          : { kind: "error", message: `Prompt copied, but ${problems.join(", and ")}.` }
       );
     } catch (error) {
       state.setStatus({
@@ -271,7 +316,6 @@ export function useExports(state: EditorState): EditorExports {
         message: error instanceof Error ? error.message : "Failed to copy for Claude Code"
       });
     } finally {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
       state.setIsBusy(false);
     }
   };

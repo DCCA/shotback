@@ -43,7 +43,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🤖 **External LLM fallback**:
   - downloads annotated image
   - copies a structured prompt to clipboard
-- 🧑‍💻 **Copy for Claude Code** - saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
+- 🧑‍💻 **Copy for Claude Code** - saves the PNG **and a JSON sidecar** to `Downloads/shotback/` and copies a prompt referencing both by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read them directly
 - 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
 - 🩺 **Diagnostics** - both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
@@ -77,7 +77,7 @@ npm run build
 4. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
-   - **Copy for Claude Code** saves the PNG to `Downloads/shotback/` and copies a prompt that points to the file by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read it directly
+   - **Copy for Claude Code** saves the PNG and a JSON sidecar to `Downloads/shotback/` and copies a prompt that points to both by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read them directly - see [Use with Claude Code](#-use-with-claude-code)
    - **Copy Image** puts the annotated PNG on the clipboard - paste it straight into an agent chat
 
    Both prompt outputs include an **Environment** block describing the captured
@@ -114,6 +114,39 @@ npm run build
    code running in every page's own world on every page load, which is a
    deliberate trade Shotback has not made - see [`SECURITY.md`](SECURITY.md).
    Paste the console output yourself if an agent needs it.
+
+## 🧑‍💻 Use with Claude Code
+
+**Copy for Claude Code** writes two files with the same timestamp and copies a
+prompt that names both:
+
+```text
+Downloads/shotback/cap-1756052403118.png    the annotated capture
+Downloads/shotback/cap-1756052403118.json   the same review as data
+```
+
+```text
+Review this screenshot: /mnt/c/Users/you/Downloads/shotback/cap-1756052403118.png
+Machine-readable annotations (selectors, rects, diagnostics): /mnt/c/Users/you/Downloads/shotback/cap-1756052403118.json
+...
+```
+
+Paste that into your session and the agent can read the annotations instead of
+guessing at pixels. The sidecar is `version: 1` and carries, per annotation, the
+number drawn on the image, its comment, its `rect` in image px, a
+`normalizedRect` (0..1 of the capture) and the element it covers - CSS path,
+React component chain, `data-testid`, visible text - plus the capture
+environment, the page's failed requests and the image's relative path.
+
+For a repeatable workflow, copy [`skills/shotback/SKILL.md`](skills/shotback/SKILL.md)
+into your project's `.claude/skills/shotback/`. It tells the agent to read the
+sidecar first, find the source from the selectors and component names rather
+than from the image, treat `normalizedRect` as layout position, fold the
+diagnostics into the fix, and open the PNG only when the selectors are
+ambiguous.
+
+The sidecar is best effort: if it cannot be written, the prompt still copies -
+without the machine-readable line - and the status says so.
 
 ## 📁 Project Structure
 

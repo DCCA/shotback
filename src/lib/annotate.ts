@@ -1,3 +1,4 @@
+import { clampCrop, type Rect } from "@/lib/crop";
 import { noteText } from "@/lib/feedback";
 import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
@@ -293,10 +294,18 @@ function drawNotesOverlay(params: {
   });
 }
 
+/**
+ * Rasterize the annotations onto the capture and return a PNG data URL.
+ *
+ * With `crop`, only that region of the capture is drawn, onto a canvas sized
+ * to it. The annotations are drawn exactly as given: shifting them into crop
+ * space is `applyCrop`'s job, done once by the caller so the image, the
+ * prompts and the sidecar all describe the same list.
+ */
 export async function exportAnnotatedImage(
   baseDataUrl: string,
   annotations: Annotation[],
-  options?: { generalFeedback?: string }
+  options?: { generalFeedback?: string; crop?: Rect }
 ): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image();
@@ -306,17 +315,24 @@ export async function exportAnnotatedImage(
   });
 
   const generalFeedback = options?.generalFeedback?.trim() ?? "";
+  // The region of the capture this export shows: the whole image, or the crop
+  // clamped to what the capture actually has. Everything below sizes off
+  // `size`, not off the loaded image.
+  const source: Rect = options?.crop
+    ? clampCrop(options.crop, img)
+    : { x: 0, y: 0, width: img.width, height: img.height };
+  const size = { width: source.width, height: source.height };
 
   const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
+  canvas.width = size.width;
+  canvas.height = size.height;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to create canvas context");
 
-  const layout = notesLayout(img.width);
-  const overlayCardWidth = Math.min(Math.max(260, img.width * 0.48), img.width - 24);
-  const footerTextWidth = Math.max(200, img.width - layout.padding * 2 - layout.gutter);
+  const layout = notesLayout(size.width);
+  const overlayCardWidth = Math.min(Math.max(260, size.width * 0.48), size.width - 24);
+  const footerTextWidth = Math.max(200, size.width - layout.padding * 2 - layout.gutter);
 
   let rows = buildNoteRows({
     ctx,
@@ -330,13 +346,13 @@ export async function exportAnnotatedImage(
     rows.length === 0
       ? "footer"
       : selectFeedbackRenderMode({
-          imageWidth: img.width,
-          imageHeight: img.height,
+          imageWidth: size.width,
+          imageHeight: size.height,
           footerHeight
         });
 
   if (rows.length > 0 && renderMode === "footer") {
-    canvas.height = img.height + footerHeight;
+    canvas.height = size.height + footerHeight;
   }
 
   if (renderMode === "overlay") {
@@ -350,9 +366,19 @@ export async function exportAnnotatedImage(
     });
   }
 
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(
+    img,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    0,
+    0,
+    source.width,
+    source.height
+  );
 
-  const r = pinRadius(img.width);
+  const r = pinRadius(size.width);
   const shapeLineWidth = Math.max(3, Math.round(r / 5));
 
   for (const { n, annotation } of numberAnnotations(annotations)) {
@@ -382,7 +408,7 @@ export async function exportAnnotatedImage(
       ctx.fillText(annotation.text, annotation.x + r * 1.4, annotation.y);
     }
 
-    const center = pinCenter(annotation, r, img);
+    const center = pinCenter(annotation, r, size);
     drawPin(ctx, n, center.x, center.y, r, annotation.color);
   }
 
@@ -391,7 +417,7 @@ export async function exportAnnotatedImage(
       drawNotesFooter({
         ctx,
         canvas,
-        imageHeight: img.height,
+        imageHeight: size.height,
         footerHeight,
         rows,
         layout
@@ -399,8 +425,8 @@ export async function exportAnnotatedImage(
     } else {
       drawNotesOverlay({
         ctx,
-        imageWidth: img.width,
-        imageHeight: img.height,
+        imageWidth: size.width,
+        imageHeight: size.height,
         cardWidth: overlayCardWidth,
         rows,
         layout

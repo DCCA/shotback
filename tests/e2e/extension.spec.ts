@@ -195,6 +195,16 @@ async function waitForInspection(editor: Page, previous: number): Promise<void> 
   await expect.poll(() => inspectGen(editor), { timeout: 10_000 }).toBeGreaterThan(previous);
 }
 
+/** The x/y/width/height of an SVG rect, in the canvas's image-px coordinate space. */
+async function rectOf(
+  locator: Locator
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const [x, y, width, height] = await Promise.all(
+    ["x", "y", "width", "height"].map(async (name) => Number(await locator.getAttribute(name)))
+  );
+  return { x, y, width, height };
+}
+
 /**
  * Draw a box over the fixture's CTA button. `top` is the header band above the
  * scroller on the stitched image, so the same call works for the document
@@ -557,7 +567,11 @@ for (const [name, headerHeight] of [
       await editor.mouse.up();
       await waitForInspection(editor, inspectedBeforeMove);
       await copyCloudPrompt(editor);
-      expect(await readClipboard(editor)).toContain("button.cta");
+      const uncroppedPrompt = await readClipboard(editor);
+      expect(uncroppedPrompt).toContain("button.cta");
+      // The placed text annotation is in the prompt while nothing is cropped;
+      // it sits well outside the crop drawn below, so it must vanish from it.
+      expect(uncroppedPrompt).toContain("[text]");
 
       // The Claude Code handoff writes a JSON sidecar beside the PNG, so an
       // agent can read the annotations instead of pixel-hunting in the image.
@@ -587,6 +601,83 @@ for (const [name, headerHeight] of [
           a.context?.cssPath === "#app > section.hero > button.cta"
       );
       expect(onCta).toBeTruthy();
+
+      // Crop: every output describes the crop region instead of the whole
+      // capture. Annotations are stored uncropped and shifted only on the way
+      // out, so the element context read from the live tab is untouched.
+      const ctaBox = editor.locator("#capture-viewport svg > g").nth(2).locator("rect").first();
+      const ctaBefore = await rectOf(ctaBox);
+
+      const naturalPx = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+      const shownBox = (await img.boundingBox())!;
+      const scale = shownBox.width / naturalPx;
+      const onScreen = (px: number, py: number) => ({
+        x: shownBox.x + px * scale,
+        y: shownBox.y + py * scale
+      });
+
+      // The documented path: annotate, then pick Crop and drag. No Interaction
+      // switch here on purpose - the editor is in move mode after the last
+      // commit, and picking Crop must put it back into draw mode by itself.
+      await editor.getByRole("combobox", { name: "Tool" }).click();
+      await editor.getByRole("option", { name: "Crop" }).click();
+
+      // Dragged bottom-right to top-left, so the marquee is normalised too.
+      const cropFrom = onScreen(
+        ctaBefore.x + ctaBefore.width + 120,
+        ctaBefore.y + ctaBefore.height + 120
+      );
+      const cropTo = onScreen(ctaBefore.x - 24, ctaBefore.y - 30);
+      await editor.mouse.move(cropFrom.x, cropFrom.y);
+      await editor.mouse.down();
+      await editor.mouse.move(cropTo.x, cropTo.y, { steps: 5 });
+      await editor.mouse.up();
+
+      // A marquee is not an annotation: no timeline row, no pin, no history.
+      await expect(rows).toHaveCount(3);
+      await editor.getByRole("button", { name: "Apply crop" }).click();
+      const cropRect = await rectOf(editor.locator("#crop-region"));
+      // Only the CTA box is inside the crop; the sidebar says what it costs.
+      await expect(editor.getByText("outside the crop")).toContainText(
+        "2 annotations outside the crop are excluded from exports"
+      );
+
+      await copyCloudPrompt(editor);
+      const croppedPrompt = await readClipboard(editor);
+      // The CTA box now reports where it sits *in the crop*, not on the page.
+      expect(croppedPrompt).toContain(
+        `at (${Math.round(ctaBefore.x - cropRect.x)}, ${Math.round(ctaBefore.y - cropRect.y)}) ` +
+          `size ${Math.round(ctaBefore.width)}x${Math.round(ctaBefore.height)} px`
+      );
+      // Contexts are read in capture space and are not touched by a crop.
+      expect(croppedPrompt).toContain("-> #app > section.hero > button.cta");
+      // The text annotation is outside the crop, so it is gone from the list.
+      expect(croppedPrompt).not.toContain("[text]");
+
+      // The saved share carries the cropped image: its width is exactly the
+      // crop's, and its height is the crop plus the notes legend footer drawn
+      // under it - nothing like the full capture.
+      await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+        "Local share link generated"
+      );
+      const shareHref = (await editor.locator("a[href*='viewer.html']").getAttribute("href"))!;
+      const viewer = await ctx.newPage();
+      await viewer.goto(shareHref);
+      const shared = viewer.locator("img[alt='Annotated share']");
+      await expect(shared).toHaveJSProperty("complete", true, { timeout: 15_000 });
+      const sharedSize = await shared.evaluate((el) => ({
+        width: (el as HTMLImageElement).naturalWidth,
+        height: (el as HTMLImageElement).naturalHeight
+      }));
+      expect(sharedSize.width).toBe(cropRect.width);
+      expect(sharedSize.height).toBeGreaterThanOrEqual(cropRect.height);
+      expect(sharedSize.height).toBeLessThan(result.height);
+      await viewer.close();
+
+      // Clearing the crop puts the whole capture back.
+      await editor.getByRole("button", { name: "Clear", exact: true }).click();
+      await expect(editor.locator("#crop-region")).toHaveCount(0);
     }
 
     await editor.close();

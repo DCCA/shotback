@@ -56,8 +56,11 @@ function normalizeRect(rect: SidecarRect, image: { width: number; height: number
 
 /**
  * Pure; every value comes from the caller so the whole sidecar is unit
- * testable. Numbering is `numberAnnotations`, so the JSON, the prompt, the
- * pins and the timeline cannot disagree about which annotation is which.
+ * testable. Numbering is `numberAnnotations`, so the JSON, the prompt and the
+ * pins on the same export cannot disagree about which annotation is which -
+ * they are all built from the one list the caller passes. With a crop active
+ * that list is the one `applyCrop` kept, so the editor's timeline (which
+ * numbers the full list) can legitimately number the same annotation higher.
  */
 export function buildSidecar(params: {
   capturedAt: string;

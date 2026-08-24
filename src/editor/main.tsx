@@ -53,6 +53,10 @@ function EditorApp(): JSX.Element {
     state.setEnvironment(undefined);
     state.setDiagnostics(undefined);
     state.resetAnnotations();
+    // A crop is a region of the capture that is about to be replaced, so it
+    // cannot outlive it - nor can a marquee drawn on the old one.
+    state.setCrop(null);
+    state.setCropDraft(null);
     state.setSelectedId(null);
     state.setGeneralFeedback("");
 

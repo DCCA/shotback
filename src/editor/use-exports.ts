@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { EditorState } from "@/editor/use-editor-state";
 import { exportAnnotatedImage } from "@/lib/annotate";
+import { applyCrop, clampCrop, type Rect } from "@/lib/crop";
 import { buildClaudeCodePrompt, buildExternalLlmPrompt } from "@/lib/feedback";
 import {
   buildLocalShareUrl,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/localStore";
 import { buildSidecar } from "@/lib/sidecar";
 import { toClaudePath } from "@/lib/wslPath";
+import type { Annotation } from "@/types/annotation";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -23,6 +25,31 @@ function promptImage(imageSize: {
   height: number;
 }): { width: number; height: number } | undefined {
   return imageSize.width > 1 ? imageSize : undefined;
+}
+
+/**
+ * What every output renders. Annotations are stored in capture space and only
+ * shifted here, once, so the exported image, both prompts, the JSON sidecar
+ * and a saved share always describe the same picture: with no crop, the whole
+ * capture; with one, the crop region, the annotations `applyCrop` kept, and
+ * the crop's own size wherever an image size is reported.
+ */
+interface ExportView {
+  annotations: Annotation[];
+  /** Passed to `exportAnnotatedImage`; absent when the whole capture is exported. */
+  crop?: Rect;
+  image: { width: number; height: number };
+}
+
+function exportView(state: EditorState): ExportView {
+  if (!state.crop) return { annotations: state.annotations, image: state.imageSize };
+
+  const crop = clampCrop(state.crop, state.imageSize);
+  return {
+    annotations: applyCrop(state.annotations, crop),
+    crop,
+    image: { width: crop.width, height: crop.height }
+  };
 }
 
 /**
@@ -67,14 +94,19 @@ async function downloadBlob(blob: Blob, relativeName: string): Promise<string> {
  * design: the sidecar is an aid, so failing to save it costs the prompt its
  * machine-readable line and nothing else.
  */
-async function saveSidecar(state: EditorState, stamp: number, imagePath: string): Promise<string> {
+async function saveSidecar(
+  state: EditorState,
+  view: ExportView,
+  stamp: number,
+  imagePath: string
+): Promise<string> {
   try {
     const sidecar = buildSidecar({
       capturedAt: state.environment?.capturedAt ?? new Date(stamp).toISOString(),
       pageUrl: state.pageUrl,
       generalFeedback: state.generalFeedback,
-      annotations: state.annotations,
-      image: state.imageSize,
+      annotations: view.annotations,
+      image: view.image,
       imagePath,
       environment: state.environment,
       diagnostics: state.diagnostics
@@ -126,12 +158,14 @@ export function useExports(state: EditorState): EditorExports {
     state.setStatus(null);
 
     try {
-      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
-        generalFeedback: state.generalFeedback
+      const view = exportView(state);
+      const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+        generalFeedback: state.generalFeedback,
+        crop: view.crop
       });
       const share = await saveLocalShare({
         imageDataUrl: merged,
-        annotations: state.annotations,
+        annotations: view.annotations,
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
         environment: state.environment
@@ -178,8 +212,10 @@ export function useExports(state: EditorState): EditorExports {
     state.setStatus(null);
 
     try {
-      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
-        generalFeedback: state.generalFeedback
+      const view = exportView(state);
+      const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+        generalFeedback: state.generalFeedback,
+        crop: view.crop
       });
       const a = document.createElement("a");
       a.href = merged;
@@ -207,8 +243,10 @@ export function useExports(state: EditorState): EditorExports {
     state.setStatus(null);
 
     try {
-      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
-        generalFeedback: state.generalFeedback
+      const view = exportView(state);
+      const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+        generalFeedback: state.generalFeedback,
+        crop: view.crop
       });
       const blob = await (await fetch(merged)).blob();
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -239,16 +277,18 @@ export function useExports(state: EditorState): EditorExports {
     state.setStatus(null);
 
     try {
-      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
-        generalFeedback: state.generalFeedback
+      const view = exportView(state);
+      const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+        generalFeedback: state.generalFeedback,
+        crop: view.crop
       });
       const prompt = buildExternalLlmPrompt({
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
-        annotations: state.annotations,
+        annotations: view.annotations,
         environment: state.environment,
         diagnostics: state.diagnostics,
-        image: promptImage(state.imageSize),
+        image: promptImage(view.image),
         verbosity: state.promptVerbosity
       });
 
@@ -287,25 +327,27 @@ export function useExports(state: EditorState): EditorExports {
     state.setStatus(null);
 
     try {
-      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
-        generalFeedback: state.generalFeedback
+      const view = exportView(state);
+      const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+        generalFeedback: state.generalFeedback,
+        crop: view.crop
       });
       const stamp = Date.now();
       const imageName = `shotback/cap-${stamp}.png`;
 
       const absolutePath = await downloadBlob(await (await fetch(merged)).blob(), imageName);
       const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${imageName}`;
-      const sidecarPath = await saveSidecar(state, stamp, imageName);
+      const sidecarPath = await saveSidecar(state, view, stamp, imageName);
 
       const prompt = buildClaudeCodePrompt({
         filePath,
         sidecarPath: sidecarPath || undefined,
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
-        annotations: state.annotations,
+        annotations: view.annotations,
         environment: state.environment,
         diagnostics: state.diagnostics,
-        image: promptImage(state.imageSize),
+        image: promptImage(view.image),
         verbosity: state.promptVerbosity
       });
       await navigator.clipboard.writeText(prompt);

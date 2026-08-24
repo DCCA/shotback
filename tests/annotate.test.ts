@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { exportAnnotatedImage, selectFeedbackRenderMode } from "../src/lib/annotate";
+import { applyCrop, type Rect } from "../src/lib/crop";
 import type { ArrowAnnotation, BoxAnnotation } from "../src/types/annotation";
 
 describe("selectFeedbackRenderMode", () => {
@@ -67,15 +68,19 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: RecordedCal
   return { ctx, calls };
 }
 
-function stubCanvasAndImage(calls: RecordedCall[], ctx: CanvasRenderingContext2D): void {
-  vi.stubGlobal("document", {
-    createElement: () => ({
-      width: 0,
-      height: 0,
-      getContext: () => ctx,
-      toDataURL: () => "data:x"
-    })
-  });
+/** Returns the single canvas stub every `createElement` hands back, so its size can be asserted. */
+function stubCanvasAndImage(
+  calls: RecordedCall[],
+  ctx: CanvasRenderingContext2D
+): { width: number; height: number } {
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => ctx,
+    toDataURL: () => "data:x"
+  };
+
+  vi.stubGlobal("document", { createElement: () => canvas });
 
   vi.stubGlobal(
     "Image",
@@ -91,6 +96,7 @@ function stubCanvasAndImage(calls: RecordedCall[], ctx: CanvasRenderingContext2D
   );
 
   calls.length = 0;
+  return canvas;
 }
 
 function box(comment: string): BoxAnnotation {
@@ -216,5 +222,65 @@ describe("exportAnnotatedImage pins", () => {
       [20, 20],
       [1180, 780]
     ]);
+  });
+});
+
+describe("exportAnnotatedImage crop", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const crop: Rect = { x: 100, y: 200, width: 600, height: 400 };
+
+  it("draws only the crop source rect onto a crop-sized canvas", async () => {
+    const { ctx, calls } = recordingContext();
+    const canvas = stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", applyCrop([box("hi")], crop), { crop });
+
+    const [draw] = calls.filter((call) => call.name === "drawImage");
+    expect(draw.args.slice(1)).toEqual([100, 200, 600, 400, 0, 0, 600, 400]);
+    expect(canvas.width).toBe(600);
+    // 400px of image plus the notes footer below it.
+    expect(canvas.height).toBeGreaterThan(400);
+  });
+
+  it("pins the annotations it is given, already in crop space", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", applyCrop([box("hi"), arrow("there")], crop), { crop });
+
+    // pinRadius(600) === 14; the box lands on the crop origin, so its pin is
+    // pulled inside by its own radius, and the arrow tail shifts by the origin.
+    const pins = calls.filter((call) => call.name === "arc" && call.args[2] === 14);
+    expect(pins.map((call) => [call.args[0], call.args[1]])).toEqual([
+      [14, 14],
+      [200, 200]
+    ]);
+  });
+
+  it("clamps a crop that runs past the image bounds", async () => {
+    const { ctx, calls } = recordingContext();
+    const canvas = stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [], { crop: { x: 1100, y: 700, width: 400, height: 400 } });
+
+    const [draw] = calls.filter((call) => call.name === "drawImage");
+    expect(draw.args.slice(1)).toEqual([800, 400, 400, 400, 0, 0, 400, 400]);
+    expect(canvas.width).toBe(400);
+    expect(canvas.height).toBe(400);
+  });
+
+  it("draws the whole image when no crop is given", async () => {
+    const { ctx, calls } = recordingContext();
+    const canvas = stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", []);
+
+    const [draw] = calls.filter((call) => call.name === "drawImage");
+    expect(draw.args.slice(1)).toEqual([0, 0, 1200, 800, 0, 0, 1200, 800]);
+    expect(canvas.width).toBe(1200);
+    expect(canvas.height).toBe(800);
   });
 });

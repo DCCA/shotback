@@ -33,6 +33,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 
 - ⚡ **One-click capture** — clicking the toolbar icon opens the editor and captures immediately (no popup, no second click)
 - 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
+- 🔍 **Fit-to-width by default**, with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
 - ✏️ **Area annotations**: box, arrow, text
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove

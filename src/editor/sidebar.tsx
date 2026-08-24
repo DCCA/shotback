@@ -32,6 +32,8 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     setInteractionMode,
     color,
     setColor,
+    zoom,
+    setZoom,
     generalFeedback,
     setGeneralFeedback,
     status,
@@ -89,6 +91,24 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
               { value: "box", label: "Box" },
               { value: "arrow", label: "Arrow" },
               { value: "text", label: "Text" }
+            ]}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <span
+            id="zoom-label"
+            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Zoom
+          </span>
+          <Select
+            aria-labelledby="zoom-label"
+            value={zoom}
+            onValueChange={(value) => setZoom(value as "fit" | "actual")}
+            options={[
+              { value: "fit", label: "Fit width" },
+              { value: "actual", label: "Actual size (100%)" }
             ]}
           />
         </div>

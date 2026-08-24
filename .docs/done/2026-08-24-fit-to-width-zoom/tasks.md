@@ -1,0 +1,26 @@
+# Tasks: Fit-to-Width and 1:1 Zoom
+
+- [x] **1. Write the failing e2e test**
+  - [x] 1.1 In the `inner` full-page-capture test, at a viewport narrower than the real capture: assert the canvas `Card` is not clipping the image (`card.scrollWidth <= card.clientWidth`) and the page itself never scrolls sideways (`document.documentElement.scrollWidth <= clientWidth`).
+  - [x] 1.2 Switch the new "Zoom" select to `Actual size (100%)`; assert neither the `Card` nor the page clip/scroll, and that the canvas's own scrollport (`#capture-viewport`) does scroll (`scrollWidth > clientWidth`).
+- [x] **2. Run it to verify it fails**
+  - [x] 2.1 RED: `expect(await canvasClipped()).toBe(false)` fails - `card.scrollWidth` (798) > `card.clientWidth` (651) at the narrower viewport, because `max-w-none` never shrinks the image and the `Card`'s `overflow-hidden` silently clips it instead of scrolling.
+- [x] **3. Add `zoom` state**
+  - [x] 3.1 `EditorState.zoom: "fit" | "actual"` + `setZoom`, default `"fit"`, in `use-editor-state.ts`.
+- [x] **4. Fix the canvas sizing**
+  - [x] 4.1 `<img>` className switches on `zoom`: `block h-auto w-full max-w-full` (fit) vs `block h-auto max-w-none` (actual).
+  - [x] 4.2 Restructure the wrapper into an outer scrollport (`#capture-viewport`, `w-full overflow-auto`) and an inner sizing wrapper (`relative`, `block w-full` in fit / `inline-block` in actual) holding the `<img>` and the SVG overlay.
+    - Discovered mid-implementation: a single wrapper (as first drafted) breaks the SVG overlay in actual mode. The SVG is sized by CSS percentage (`h-full w-full`) against its positioned ancestor; if that ancestor is the scrollport itself, the SVG is clipped to the *visible* pane width, not the image's real width, so pointer hit-testing silently misses the part of the image only reachable by scrolling (reproduced: drawing a box near the visible right edge after scrolling created 0 annotations). Nesting an inner wrapper that shrink-wraps to the image's actual rendered box (`inline-block` in actual mode) restores the invariant that the SVG always matches the image exactly. Confirmed the fix with a scripted repro (scroll right, draw near the edge, 1 annotation now created; also confirmed the previous bug reproduced as 0).
+- [x] **5. Sidebar Zoom select**
+  - [x] 5.1 `Select` labelled "Zoom" (`aria-labelledby`, same styling as "Tool"), options `Fit width` (`fit`) / `Actual size (100%)` (`actual`), placed after the Tool select.
+- [x] **6. Run e2e + gate, verify overlay alignment, screenshot**
+  - [x] 6.1 `npm run test:e2e` - 6/6 green.
+  - [x] 6.2 `npm run check` (typecheck, lint, 81 unit tests, build) - green.
+  - [x] 6.3 `npm run format:check` - green.
+  - [x] 6.4 `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` - zero hits.
+  - [x] 6.5 Fit-mode corner-placement check: drew a box at the image's top-right corner in fit mode via a scripted repro; the resulting image-space rect landed within 6px of the true edge (matching the drag's own 20px starting inset from the corner) - overlay is pixel-aligned.
+  - [x] 6.6 Screenshots at 1280px and 1920px wide (fit) and 1280px (actual) in `.superpowers/sdd/2026-08-23-fix-it-all-plan/task-8-shots/`.
+- [x] **7. Docs**
+  - [x] 7.1 `.docs/done/2026-08-24-fit-to-width-zoom/` (this folder).
+  - [x] 7.2 README features list mentions fit-to-width default + 1:1 toggle.
+- [x] **8. Commit, push, PR**

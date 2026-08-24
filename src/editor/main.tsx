@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  annotationCommentAnchor,
+  formatBytes,
+  moveAnnotation,
+  shareLabel,
+  uid
+} from "@/editor/annotation-geometry";
 import { exportAnnotatedImage } from "@/lib/annotate";
 import {
   applyBoxResizeDelta,
@@ -72,55 +79,6 @@ interface ResizeState {
 const RESIZE_HANDLE_SIZE = 9;
 const RESIZE_HANDLE_HIT_SIZE = 16;
 const MIN_RESIZE_BOX_SIZE = 8;
-
-function uid(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function moveAnnotation(annotation: Annotation, dx: number, dy: number): Annotation {
-  if (annotation.tool === "box") {
-    return { ...annotation, x: annotation.x + dx, y: annotation.y + dy };
-  }
-
-  if (annotation.tool === "arrow") {
-    return {
-      ...annotation,
-      x1: annotation.x1 + dx,
-      y1: annotation.y1 + dy,
-      x2: annotation.x2 + dx,
-      y2: annotation.y2 + dy
-    };
-  }
-
-  return { ...annotation, x: annotation.x + dx, y: annotation.y + dy };
-}
-
-function annotationCommentAnchor(annotation: Annotation): { x: number; y: number } | null {
-  if (annotation.tool === "box") {
-    return { x: annotation.x, y: annotation.y };
-  }
-
-  if (annotation.tool === "arrow") {
-    return { x: Math.min(annotation.x1, annotation.x2), y: Math.min(annotation.y1, annotation.y2) };
-  }
-
-  return { x: annotation.x, y: annotation.y };
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(0)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
-}
-
-function shareLabel(pageUrl: string): string {
-  try {
-    return new URL(pageUrl).hostname || pageUrl;
-  } catch {
-    return pageUrl || "(unknown page)";
-  }
-}
 
 function EditorApp(): JSX.Element {
   const search = new URLSearchParams(window.location.search);

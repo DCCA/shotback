@@ -20,6 +20,12 @@
       "128": "icons/icon128.png"
     }
   },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Alt+Shift+S" },
+      "description": "Capture the current page with Shotback"
+    }
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

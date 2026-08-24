@@ -24,6 +24,8 @@ justification:
 | `downloads`                    | Save the annotated PNG to `Downloads/shotback/` and read back its on-disk path for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the path of the file it just created. |
 | `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.                                                                                                             |
 
+`commands` (\_execute_action for `Alt+Shift+S`) is not a permission - it only binds a keyboard shortcut to the existing toolbar action.
+
 Access to page content is exercised **only at user-initiated capture time**, not
 in the background.
 
@@ -45,7 +47,7 @@ to avoid running on every page load.
 - Data leaves the device only when the user explicitly uses the cloud LLM
   fallback (manual image download + clipboard paste). The "Copy for Claude Code"
   action likewise only writes a PNG to `Downloads/shotback/` and copies a text
-  prompt to the clipboard — it makes no network request.
+  prompt to the clipboard - it makes no network request.
 
 ## Reporting a Vulnerability
 

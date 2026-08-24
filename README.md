@@ -36,6 +36,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - ✏️ **Area annotations**: box, arrow, text
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
+- ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) — sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
 - 💬 **General feedback** for screenshot-level notes
 - 🔐 **Local share links** (`chrome-extension://.../viewer.html?share=...`)
 - 🤖 **External LLM fallback**:
@@ -68,7 +69,7 @@ npm run build
 
 1. **Open** a target webpage.
 2. **Click** the Shotback extension icon — the editor opens and captures the page automatically.
-3. **Draw** annotations and add comments.
+3. **Draw** annotations and add comments. Undo or redo any step with the sidebar buttons or `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z`.
 4. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)

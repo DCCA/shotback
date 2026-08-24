@@ -20,9 +20,12 @@ interface SidebarProps {
 export function Sidebar({ state, exports, onCapture, children }: SidebarProps): JSX.Element {
   const {
     annotations,
-    setAnnotations,
+    undoAnnotations,
+    redoAnnotations,
+    canUndo,
+    canRedo,
+    removeAnnotation,
     selectedId,
-    setSelectedId,
     tool,
     setTool,
     interactionMode,
@@ -37,16 +40,8 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     progress
   } = state;
 
-  const removeLast = (): void => {
-    const removed = annotations[annotations.length - 1];
-    setAnnotations((prev) => prev.slice(0, -1));
-    if (removed && selectedId === removed.id) setSelectedId(null);
-  };
-
   const removeSelected = (): void => {
-    if (!selectedId) return;
-    setAnnotations((prev) => prev.filter((item) => item.id !== selectedId));
-    setSelectedId(null);
+    if (selectedId) removeAnnotation(selectedId);
   };
 
   return (
@@ -128,13 +123,22 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd> to
           deselect and{" "}
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Del</kbd> to remove
-          the selected item.
+          the selected item.{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Z</kbd> undoes
+          and{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Shift+Z</kbd>{" "}
+          redoes.
         </p>
 
         <div className="grid grid-cols-1 gap-2">
-          <Button variant="secondary" disabled={!baseDataUrl || isBusy} onClick={removeLast}>
-            Undo Last Change
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" disabled={!canUndo || isBusy} onClick={undoAnnotations}>
+              Undo
+            </Button>
+            <Button variant="secondary" disabled={!canRedo || isBusy} onClick={redoAnnotations}>
+              Redo
+            </Button>
+          </div>
           <Button variant="destructive" disabled={!selectedId || isBusy} onClick={removeSelected}>
             Delete Selected Item
           </Button>

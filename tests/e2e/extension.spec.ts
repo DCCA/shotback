@@ -227,6 +227,32 @@ for (const [name, headerHeight] of [
         return card.scrollWidth - card.clientWidth;
       });
       expect(overflow).toBe(0);
+
+      // Undo/redo: a drag is one history entry, so Ctrl+Z puts the box back
+      // where it was drawn and Ctrl+Shift+Z moves it again.
+      const canvas = (await img.boundingBox())!;
+      await editor.mouse.move(canvas.x + 60, canvas.y + 60);
+      await editor.mouse.down();
+      await editor.mouse.move(canvas.x + 220, canvas.y + 180, { steps: 5 });
+      await editor.mouse.up();
+
+      const rect = editor.locator("svg > g > rect").first();
+      const originalX = (await rect.getAttribute("x"))!;
+
+      await editor.getByRole("combobox", { name: "Interaction" }).click();
+      await editor.getByRole("option", { name: "Move Existing" }).click();
+
+      await editor.mouse.move(canvas.x + 140, canvas.y + 120);
+      await editor.mouse.down();
+      await editor.mouse.move(canvas.x + 190, canvas.y + 120, { steps: 5 });
+      await editor.mouse.up();
+      const movedX = (await rect.getAttribute("x"))!;
+      expect(Number(movedX)).toBeGreaterThan(Number(originalX));
+
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
+      await editor.keyboard.press("Control+Shift+z");
+      await expect(rect).toHaveAttribute("x", movedX);
     }
 
     await editor.close();

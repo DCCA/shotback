@@ -1,0 +1,26 @@
+# Tasks: Real Undo/Redo
+
+- [x] **1. Failing unit test**
+  - [x] 1.1 `tests/history.test.ts`: undo/redo round trip, a new commit clears the redo stack, undo at the start and redo at the end are no-ops, the limit drops the oldest entry.
+- [x] **2. Run it to verify it fails**
+  - [x] 2.1 RED: `Error: Cannot find module '../src/lib/history'`.
+- [x] **3. Implement `src/lib/history.ts`**
+  - [x] 3.1 `createHistory`, `commit` (no-op on the same reference, default limit 100), `undo`, `redo` - all returning the same object when there is nothing to do.
+  - [x] 3.2 GREEN: `npx vitest run tests/history.test.ts` - 4 passed.
+- [x] **4. Failing e2e**
+  - [x] 4.1 In the `inner` capture test: draw a box, switch the Interaction select to "Move Existing", drag the box 50 px right, `Control+z`, assert the `rect`'s `x` is back to the drawn value, `Control+Shift+z`, assert it moved again.
+  - [x] 4.2 RED: `expect(locator).toHaveAttribute` - expected `"60"`, received `"110"` (the drag worked, Ctrl+Z did nothing).
+- [x] **5. Wire the history into the editor**
+  - [x] 5.1 `use-editor-state.ts`: `history` state, `commitAnnotations(next?)` (defaults to a ref holding the latest annotations, because the canvas commits from inside the `flushSync` handler that just changed them), `undoAnnotations`/`redoAnnotations` (set history + live annotations, clear the selection when the selected annotation is gone), `canUndo`/`canRedo`, `removeAnnotation(id)`, `resetAnnotations()`.
+  - [x] 5.2 `annotation-canvas.tsx`: commit on the inline textarea's blur when the text changed since focus; Delete/Backspace routed through `removeAnnotation`; Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y added to the one existing keydown listener, ignored while typing in a field.
+  - [x] 5.3 `sidebar.tsx`: `Undo`/`Redo` buttons in one two-column row, disabled from `canUndo`/`canRedo`; `removeLast` deleted; `removeSelected` calls `removeAnnotation`; the help paragraph names the shortcuts.
+  - [x] 5.4 `main.tsx`: `onCommit={() => state.commitAnnotations()}`, `resetAnnotations()` on capture, `onRemove={state.removeAnnotation}` for the timeline.
+- [x] **6. Verify**
+  - [x] 6.1 `npm run check` - typecheck, lint, 81 unit tests (11 files), build: green.
+  - [x] 6.2 `npm run format:check` - green.
+  - [x] 6.3 `npm run test:e2e` - 6/6.
+  - [x] 6.4 `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` - 0 hits.
+- [x] **7. Docs**
+  - [x] 7.1 CLAUDE.md: `src/lib/history.ts` in the helper list plus an "Undo/redo" paragraph listing every commit point.
+  - [x] 7.2 README: undo/redo in the feature list and in Usage.
+- [x] **8. Commit and PR**

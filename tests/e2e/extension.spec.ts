@@ -904,6 +904,96 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await page.close();
 });
 
+test("re-capture links the new share to the one it follows", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  await expect(editor.locator("img[src^='data:image/png']")).toHaveJSProperty("complete", true, {
+    timeout: 30_000
+  });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  // Share A: the "before" capture.
+  await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  const shareA = new URL(
+    (await editor.locator("a[href*='viewer.html']").getAttribute("href"))!
+  ).searchParams.get("share")!;
+
+  // Re-capture the newest saved share (the list is sorted newest first, so
+  // shares left behind by earlier tests sit below it).
+  await editor.getByRole("button", { name: "Show" }).click();
+  const opened: Page[] = [];
+  const collect = (opening: Page): void => {
+    opened.push(opening);
+  };
+  ctx.on("page", collect);
+  await editor.getByRole("button", { name: "Re-capture" }).first().click();
+  // Two tabs: the page itself, then a second editor pointed at it.
+  await expect.poll(() => opened.length, { timeout: 30_000 }).toBe(2);
+  ctx.off("page", collect);
+
+  const recaptured = opened.find((tab) => tab.url().includes("editor.html"))!;
+  expect(recaptured).toBeTruthy();
+  expect(new URL(recaptured.url()).searchParams.get("previousShareId")).toBe(shareA);
+  expect(opened.some((tab) => tab.url() === base + "smooth")).toBe(true);
+
+  // Share B: the "after" capture, saved from the re-capture editor.
+  await expect(recaptured.locator("img[src^='data:image/png']")).toHaveJSProperty(
+    "complete",
+    true,
+    { timeout: 30_000 }
+  );
+  await recaptured.setViewportSize({ width: 1280, height: 900 });
+  await recaptured.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(recaptured.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  const shareHrefB = (await recaptured.locator("a[href*='viewer.html']").getAttribute("href"))!;
+  const shareB = new URL(shareHrefB).searchParams.get("share")!;
+
+  // The stored record, read straight out of chrome.storage.local, carries the
+  // link - not just the URL the editor was opened with.
+  const stored = await sw.evaluate(async (id) => {
+    const key = `share:${id}`;
+    const items = await chrome.storage.local.get([key]);
+    return items[key] as { previousShareId?: string };
+  }, shareB);
+  expect(stored.previousShareId).toBe(shareA);
+
+  // The viewer puts the two captures side by side.
+  const viewer = await ctx.newPage();
+  await viewer.goto(shareHrefB);
+  const images = viewer.locator("img[src^='data:image/png']");
+  await expect(images).toHaveCount(2, { timeout: 15_000 });
+  await expect(images.first()).toHaveJSProperty("complete", true, { timeout: 15_000 });
+  await expect(viewer.getByText("Before", { exact: true })).toBeVisible();
+  await expect(viewer.getByText("After", { exact: true })).toBeVisible();
+
+  // A predecessor that has since been deleted degrades to the new capture on
+  // its own, with a note saying why there is nothing to compare against.
+  await sw.evaluate((id) => chrome.storage.local.remove(`share:${id}`), shareA);
+  await viewer.reload();
+  await expect(viewer.getByText("no longer stored")).toBeVisible();
+  await expect(images).toHaveCount(1);
+
+  await viewer.close();
+  // Every tab this test opened, so later tests inherit no extra pages.
+  for (const tab of opened) await tab.close();
+  await editor.close();
+  await page.close();
+});
+
 test("editor page renders the capture UI", async () => {
   const editor = await ctx.newPage();
   await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });

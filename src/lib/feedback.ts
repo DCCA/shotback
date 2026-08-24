@@ -207,6 +207,12 @@ export function buildClaudeCodePrompt(params: {
   filePath: string;
   /** Absolute path of the JSON sidecar; omitted when it could not be written. */
   sidecarPath?: string;
+  /**
+   * This capture follows an earlier one (a re-capture). Only a flag: the
+   * previous PNG lives in the share store, not on disk, so there is no path
+   * to hand over - just the instruction to compare against it.
+   */
+  followsPrevious?: boolean;
   pageUrl: string;
   generalFeedback: string;
   annotations: Annotation[];
@@ -220,6 +226,11 @@ export function buildClaudeCodePrompt(params: {
     `Review this screenshot: ${params.filePath}`,
     ...(params.sidecarPath
       ? [`Machine-readable annotations (selectors, rects, diagnostics): ${params.sidecarPath}`]
+      : []),
+    ...(params.followsPrevious
+      ? [
+          "Before/after: this capture follows an earlier one - verify the fix against the previous state."
+        ]
       : []),
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,

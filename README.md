@@ -46,6 +46,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
   - downloads annotated image
   - copies a structured prompt to clipboard
 - 🧑‍💻 **Copy for Claude Code** - saves the PNG **and a JSON sidecar** to `Downloads/shotback/` and copies a prompt referencing both by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read them directly
+- 🔁 **Re-capture (before / after)** - **Re-capture** on a saved share reopens its page, captures it again in a fresh editor, and links the new share back to the old one; the viewer then shows the two captures side by side (**Before** / **After**) and the Claude Code prompt says the capture follows an earlier one. No pixel diffing - just the two pictures next to each other
 - 📦 **Batch handoff** - tick any saved shares and **Copy batch for Claude Code** writes every capture plus one `batch.json` into a single `Downloads/shotback/batch-<ts>/` folder, then copies a prompt that leads with that JSON
 - 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask

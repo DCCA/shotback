@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Separator } from "@/components/ui/separator";
 import { AnnotationCanvas } from "@/editor/annotation-canvas";
 import { CommentTimeline } from "@/editor/comment-timeline";
+import { recaptureShare } from "@/editor/recapture";
 import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
@@ -17,9 +18,12 @@ function EditorApp(): JSX.Element {
   const tabId = Number(search.get("tabId"));
   const windowId = Number(search.get("windowId"));
   const autoCapture = search.get("autocapture") === "1";
+  // Set when this session was opened by "Re-capture" on a saved share: the
+  // share this capture follows, recorded on the share saved from here.
+  const previousShareId = search.get("previousShareId") ?? undefined;
 
   const state = useEditorState();
-  const exports = useExports(state);
+  const exports = useExports(state, previousShareId);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
   // Stitched image px per page CSS px, set by the last capture. A ref, not
@@ -172,6 +176,14 @@ function EditorApp(): JSX.Element {
           shares={exports.savedShares}
           onOpen={(id) => window.open(buildLocalShareUrl(id), "_blank")}
           onDelete={(id) => void exports.removeSavedShare(id)}
+          onRecapture={(share) => {
+            void recaptureShare(share).catch((error: unknown) => {
+              state.setStatus({
+                kind: "error",
+                message: error instanceof Error ? error.message : "Re-capture failed"
+              });
+            });
+          }}
           onBatchExport={(ids) => void exports.copyBatchForClaudeCode(ids)}
           isBusy={state.isBusy}
         />

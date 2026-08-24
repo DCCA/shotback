@@ -7,8 +7,14 @@ import { Separator } from "@/components/ui/separator";
 import { getLocalShare, type LocalShare } from "@/lib/localStore";
 import "@/styles/globals.css";
 
+const IMAGE_CLASS = "h-auto w-full rounded-lg border border-border bg-card";
+
 function ViewerApp(): JSX.Element {
   const [share, setShare] = useState<LocalShare | null>(null);
+  // The capture this one follows, when it came from a re-capture and the
+  // earlier share is still stored. `null` covers both "not a re-capture" and
+  // "the previous share has been deleted or pruned".
+  const [previous, setPrevious] = useState<LocalShare | null>(null);
   const [status, setStatus] = useState("Loading share...");
 
   useEffect(() => {
@@ -32,6 +38,12 @@ function ViewerApp(): JSX.Element {
 
         setShare(record);
         setStatus("");
+
+        if (record.previousShareId) {
+          // Best effort: a missing predecessor is a note in the UI, never a
+          // reason to fail the share the user actually asked for.
+          setPrevious(await getLocalShare(record.previousShareId).catch(() => null));
+        }
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Failed to load share");
       }
@@ -101,7 +113,7 @@ function ViewerApp(): JSX.Element {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <CardTitle as="h2" className="text-base">
-                Annotated Image
+                {previous ? "Before and After" : "Annotated Image"}
               </CardTitle>
               <Button
                 variant="secondary"
@@ -118,12 +130,35 @@ function ViewerApp(): JSX.Element {
             </div>
             <Separator />
           </CardHeader>
-          <CardContent>
-            <img
-              src={share.imageDataUrl}
-              alt="Annotated share"
-              className="h-auto w-full rounded-lg border border-border bg-card"
-            />
+          <CardContent className="space-y-3">
+            {share.previousShareId && !previous ? (
+              <p className="m-0 text-xs text-muted-foreground">
+                The earlier capture this one follows is no longer stored, so only the new one is
+                shown.
+              </p>
+            ) : null}
+            {previous ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <figure className="m-0 space-y-2">
+                  <figcaption className="text-xs font-semibold text-muted-foreground">
+                    Before
+                  </figcaption>
+                  <img
+                    src={previous.imageDataUrl}
+                    alt="Previous annotated share"
+                    className={IMAGE_CLASS}
+                  />
+                </figure>
+                <figure className="m-0 space-y-2">
+                  <figcaption className="text-xs font-semibold text-muted-foreground">
+                    After
+                  </figcaption>
+                  <img src={share.imageDataUrl} alt="Annotated share" className={IMAGE_CLASS} />
+                </figure>
+              </div>
+            ) : (
+              <img src={share.imageDataUrl} alt="Annotated share" className={IMAGE_CLASS} />
+            )}
           </CardContent>
         </Card>
       </div>

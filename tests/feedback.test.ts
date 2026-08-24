@@ -458,6 +458,28 @@ describe("buildClaudeCodePrompt", () => {
     expect(prompt.split("\n")[1]).toBe("");
   });
 
+  it("says the capture follows an earlier one only when it does", () => {
+    const params = {
+      filePath: "/mnt/c/Downloads/shotback/cap-42.png",
+      sidecarPath: "/mnt/c/Downloads/shotback/cap-42.json",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")]
+    };
+
+    const followUp = buildClaudeCodePrompt({ ...params, followsPrevious: true });
+    // Third line: right under the two path lines, before the page context.
+    expect(followUp.split("\n")[2]).toBe(
+      "Before/after: this capture follows an earlier one - verify the fix against the previous state."
+    );
+
+    // A first capture keeps the prompt byte-identical to what it always was.
+    expect(buildClaudeCodePrompt({ ...params, followsPrevious: false })).toBe(
+      buildClaudeCodePrompt(params)
+    );
+    expect(buildClaudeCodePrompt(params)).not.toContain("Before/after:");
+  });
+
   it("names the element under each annotation when a context was captured", () => {
     const prompt = buildClaudeCodePrompt({
       filePath: "/mnt/c/Downloads/shotback/cap.png",

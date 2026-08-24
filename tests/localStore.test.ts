@@ -177,6 +177,44 @@ describe("localStore", () => {
     expect((await getLocalShare(legacyId))?.environment).toBeUndefined();
   });
 
+  it("carries previousShareId through save and read, and leaves it undefined when absent", async () => {
+    const previous = await saveLocalShare({
+      pageUrl: "https://example.test/page",
+      imageDataUrl: createDataUrl("before"),
+      annotations: [],
+      generalFeedback: ""
+    });
+
+    const after = await saveLocalShare({
+      pageUrl: "https://example.test/page",
+      imageDataUrl: createDataUrl("after"),
+      annotations: [],
+      generalFeedback: "",
+      previousShareId: previous.id
+    });
+
+    // The meta returned by the save and the record read back must agree, so a
+    // viewer opened from the saved-shares list resolves the same predecessor.
+    expect(after.previousShareId).toBe(previous.id);
+    expect((await getLocalShare(after.id))?.previousShareId).toBe(previous.id);
+
+    // A first capture has no predecessor, and a record saved before the field
+    // existed must keep reading back without one.
+    expect(previous.previousShareId).toBeUndefined();
+    expect((await getLocalShare(previous.id))?.previousShareId).toBeUndefined();
+
+    const legacyId = "legacy-previous";
+    storageState[`share:${legacyId}`] = {
+      id: legacyId,
+      pageUrl: "https://legacy.test",
+      imageDataUrl: createDataUrl("legacy"),
+      annotations: [],
+      generalFeedback: "",
+      createdAt: "2026-02-20T00:00:00.000Z"
+    };
+    expect((await getLocalShare(legacyId))?.previousShareId).toBeUndefined();
+  });
+
   it("preserves arbitrary binary bytes through the base64 round-trip", async () => {
     const bytes = new Uint8Array([0, 1, 2, 127, 128, 200, 254, 255]);
     const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;

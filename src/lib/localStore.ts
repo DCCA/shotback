@@ -11,6 +11,8 @@ export interface LocalShare {
   createdAt: string;
   /** Absent on shares saved before the capture environment was recorded. */
   environment?: CaptureEnvironment;
+  /** The share this capture follows, when it came from a re-capture. */
+  previousShareId?: string;
 }
 
 export interface LocalShareMeta {
@@ -24,6 +26,8 @@ export interface LocalShareMeta {
   schemaVersion: 2;
   /** Passthrough: optional, so no schema bump and no migration. */
   environment?: CaptureEnvironment;
+  /** Passthrough, same deal: the share this capture follows, if any. */
+  previousShareId?: string;
 }
 
 interface LegacyLocalShareRecord {
@@ -205,6 +209,7 @@ function toLocalShareMeta(
     blobKey: string;
     imageByteSize: number;
     environment?: CaptureEnvironment;
+    previousShareId?: string;
   }
 ): LocalShareMeta {
   return {
@@ -216,7 +221,8 @@ function toLocalShareMeta(
     imageBlobKey: input.blobKey,
     imageByteSize: input.imageByteSize,
     schemaVersion: SCHEMA_VERSION,
-    environment: input.environment
+    environment: input.environment,
+    previousShareId: input.previousShareId
   };
 }
 
@@ -274,6 +280,7 @@ export async function saveLocalShare(input: {
   annotations: Annotation[];
   generalFeedback: string;
   environment?: CaptureEnvironment;
+  previousShareId?: string;
 }): Promise<LocalShareMeta> {
   const id = randomId();
   const createdAt = new Date().toISOString();
@@ -286,7 +293,8 @@ export async function saveLocalShare(input: {
     createdAt,
     blobKey,
     imageByteSize: blob.size,
-    environment: input.environment
+    environment: input.environment,
+    previousShareId: input.previousShareId
   });
 
   await putImageBlob(blobKey, blob);
@@ -317,6 +325,7 @@ export async function getLocalShare(id: string): Promise<LocalShare | null> {
     generalFeedback: meta.generalFeedback,
     createdAt: meta.createdAt,
     environment: meta.environment,
+    previousShareId: meta.previousShareId,
     imageDataUrl: await blobToDataUrl(blob)
   };
 }

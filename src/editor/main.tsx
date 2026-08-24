@@ -61,6 +61,7 @@ function EditorApp(): JSX.Element {
     state.setCropDraft(null);
     state.setSelectedId(null);
     state.setGeneralFeedback("");
+    state.setLastExportSize(null);
 
     try {
       const result = await captureFullPage(tabId, windowId, (index, total) => {

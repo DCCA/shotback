@@ -47,7 +47,10 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     baseDataUrl,
     progress,
     promptVerbosity,
-    setPromptVerbosity
+    setPromptVerbosity,
+    exportFormat,
+    setExportFormat,
+    lastExportSize
   } = state;
 
   // Redactions are not notes: they are never numbered, so counting them here
@@ -212,6 +215,24 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
 
         <div className="space-y-1.5">
           <span
+            id="export-format-label"
+            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Export format
+          </span>
+          <Select
+            aria-labelledby="export-format-label"
+            value={exportFormat}
+            onValueChange={(value) => setExportFormat(value as "png" | "jpeg")}
+            options={[
+              { value: "png", label: "PNG" },
+              { value: "jpeg", label: "JPEG" }
+            ]}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <span
             id="prompt-verbosity-label"
             className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
           >
@@ -246,7 +267,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             disabled={!baseDataUrl || isBusy}
             onClick={() => void exports.download()}
           >
-            Download Image (PNG)
+            Download Image ({exportFormat === "jpeg" ? "JPEG" : "PNG"})
           </Button>
           <Button
             variant="secondary"
@@ -293,6 +314,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           {redactedCount > 0 ? (
             <p className="m-0 text-muted-foreground">
               Redacted regions: {redactedCount} (pixelated in every export and in the saved share)
+            </p>
+          ) : null}
+          {lastExportSize !== null ? (
+            <p className="m-0 text-muted-foreground">
+              Last export: {Math.max(1, Math.round(lastExportSize / 1024))} KB
             </p>
           ) : null}
         </div>

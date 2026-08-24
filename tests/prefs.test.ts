@@ -78,3 +78,16 @@ describe("setPrefs", () => {
     expect(await getPrefs()).toEqual({ promptVerbosity: "standard" });
   });
 });
+
+describe("exportFormat", () => {
+  it("round-trips through getPrefs/setPrefs", async () => {
+    await setPrefs({ exportFormat: "jpeg" });
+    expect(await getPrefs()).toEqual({ exportFormat: "jpeg" });
+  });
+
+  it("merges onto an existing promptVerbosity pref rather than replacing it", async () => {
+    installChromeMock({ prefs: { promptVerbosity: "detailed" } });
+    await setPrefs({ exportFormat: "jpeg" });
+    expect(await getPrefs()).toEqual({ promptVerbosity: "detailed", exportFormat: "jpeg" });
+  });
+});

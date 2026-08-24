@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { EditorState } from "@/editor/use-editor-state";
-import { exportAnnotatedImage } from "@/lib/annotate";
+import { dataUrlByteLength, exportAnnotatedImage } from "@/lib/annotate";
 import { applyCrop, clampCrop, type Rect } from "@/lib/crop";
 import { buildClaudeCodePrompt, buildExternalLlmPrompt } from "@/lib/feedback";
 import {
@@ -25,6 +25,11 @@ function promptImage(imageSize: {
   height: number;
 }): { width: number; height: number } | undefined {
   return imageSize.width > 1 ? imageSize : undefined;
+}
+
+/** The file extension for an export format - the only place that spells it out. */
+function extFor(format: "png" | "jpeg"): string {
+  return format === "jpeg" ? "jpg" : "png";
 }
 
 /**
@@ -109,7 +114,8 @@ async function saveSidecar(
       image: view.image,
       imagePath,
       environment: state.environment,
-      diagnostics: state.diagnostics
+      diagnostics: state.diagnostics,
+      imageFormat: state.exportFormat
     });
     const blob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
     const absolutePath = await downloadBlob(blob, `shotback/cap-${stamp}.json`);
@@ -159,10 +165,13 @@ export function useExports(state: EditorState): EditorExports {
 
     try {
       const view = exportView(state);
+      // A share is a link handed to someone else, and always regenerated from
+      // this same PNG - it never carries the download-format pref.
       const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
         generalFeedback: state.generalFeedback,
         crop: view.crop
       });
+      state.setLastExportSize(dataUrlByteLength(merged));
       const share = await saveLocalShare({
         imageDataUrl: merged,
         annotations: view.annotations,
@@ -215,11 +224,13 @@ export function useExports(state: EditorState): EditorExports {
       const view = exportView(state);
       const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
         generalFeedback: state.generalFeedback,
-        crop: view.crop
+        crop: view.crop,
+        format: state.exportFormat
       });
+      state.setLastExportSize(dataUrlByteLength(merged));
       const a = document.createElement("a");
       a.href = merged;
-      a.download = `shotback-${Date.now()}.png`;
+      a.download = `shotback-${Date.now()}.${extFor(state.exportFormat)}`;
       a.click();
       state.setStatus({ kind: "success", message: "Annotated image downloaded." });
     } catch (error) {
@@ -244,10 +255,14 @@ export function useExports(state: EditorState): EditorExports {
 
     try {
       const view = exportView(state);
+      // Always PNG, regardless of the export-format pref: browser support for
+      // an "image/jpeg" ClipboardItem is inconsistent, so a JPEG copy could
+      // silently fail to paste on some platforms. PNG always works.
       const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
         generalFeedback: state.generalFeedback,
         crop: view.crop
       });
+      state.setLastExportSize(dataUrlByteLength(merged));
       const blob = await (await fetch(merged)).blob();
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       state.setStatus({
@@ -280,8 +295,10 @@ export function useExports(state: EditorState): EditorExports {
       const view = exportView(state);
       const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
         generalFeedback: state.generalFeedback,
-        crop: view.crop
+        crop: view.crop,
+        format: state.exportFormat
       });
+      state.setLastExportSize(dataUrlByteLength(merged));
       const prompt = buildExternalLlmPrompt({
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
@@ -294,7 +311,7 @@ export function useExports(state: EditorState): EditorExports {
 
       const a = document.createElement("a");
       a.href = merged;
-      a.download = `shotback-llm-${Date.now()}.png`;
+      a.download = `shotback-llm-${Date.now()}.${extFor(state.exportFormat)}`;
       a.click();
 
       await navigator.clipboard.writeText(prompt);
@@ -330,10 +347,12 @@ export function useExports(state: EditorState): EditorExports {
       const view = exportView(state);
       const merged = await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
         generalFeedback: state.generalFeedback,
-        crop: view.crop
+        crop: view.crop,
+        format: state.exportFormat
       });
+      state.setLastExportSize(dataUrlByteLength(merged));
       const stamp = Date.now();
-      const imageName = `shotback/cap-${stamp}.png`;
+      const imageName = `shotback/cap-${stamp}.${extFor(state.exportFormat)}`;
 
       const absolutePath = await downloadBlob(await (await fetch(merged)).blob(), imageName);
       const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${imageName}`;

@@ -171,6 +171,17 @@ describe("buildSidecar", () => {
     expect(sidecar.environment).toEqual(environment);
     expect(sidecar.diagnostics).toEqual(diagnostics);
   });
+
+  it("carries the image format when given", () => {
+    const sidecar = buildSidecar({ ...base, annotations: [], imageFormat: "jpeg" });
+    expect(sidecar.imageFormat).toBe("jpeg");
+  });
+
+  it("omits the image format when not given", () => {
+    const sidecar = buildSidecar({ ...base, annotations: [] });
+    expect(sidecar.imageFormat).toBeUndefined();
+    expect(Object.keys(JSON.parse(JSON.stringify(sidecar)))).not.toContain("imageFormat");
+  });
 });
 
 const redaction: Annotation = {

@@ -89,6 +89,16 @@ export interface EditorState {
   /** How much detail the two export prompts carry. Loaded from prefs on mount, persisted on change. */
   promptVerbosity: Verbosity;
   setPromptVerbosity: (verbosity: Verbosity) => void;
+  /**
+   * The image format `download` and the two package exports write - Copy
+   * Image and the saved share always stay PNG regardless. Loaded from prefs
+   * on mount, persisted on change, like `promptVerbosity`.
+   */
+  exportFormat: "png" | "jpeg";
+  setExportFormat: (format: "png" | "jpeg") => void;
+  /** The size of the most recent export's data URL, in bytes. Cleared on a new capture. */
+  lastExportSize: number | null;
+  setLastExportSize: (size: number | null) => void;
 }
 
 export function useEditorState(): EditorState {
@@ -141,6 +151,26 @@ export function useEditorState(): EditorState {
     setPromptVerbosityState(verbosity);
     void setPrefs({ promptVerbosity: verbosity });
   };
+
+  const [exportFormat, setExportFormatState] = useState<"png" | "jpeg">("png");
+  // Same race guard as `promptVerbosity` above, for the same reason.
+  const userChangedFormatRef = useRef(false);
+
+  useEffect(() => {
+    void getPrefs().then((prefs) => {
+      if (prefs.exportFormat && !userChangedFormatRef.current) {
+        setExportFormatState(prefs.exportFormat);
+      }
+    });
+  }, []);
+
+  const setExportFormat = (format: "png" | "jpeg"): void => {
+    userChangedFormatRef.current = true;
+    setExportFormatState(format);
+    void setPrefs({ exportFormat: format });
+  };
+
+  const [lastExportSize, setLastExportSize] = useState<number | null>(null);
 
   // The canvas commits from inside the pointer handler that just changed the
   // annotations (a `flushSync` create, for one), so the handler's own closure
@@ -244,6 +274,10 @@ export function useEditorState(): EditorState {
     shareUrl,
     setShareUrl,
     promptVerbosity,
-    setPromptVerbosity
+    setPromptVerbosity,
+    exportFormat,
+    setExportFormat,
+    lastExportSize,
+    setLastExportSize
   };
 }

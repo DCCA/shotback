@@ -50,6 +50,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
 - 🩺 **Diagnostics** - both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
 - 🎚️ **Prompt detail** - a sidebar setting picks how much of the above actually renders: **Compact** (just the numbered comments and general feedback), **Standard** (the default - environment, geometry and element context) or **Detailed** (standard plus Diagnostics and per-annotation element text/classes/rect)
+- 🖼️ **JPEG export** - a sidebar setting switches Download, Prepare for Cloud LLM and Copy for Claude Code to a smaller JPEG (fixed quality 0.9); Copy Image and shared links always stay PNG. A **Last export: N KB** readout shows what the most recent export actually weighed
 
 ## 🚀 Quick Start
 

@@ -32,3 +32,9 @@
   - [x] 9.4 `commitAnnotations` is `() => void` again (no dead optional parameter); `NO_ANNOTATIONS` replaced by plain `[]`; the README line uses " - " instead of an em dash.
   - [x] 9.5 The annotations ref is synced in a `useLayoutEffect` instead of during render (`react-hooks/refs` forbids a render-phase ref write; `flushSync` runs layout effects before it returns, so the create path is unaffected).
   - [x] 9.6 Re-ran `npx vitest run tests/history.test.ts` (4 passed), `npm run check` (81 unit tests, green), `npm run format:check` (green), `npm run test:e2e` twice (6/6 both).
+
+- [x] **10. Task re-review fix**
+  - [x] 10.1 e2e first, RED: placing a text annotation and pressing Ctrl+Z left `ol li` at 0 rows instead of 1 - the undo reached past the (never committed) text annotation into the previous edit.
+  - [x] 10.2 `onCanvasPointerDown`'s text branch calls `onCommit()` after `commitNewAnnotation`, because a text annotation never reaches the pointer-up commit.
+  - [x] 10.3 Commit-point tables in `completion-summary.md` and the task report corrected: the text branch is its own commit point.
+  - [x] 10.4 `npm run check` green (81 unit tests), `npm run format:check` green, `npm run test:e2e` 6/6 (twice).

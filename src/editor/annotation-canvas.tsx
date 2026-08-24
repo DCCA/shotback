@@ -262,6 +262,9 @@ export function AnnotationCanvas({
         color,
         createdAt: new Date().toISOString()
       });
+      // A text annotation is placed on pointer-down and never reaches the
+      // pointer-up commit below, so it snapshots itself here.
+      onCommit();
       return;
     }
 

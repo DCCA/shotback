@@ -275,6 +275,26 @@ for (const [name, headerHeight] of [
       await expect(rect).toHaveCount(0);
       await editor.keyboard.press("Control+z");
       await expect(rect).toHaveAttribute("x", originalX);
+
+      // A text annotation is created on pointer-DOWN, so it never reaches the
+      // pointer-up commit: placing one must still be its own entry, and undoing
+      // it must not reach past it into the previous edit.
+      const rows = editor.locator("ol li");
+      await expect(rows).toHaveCount(1);
+      await editor.getByRole("combobox", { name: "Interaction" }).click();
+      await editor.getByRole("option", { name: "Draw New" }).click();
+      await editor.getByRole("combobox", { name: "Tool" }).click();
+      await editor.getByRole("option", { name: "Text" }).click();
+
+      await editor.mouse.click(canvas.x + 600, canvas.y + 500);
+      await expect(rows).toHaveCount(2);
+      await editor.keyboard.press("Escape");
+
+      await editor.keyboard.press("Control+z");
+      await expect(rows).toHaveCount(1);
+      await expect(rect).toHaveAttribute("x", originalX);
+      await editor.keyboard.press("Control+Shift+z");
+      await expect(rows).toHaveCount(2);
     }
 
     await editor.close();

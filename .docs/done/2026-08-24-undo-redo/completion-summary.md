@@ -30,7 +30,8 @@
 
 | Where | When |
 |---|---|
-| `annotation-canvas.tsx` `onCanvasPointerUp` | Pointer-up after a draw that produced a shape, or a drag/resize that actually moved something (`gestureMovedRef`). A plain selection click does not commit. |
+| `annotation-canvas.tsx` `onCanvasPointerUp` | Pointer-up after a box/arrow draw that produced a shape, or a drag/resize that actually moved something (`gestureMovedRef`). A plain selection click does not commit. |
+| `annotation-canvas.tsx` `onCanvasPointerDown` (`tool === "text"`) | A text annotation is created on pointer-down and returns before the pointer-up commit, so it commits itself right after `commitNewAnnotation`. |
 | `annotation-canvas.tsx` inline textarea `onBlur` | The comment/text differs from what it was when the editor took focus. |
 | `use-editor-state.ts` `removeAnnotation` | Immediately after the removal - reached from Delete/Backspace, the sidebar's "Delete Selected Item" and the comment timeline's "Remove". |
 | `use-editor-state.ts` `resetAnnotations` | Not a commit: a new capture throws the history away, so undo cannot reach into a previous screenshot. |
@@ -64,3 +65,11 @@ The e2e assertion is also the proof that the create commit lands correctly: it d
 **Fold-ins.** `commitAnnotations` is back to `() => void` (the dead optional parameter is gone; `removeAnnotation` updates the ref one line before calling it). `NO_ANNOTATIONS` is gone in favour of plain `[]` literals. The README line uses " - " instead of an em dash. The annotations ref is synced in a `useLayoutEffect` rather than during render, because `react-hooks/refs` (correctly) forbids a render-phase ref write; `flushSync` runs layout effects before returning, so the create commit still sees the new annotation - which the e2e proves, since one undo after a create-then-move returns the box to where it was drawn instead of deleting it.
 
 Re-run: `npx vitest run tests/history.test.ts` 4 passed, `npm run check` green (81 unit tests), `npm run format:check` green, `npm run test:e2e` 6/6 (run twice).
+
+## Task-review fixes (third pass)
+
+**Placing a text annotation was not an undo entry.** `onCanvasPointerDown`'s `tool === "text"` branch creates the annotation and returns, so `onCanvasPointerUp` bails on `!draft` and the pointer-up commit never ran. Placing a text annotation and pressing Ctrl+Z therefore undid the *previous* edit and took the text annotation with it, with no redo path back. The branch now calls `onCommit()` right after `commitNewAnnotation` (the annotations ref is current there: `commitNewAnnotation` uses `flushSync`, which runs the ref's layout effect before returning). The commit-point table above is corrected accordingly.
+
+e2e, appended to the `inner` block: switch Interaction to "Draw New" and Tool to "Text", click empty canvas, assert the timeline gains a row, press Escape, then Ctrl+Z drops exactly that row while the box `rect` stays at its current x, and Ctrl+Shift+Z brings the row back. RED first: `expect(locator('ol li')).toHaveCount(1)` received `0` - the undo had swallowed the box as well.
+
+Re-run: `npm run check` green (81 unit tests), `npm run format:check` green, `npm run test:e2e` 6/6 (twice).

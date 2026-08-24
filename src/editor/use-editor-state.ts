@@ -52,7 +52,7 @@ export interface EditorState {
   /** The captured tab's context, undefined until a capture completes. */
   environment: CaptureEnvironment | undefined;
   setEnvironment: (environment: CaptureEnvironment | undefined) => void;
-  /** The captured page's errors and failed requests, undefined until a capture completes. */
+  /** The captured page's failed requests, undefined until a capture completes. */
   diagnostics: PageDiagnostics | undefined;
   setDiagnostics: (diagnostics: PageDiagnostics | undefined) => void;
   imageSize: { width: number; height: number };

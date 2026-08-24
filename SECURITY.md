@@ -31,7 +31,11 @@ while the user annotates a capture**, never in the background. Capturing also
 reads the page's own resource timing and collects the requests it answered with
 a status of 400 or more (up to 20, each URL clamped to one line of 200 chars).
 Those URLs go into the prompts the user copies, so a page's own request URLs -
-query strings included - can leave the device through an explicit export.
+query strings included - can leave the device through an explicit export. The
+status is readable only for same-origin responses and for cross-origin ones that
+opt in with `Access-Control-Allow-Origin`, and the browser keeps only about 250
+resource entries, so this is a partial view by construction: an absent
+diagnostics block means "nothing readable failed", not "nothing failed".
 Annotating is
 itself a user-initiated act: each drawn or moved annotation asks the captured
 tab to describe the element beneath it, which reads that element's selector

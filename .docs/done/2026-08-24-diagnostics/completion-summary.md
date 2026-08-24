@@ -181,8 +181,16 @@ em dashes on added lines
   prompts, which is what happens.
 - `initiatorType` is collected but not printed - it is the hook for a richer
   line ("404 img ...") if Task 18 wants one.
-- Only requests that finished with a status are seen. A request that never got a
-  response (DNS failure, connection refused, blocked by an extension) has no
-  `responseStatus` and is invisible here, as is anything a cross-origin server
-  hides via `Timing-Allow-Origin` (`responseStatus` is exposed regardless of
-  TAO, but the entry must exist).
+- **Coverage is narrower than "every failed request", and the docs say so.**
+  `responseStatus` is CORS-gated: it is `0` for a cross-origin response that
+  does not carry `Access-Control-Allow-Origin`, so a third-party 404 or 500 (a
+  CDN image, an analytics beacon) is dropped by the `>= 400` filter and reads
+  the same as "nothing failed". Only same-origin responses, and cross-origin
+  ones that opt in, carry a readable status. A request that never got a response
+  at all (DNS failure, connection refused, blocked by another extension) has no
+  status either.
+- Chrome's resource-timing buffer holds ~250 entries and is not cleared by the
+  extension, so on a long-lived SPA an early failure can be evicted before the
+  user captures.
+- An absent `Diagnostics:` block therefore means "nothing readable failed", not
+  "nothing failed".

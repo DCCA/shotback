@@ -98,6 +98,15 @@ npm run build
      2. 500 https://example.com/api/user
    ```
 
+   **What the block can miss:** a status is only readable for same-origin
+   responses and for cross-origin ones that opt in with
+   `Access-Control-Allow-Origin`, so a failing third-party request (a CDN image,
+   an analytics call) is invisible here - as is a request that never got a
+   response at all. The browser also keeps only about 250 resource entries, so
+   on a long-lived single-page app an early failure can be evicted before you
+   capture. An absent Diagnostics block means "nothing readable failed", not
+   "nothing failed".
+
    **Known limitation:** uncaught JavaScript errors from the page are _not_
    collected. Chromium delivers an error only to listeners in the JavaScript
    world that threw, and Shotback's content script runs in an isolated world, so

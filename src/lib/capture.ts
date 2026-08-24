@@ -354,10 +354,15 @@ export async function inspectPoints(
  * Read the captured page's failed requests. Best effort by design: a page with
  * no content script (a restricted URL, a tab closed mid-capture) has no
  * diagnostics, and that must never fail the capture it rides along with.
+ *
+ * A plain send, deliberately: this runs mid-capture, after the metrics read has
+ * already proven the listener is there, so the re-injecting retry helper would
+ * only risk a second content-script instance with null scroller state, for a
+ * message nothing depends on.
  */
 export async function getDiagnostics(tabId: number): Promise<PageDiagnostics> {
   try {
-    const response = await sendToContentScript<Partial<PageDiagnostics>>(tabId, {
+    const response = await sendMessage<Partial<PageDiagnostics>>(tabId, {
       type: "SB_GET_DIAGNOSTICS"
     });
     return { failedRequests: response?.failedRequests ?? [] };

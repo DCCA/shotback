@@ -735,11 +735,17 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
   await editor.setViewportSize({ width: 1280, height: 900 });
 
-  // The fixture's CTA sits at 200,120 and is 200x120: this samples its label,
-  // the one patch of the capture with real detail in it.
-  const sample = { x: 230, y: 155, width: 140, height: 50 };
+  // The fixture's CTA sits at 200,120 and is 200x120. `sample` is its label,
+  // which the redaction below covers; `control` is the button's own left edge
+  // against the colour block behind it, 15px clear of the redaction. Both hold
+  // real detail, and only the first is allowed to lose it - otherwise
+  // "detail collapsed" would also pass for a blank or corrupted export.
+  const sample = { x: 245, y: 165, width: 110, height: 30 };
+  const control = { x: 185, y: 130, width: 35, height: 100 };
   const before = await pixelDetail(img, sample);
+  const controlBefore = await pixelDetail(img, control);
   expect(before).toBeGreaterThan(5);
+  expect(controlBefore).toBeGreaterThan(2);
 
   const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
   const shown = (await img.boundingBox())!;
@@ -753,8 +759,8 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await editor.getByRole("combobox", { name: "Tool" }).click();
   await editor.getByRole("option", { name: "Redact" }).click();
 
-  const from = onScreen(205, 125);
-  const to = onScreen(395, 235);
+  const from = onScreen(235, 155);
+  const to = onScreen(365, 210);
   await editor.mouse.move(from.x, from.y);
   await editor.mouse.down();
   await editor.mouse.move(to.x, to.y, { steps: 5 });
@@ -790,6 +796,9 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await expect(shared).toHaveJSProperty("complete", true, { timeout: 15_000 });
   const after = await pixelDetail(shared, sample);
   expect(after).toBeLessThan(before / 4);
+  // ...and the damage stopped at the region's edge: everything else in the
+  // share still carries the detail it was captured with.
+  expect(await pixelDetail(shared, control)).toBeGreaterThan(controlBefore * 0.7);
 
   await viewer.close();
   await editor.close();

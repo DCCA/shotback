@@ -579,6 +579,9 @@ export function AnnotationCanvas({
     setAnnotations((prev) =>
       prev.map((item) => {
         if (item.id !== selectedId) return item;
+        // A redaction has no comment editor to reach this, and a `never`-typed
+        // `comment` so the compiler holds that rather than the UI alone.
+        if (item.tool === "redact") return item;
         if (item.tool === "text") return { ...item, text: value };
         return { ...item, comment: value };
       })

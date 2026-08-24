@@ -50,14 +50,19 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     setPromptVerbosity
   } = state;
 
-  // What the crop leaves out. The exports renumber the survivors, so saying
-  // this plainly is also the answer to "why is pin 3 numbered 2 in the PNG".
-  const excludedByCrop = crop ? annotations.length - applyCrop(annotations, crop).length : 0;
   // Redactions are not notes: they are never numbered, so counting them here
   // would disagree with the timeline, the pins and the prompt. They get their
   // own count instead, because "how much of this is hidden" is worth saying.
   const noteCount = numberAnnotations(annotations).length;
   const redactedCount = redactions(annotations).length;
+  // What the crop leaves out. The exports renumber the survivors, so saying
+  // this plainly is also the answer to "why is pin 3 numbered 2 in the PNG".
+  // Counted over the numbered annotations only, to match `noteCount` above: a
+  // redaction the crop drops hides nothing, because the crop already removed
+  // those pixels from the export.
+  const excludedByCrop = crop
+    ? noteCount - numberAnnotations(applyCrop(annotations, crop)).length
+    : 0;
 
   const removeSelected = (): void => {
     if (selectedId) removeAnnotation(selectedId);

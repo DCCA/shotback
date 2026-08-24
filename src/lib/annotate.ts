@@ -18,7 +18,8 @@ const REDACT_BLOCK_SIZE = 12;
 /**
  * Destroy the pixels under one redaction: the region is squashed onto a buffer
  * of one pixel per block and stretched straight back over itself, so what
- * lands on the canvas is the block average and the original is gone from it.
+ * lands on the canvas is one resampled value per block and the original is
+ * gone from it.
  *
  * Clamped to the canvas because the region is drawn by hand and can hang off
  * the edge, and skipped when it has no area - `drawImage` throws on a
@@ -45,6 +46,12 @@ function pixelateRegion(
   const bufferCtx = buffer.getContext("2d");
   if (!bufferCtx) throw new Error("Failed to create canvas context");
 
+  // On, and asked to be good about it: the default downscale samples a couple
+  // of neighbours per output pixel, which can carry one original pixel through
+  // almost intact. "high" makes the browser weigh the whole block instead, so
+  // a block is a summary of what it replaced rather than a sample of it.
+  bufferCtx.imageSmoothingEnabled = true;
+  bufferCtx.imageSmoothingQuality = "high";
   bufferCtx.drawImage(canvas, x, y, width, height, 0, 0, blocksWide, blocksHigh);
   // Off for the way back, or the blocks interpolate into a blur that still
   // carries the shape of what was under them.

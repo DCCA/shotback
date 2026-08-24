@@ -343,6 +343,14 @@ describe("exportAnnotatedImage redactions", () => {
     expect(draws[1].args.slice(1)).toEqual([150, 250, 60, 40, 0, 0, 5, 4]);
     expect(draws[2].args.slice(1)).toEqual([0, 0, 5, 4, 150, 250, 60, 40]);
 
+    // The downscale must weigh the whole block, not sample a pixel or two out
+    // of it: a sampled block can carry an original pixel through intact.
+    const quality = calls.findIndex(
+      (call) => call.name === "set:imageSmoothingQuality" && call.args[0] === "high"
+    );
+    expect(quality).toBeGreaterThan(-1);
+    expect(quality).toBeLessThan(calls.indexOf(draws[1]));
+
     const smoothingOff = calls.findIndex(
       (call) => call.name === "set:imageSmoothingEnabled" && call.args[0] === false
     );

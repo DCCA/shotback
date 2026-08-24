@@ -21,6 +21,17 @@ export function numberAnnotations(annotations: Annotation[]): NumberedAnnotation
     .map((annotation, index) => ({ n: index + 1, annotation }));
 }
 
+/**
+ * The annotations it is safe to map back onto the live page. Redactions are
+ * filtered out here, in the lib, rather than at the one call site: reading the
+ * element under one would put its selector, and up to 80 characters of its
+ * text, into the very prompts the redaction exists to keep it out of, so a
+ * future inspection call site must not be able to leak by default.
+ */
+export function inspectableAnnotations(annotations: Annotation[]): Annotation[] {
+  return annotations.filter((annotation) => annotation.tool !== "redact");
+}
+
 /** The other half of that split: the redactions, in creation order. */
 export function redactions(annotations: Annotation[]): RedactAnnotation[] {
   return annotations

@@ -7,17 +7,24 @@
   names the two tools that are plain rectangles and share the drag/resize path.
   `AnnotationTool` gains `"redact"`, so it flows into the sidebar's
   `EditorTool` for free. It extends `AnnotationBase` for compatibility, but
-  nothing ever writes its `comment` or `context`.
+  its `comment`/`context` are typed `never`, so the compiler refuses a write
+  rather than leaving "never populated" to convention.
 - `src/lib/numbering.ts` - `numberAnnotations` now filters redactions out
   before it numbers, which is the one place that decision lives: the comment
   timeline, the canvas pins, the exported legend, both prompts and the JSON
   sidecar all derive from it, so none of them can disagree about whether a
   redaction is a note. `redactions(annotations)` returns the other half in
-  creation order, and `annotationBounds` treats a redaction as its own rect.
+  creation order, `inspectableAnnotations(annotations)` is what may be mapped
+  back onto the live page (redactions filtered out in the lib, not at the call
+  site, so a future inspection caller cannot leak by default), and
+  `annotationBounds` treats a redaction as its own rect.
 - `src/lib/annotate.ts` - `pixelateRegion` squashes a region onto a
   `ceil(w/12) x ceil(h/12)` offscreen canvas and stretches it straight back
-  over itself with `imageSmoothingEnabled = false`, so what lands is the block
-  average and the original is gone. `exportAnnotatedImage` runs it for every
+  over itself with `imageSmoothingEnabled = false`, so what lands is one
+  resampled value per block and the original is gone. The downscale runs at
+  `imageSmoothingQuality = "high"` so a block weighs its whole area rather than
+  sampling a pixel or two out of it (the default bilinear sample can carry one
+  original pixel through almost intact). `exportAnnotatedImage` runs it for every
   redaction **immediately after** the base image draw and **before** any shape,
   pin or legend row, so nothing can be painted over a secret before it is
   destroyed. The region is clamped to the canvas (a hand-drawn rect can hang
@@ -45,11 +52,12 @@
   pin and no inline comment editor. `drawingCrop` became `drawingRegion` and
   now covers redact too, so an existing annotation does not swallow the
   pointer-down that starts one: a secret has to be coverable wherever it sits.
-- `src/editor/main.tsx` - redactions are dropped from the timeline list and
-  from the `SB_INSPECT_POINTS` point list.
+- `src/editor/main.tsx` - redactions are dropped from the timeline list, and
+  the `SB_INSPECT_POINTS` point list comes from `inspectableAnnotations`.
 - `src/editor/sidebar.tsx` - `Redact` in the Tool select; the counts split into
   `N notes` (numbered only) and a separate `Redacted regions: N (pixelated in
-  every export and in the saved share)` line.
+  every export and in the saved share)` line. `excludedByCrop` counts the
+  numbered annotations only, so the panel agrees with itself.
 
 ## Leak surfaces
 
@@ -80,20 +88,26 @@ nothing writes it to `chrome.storage.local`, IndexedDB or disk.
 - **Redaction hides pixels, not the page.** The page URL, the environment
   block, other annotations' selectors and the failed-request URLs are
   untouched, so a secret in a URL still has to be removed by hand.
-- Pixelation is by block average, which is irreversible for the region but is
-  not a solid fill: a large, uniform block still tells the reader roughly how
-  dark what it replaced was. That is the accepted trade for keeping the layout
-  legible, and it is why the block is 12px rather than 2px.
+- **Block pixelation is weaker than a solid fill.** A grid of block averages is
+  a lossy but structured encoding of what it replaced, and Depix-class attacks
+  recover short runs of known-font text from one by searching a rendered corpus
+  for a matching block pattern. `SECURITY.md` says so, and tells the user to
+  draw the region generously larger than the secret and to rotate a redacted
+  credential rather than trust the blocks. A solid-fill mode would remove that
+  class of attack outright and is the obvious follow-up if this is not enough.
 
 ## Verification
 
-- `npm run check`: typecheck, lint, **196** unit tests, build. Green.
+- `npm run check`: typecheck, lint, **197** unit tests, build. Green.
 - `npm run format:check`: green.
 - `npm run test:e2e`: **7/7**, including a new test that draws a redaction over
-  the fixture's CTA and measures the pixels in the resulting saved share. Fine
-  detail over the button's label falls from 9.49 to 1.22 (assertion: under a
-  quarter of the original), while the prompt says `Redacted regions: 1` and
-  carries no `[redact]`, no numbered line and no `button.cta`.
+  the fixture CTA's label and measures the pixels in the resulting saved share.
+  Fine detail there falls from **20.17 to 1.55** (assertion: under a quarter),
+  while a control region on the button's own edge 15px outside the redaction
+  holds at **3.7488 -> 3.7488**, unchanged to the digit - so the assertion
+  cannot be satisfied by a blank or corrupted export. The prompt says
+  `Redacted regions: 1` and carries no `[redact]`, no numbered line and no
+  `button.cta`.
 - Colour-literal grep over `src/`: zero hits.
 
 ## Follow-ups

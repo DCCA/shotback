@@ -3,6 +3,7 @@ import {
   annotationBounds,
   canvasScale,
   describeGeometry,
+  inspectableAnnotations,
   numberAnnotations,
   redactions,
   inspectAnchor,
@@ -226,6 +227,11 @@ describe("redactions", () => {
       [1, "first"],
       [2, "second"]
     ]);
+  });
+
+  it("are never inspectable, so no selector is read from under one", () => {
+    const list = [mk("box", "2026-08-23T00:00:00Z"), redaction("r1", "2026-08-23T00:00:01Z")];
+    expect(inspectableAnnotations(list).map((item) => item.id)).toEqual(["box"]);
   });
 
   it("are returned on their own, in creation order", () => {

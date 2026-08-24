@@ -66,6 +66,9 @@ export interface TextAnnotation extends AnnotationBase {
  */
 export interface RedactAnnotation extends AnnotationBase {
   tool: "redact";
+  /** Never populated, and `never` so the compiler is the one enforcing that. */
+  comment?: never;
+  context?: never;
   x: number;
   y: number;
   width: number;

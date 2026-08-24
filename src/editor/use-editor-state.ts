@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { commit, createHistory, redo, undo, type History } from "@/lib/history";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
 
@@ -14,8 +14,8 @@ export interface EditorState {
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
   /** Undo/redo snapshots: only completed edits land here, never in-gesture state. */
   history: History<Annotation[]>;
-  /** Snapshot the current annotations (defaults to the latest live value). */
-  commitAnnotations: (next?: Annotation[]) => void;
+  /** Snapshot the latest annotations as one undo entry. */
+  commitAnnotations: () => void;
   undoAnnotations: () => void;
   redoAnnotations: () => void;
   canUndo: boolean;
@@ -50,16 +50,12 @@ export interface EditorState {
   setShareUrl: React.Dispatch<React.SetStateAction<string>>;
 }
 
-/** One shared empty array, so "no annotations" is always the same reference and
- * an accidental commit of it is a no-op rather than a phantom history entry. */
-const NO_ANNOTATIONS: Annotation[] = [];
-
 export function useEditorState(): EditorState {
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
-  const [annotations, setAnnotations] = useState<Annotation[]>(NO_ANNOTATIONS);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [history, setHistory] = useState<History<Annotation[]>>(() =>
-    createHistory(NO_ANNOTATIONS)
+    createHistory<Annotation[]>([])
   );
   const [tool, setTool] = useState<AnnotationTool>("box");
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
@@ -75,42 +71,54 @@ export function useEditorState(): EditorState {
   // The canvas commits from inside the pointer handler that just changed the
   // annotations (a `flushSync` create, for one), so the handler's own closure
   // is a render behind. This ref is what "the latest annotations" means there.
+  // A layout effect, not a plain one: `flushSync` runs layout effects before it
+  // returns, so the ref is already current when that handler resumes.
   const annotationsRef = useRef(annotations);
-  annotationsRef.current = annotations;
+  useLayoutEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
 
-  const commitAnnotations = (next: Annotation[] = annotationsRef.current): void => {
-    setHistory((current) => commit(current, next));
+  // Same story for the history, one step worse: a commit can come from a
+  // passive effect (the comment editor unmounting), and the very next keypress
+  // must see it even though React has not re-rendered yet. Every write goes
+  // through `applyHistory`, so the ref - not the render value - is the source
+  // of truth for what undo/redo operate on.
+  const historyRef = useRef(history);
+
+  const applyHistory = (next: History<Annotation[]>): void => {
+    historyRef.current = next;
+    setHistory(next);
+  };
+
+  const commitAnnotations = (): void => {
+    applyHistory(commit(historyRef.current, annotationsRef.current));
   };
 
   const applySnapshot = (next: History<Annotation[]>): void => {
-    setHistory(next);
+    if (next === historyRef.current) return;
+    applyHistory(next);
     setAnnotations(next.present);
     annotationsRef.current = next.present;
     if (selectedId && !next.present.some((item) => item.id === selectedId)) setSelectedId(null);
   };
 
-  const undoAnnotations = (): void => {
-    const next = undo(history);
-    if (next !== history) applySnapshot(next);
-  };
+  const undoAnnotations = (): void => applySnapshot(undo(historyRef.current));
 
-  const redoAnnotations = (): void => {
-    const next = redo(history);
-    if (next !== history) applySnapshot(next);
-  };
+  const redoAnnotations = (): void => applySnapshot(redo(historyRef.current));
 
   const removeAnnotation = (id: string): void => {
     const next = annotationsRef.current.filter((item) => item.id !== id);
     setAnnotations(next);
     annotationsRef.current = next;
-    commitAnnotations(next);
+    commitAnnotations();
     if (selectedId === id) setSelectedId(null);
   };
 
   const resetAnnotations = (): void => {
-    setAnnotations(NO_ANNOTATIONS);
-    annotationsRef.current = NO_ANNOTATIONS;
-    setHistory(createHistory(NO_ANNOTATIONS));
+    const empty: Annotation[] = [];
+    setAnnotations(empty);
+    annotationsRef.current = empty;
+    applyHistory(createHistory(empty));
   };
 
   return {

@@ -84,8 +84,17 @@ export function AnnotationCanvas({
   // A pointer-down on an annotation or a resize handle starts a gesture but is
   // also just a selection click; only an actual move/resize is worth committing.
   const gestureMovedRef = useRef(false);
-  // The comment text as it was when the inline editor took focus.
-  const noteAtFocusRef = useRef("");
+  // One history entry per comment editing session, not per keystroke. Typing
+  // marks the note dirty; the entry is written when the editor is left - which
+  // is either a blur or, when a click on empty canvas deselects, an unmount
+  // (React dispatches no blur for an unmounted fiber, so blur alone would lose
+  // the comment on the next undo).
+  const noteDirtyRef = useRef(false);
+  const commitNoteIfDirty = (): void => {
+    if (!noteDirtyRef.current) return;
+    noteDirtyRef.current = false;
+    onCommit();
+  };
 
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedNote = selectedAnnotation
@@ -147,6 +156,17 @@ export function AnnotationCanvas({
     inlineCommentRef,
     setShouldFocusSelectedComment
   ]);
+
+  // The inline editor is gone (deselected, unmounted, or moved to another
+  // annotation): write the pending comment before the selection changes.
+  useEffect(() => {
+    if (!selectedId) return;
+    return () => commitNoteIfDirty();
+    // `selectedId` only: the cleanup must run when the selection changes, not
+    // on every render. `onCommit` reaches the live annotations through a ref,
+    // so the captured closure stays correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   // Editor keyboard shortcuts, all on one window listener: Escape clears
   // selection/in-progress gestures, Delete/Backspace removes the selected
@@ -409,6 +429,7 @@ export function AnnotationCanvas({
 
   const updateSelectedAnnotationNote = (value: string): void => {
     if (!selectedId) return;
+    noteDirtyRef.current = true;
     setAnnotations((prev) =>
       prev.map((item) => {
         if (item.id !== selectedId) return item;
@@ -570,14 +591,7 @@ export function AnnotationCanvas({
                       className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
                       value={selectedNote}
                       onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                      // One history entry per editing session, not per
-                      // keystroke: snapshot on blur, and only if it changed.
-                      onFocus={(event) => {
-                        noteAtFocusRef.current = event.target.value;
-                      }}
-                      onBlur={(event) => {
-                        if (event.target.value !== noteAtFocusRef.current) onCommit();
-                      }}
+                      onBlur={commitNoteIfDirty}
                       placeholder="Add comment for selected area"
                       rows={3}
                     />

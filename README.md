@@ -36,7 +36,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - ✏️ **Area annotations**: box, arrow, text
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
-- ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) — sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
+- ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) - sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
 - 💬 **General feedback** for screenshot-level notes
 - 🔐 **Local share links** (`chrome-extension://.../viewer.html?share=...`)
 - 🤖 **External LLM fallback**:

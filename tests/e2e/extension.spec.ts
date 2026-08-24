@@ -253,6 +253,28 @@ for (const [name, headerHeight] of [
       await expect(rect).toHaveAttribute("x", originalX);
       await editor.keyboard.press("Control+Shift+z");
       await expect(rect).toHaveAttribute("x", movedX);
+
+      // A comment edit is its own entry, and it must be committed even when the
+      // inline editor is closed by a click on empty canvas (which unmounts the
+      // textarea, so no blur is dispatched) - otherwise the next undo throws
+      // the typed comment away with no redo path.
+      const row = editor.locator("ol li button").first();
+      await editor.locator("foreignObject textarea").fill("hello");
+      await expect(row).toContainText("hello");
+      await editor.mouse.click(canvas.x + 600, canvas.y + 500);
+
+      await editor.keyboard.press("Control+z");
+      await expect(row).toContainText("(no comment)");
+      await expect(rect).toHaveAttribute("x", movedX);
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
+
+      // A delete is one entry too, from the keyboard path.
+      await editor.mouse.click(canvas.x + 140, canvas.y + 120);
+      await editor.keyboard.press("Delete");
+      await expect(rect).toHaveCount(0);
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
     }
 
     await editor.close();

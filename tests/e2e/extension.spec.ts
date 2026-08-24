@@ -278,6 +278,24 @@ test("capture notice shows, hides for the frame, and is removed", async () => {
   await page.close();
 });
 
+test("capture notice spinner is static under prefers-reduced-motion", async () => {
+  const page = await ctx.newPage();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(base, { waitUntil: "load" });
+
+  await send({ type: "SB_CAPTURE_BEGIN" });
+  const animationName = await page.evaluate(() => {
+    const spinner = document.querySelector("[data-shotback-spinner]") as HTMLElement;
+    return getComputedStyle(spinner).animationName;
+  });
+  // The ring itself stays visible (it communicates progress on its own); only
+  // the spin is skipped.
+  expect(animationName).toBe("none");
+
+  await send({ type: "SB_CAPTURE_END" });
+  await page.close();
+});
+
 for (const [name, headerHeight] of [
   ["smooth", 0],
   ["inner", 64]
@@ -750,6 +768,17 @@ for (const [name, headerHeight] of [
       await editor.getByRole("button", { name: "Show" }).click();
       const checkboxes = editor.getByRole("checkbox");
       await expect(checkboxes).toHaveCount(2);
+      // Target size (WCAG 2.5.8): the label wrapping each checkbox is the
+      // real tappable area, at least 24x24 - not the ~13px native tick.
+      for (const box of await checkboxes.evaluateAll((inputs) =>
+        inputs.map((input) => {
+          const rect = (input.closest("label") ?? input).getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        })
+      )) {
+        expect(box.width).toBeGreaterThanOrEqual(24);
+        expect(box.height).toBeGreaterThanOrEqual(24);
+      }
       // Wrapped so a mid-batch failure cannot leave the saved-shares
       // selection ticked for whatever runs next.
       try {
@@ -1056,5 +1085,29 @@ test("dark theme keeps every control legible", async () => {
   expect(await editor.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(
     "rgb(248, 250, 252)"
   );
+  await editor.close();
+});
+
+test("reduced motion drops the button press/colour animation, not the state change", async () => {
+  const editor = await ctx.newPage();
+  await editor.emulateMedia({ reducedMotion: "reduce" });
+  await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });
+
+  const button = editor.getByRole("button", { name: "Capture Page" });
+  const style = await button.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { transitionDuration: s.transitionDuration, transitionProperty: s.transitionProperty };
+  });
+  // The colour/box-shadow transition collapses to instant rather than
+  // disappearing - the hover/focus/disabled state itself still applies.
+  expect(style.transitionDuration).toBe("0s");
+
+  const chevronDuration = await editor
+    .getByRole("combobox", { name: "Interaction" })
+    .locator("svg")
+    .evaluate((el) => getComputedStyle(el).transitionProperty);
+  // The select chevron's rotation animation is removed outright.
+  expect(chevronDuration).toBe("none");
+
   await editor.close();
 });

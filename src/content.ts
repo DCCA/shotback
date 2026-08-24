@@ -163,7 +163,12 @@ function ensureCaptureOverlay(): HTMLDivElement {
     "font-weight:600"
   ].join(";");
 
+  // A person who asked for less motion still sees the ring (it communicates
+  // "this is in progress" on its own), just not spinning - the notice text
+  // carries the rest.
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const spinner = document.createElement("div");
+  spinner.setAttribute("data-shotback-spinner", "");
   spinner.style.cssText = [
     "flex:0 0 auto",
     "width:16px",
@@ -171,7 +176,7 @@ function ensureCaptureOverlay(): HTMLDivElement {
     "border-radius:50%",
     "border:2px solid rgba(255,255,255,0.35)",
     "border-top-color:#fff",
-    "animation:shotback-spin 0.8s linear infinite"
+    ...(reducedMotion ? [] : ["animation:shotback-spin 0.8s linear infinite"])
   ].join(";");
 
   const text = document.createElement("div");

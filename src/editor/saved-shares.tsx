@@ -67,13 +67,18 @@ export function SavedShares({
             {shares.map((share) => (
               <li key={share.id}>
                 <div className="grid grid-cols-[auto_1fr] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 accent-primary"
-                    checked={selected.has(share.id)}
-                    aria-label={`Select saved share for ${shareLabel(share.pageUrl)}`}
-                    onChange={() => toggle(share.id)}
-                  />
+                  {/* The label extends the checkbox's clickable/tappable area
+                      to a 24x24 target (WCAG 2.5.8) without growing the
+                      visible tick itself. */}
+                  <label className="mt-1 flex size-6 shrink-0 cursor-pointer items-center justify-center">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={selected.has(share.id)}
+                      aria-label={`Select saved share for ${shareLabel(share.pageUrl)}`}
+                      onChange={() => toggle(share.id)}
+                    />
+                  </label>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-foreground">
                       {shareLabel(share.pageUrl)}

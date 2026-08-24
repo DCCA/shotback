@@ -17,19 +17,24 @@ export function CommentTimeline({
   onSelect,
   onRemove
 }: CommentTimelineProps): JSX.Element {
+  // The one numbering, shared with the pins, the prompt and the export - it
+  // drops redactions (no note to number) and orders by creation, so nothing
+  // upstream has to filter or sort before handing over its annotations.
+  const rows = numberAnnotations(items);
+
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
-        <Badge>{items.length}</Badge>
+        <Badge>{rows.length}</Badge>
       </div>
-      {items.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="m-0 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
           No comments yet.
         </p>
       ) : (
         <ol className="m-0 grid list-none gap-2 p-0">
-          {numberAnnotations(items).map(({ n, annotation: item }) => {
+          {rows.map(({ n, annotation: item }) => {
             const selected = item.id === selectedId;
             return (
               <li key={item.id}>

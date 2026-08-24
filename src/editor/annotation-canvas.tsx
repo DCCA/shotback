@@ -554,19 +554,26 @@ export function AnnotationCanvas({
     }
 
     if (tool === "arrow") {
-      const item: Annotation = {
-        id: uid(),
-        tool: "arrow",
-        x1: draft.xStart,
-        y1: draft.yStart,
-        x2: draft.xCurrent,
-        y2: draft.yCurrent,
-        color,
-        comment: "",
-        createdAt: new Date().toISOString()
-      };
-      commitNewAnnotation(item);
-      added = true;
+      const dx = draft.xCurrent - draft.xStart;
+      const dy = draft.yCurrent - draft.yStart;
+
+      // Same threshold as box and redact: a stray click is not a drag, and a
+      // zero-length arrow has no direction to point in.
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        const item: Annotation = {
+          id: uid(),
+          tool: "arrow",
+          x1: draft.xStart,
+          y1: draft.yStart,
+          x2: draft.xCurrent,
+          y2: draft.yCurrent,
+          color,
+          comment: "",
+          createdAt: new Date().toISOString()
+        };
+        commitNewAnnotation(item);
+        added = true;
+      }
     }
 
     setDraft(null);

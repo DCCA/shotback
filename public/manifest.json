@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shotback",
-  "description": "Capture full-page screenshots, annotate, and generate a local share link for LLM feedback.",
+  "description": "Capture, annotate and redact full-page screenshots, then hand them to your coding agent with selectors and context.",
   "version": "0.1.0",
   "homepage_url": "https://github.com/DCCA/shotback",
   "permissions": ["activeTab", "tabs", "scripting", "storage", "unlimitedStorage", "downloads"],

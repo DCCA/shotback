@@ -182,6 +182,17 @@ describe("buildExternalLlmPrompt", () => {
     );
   });
 
+  it("rounds a fractional device pixel ratio for display", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment: { ...environment, devicePixelRatio: 1.100000023841858 }
+    });
+
+    expect(prompt).toContain("- Viewport: 1280x800 @1.1x");
+  });
+
   it("falls back to a placeholder title", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
@@ -470,7 +481,7 @@ describe("buildClaudeCodePrompt", () => {
     const followUp = buildClaudeCodePrompt({ ...params, followsPrevious: true });
     // Third line: right under the two path lines, before the page context.
     expect(followUp.split("\n")[2]).toBe(
-      "Before/after: this capture follows an earlier one - verify the fix against the previous state."
+      "Before/after: this capture is a re-capture of a page reviewed earlier."
     );
 
     // A first capture keeps the prompt byte-identical to what it always was.

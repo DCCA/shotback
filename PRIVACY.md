@@ -97,6 +97,11 @@ export, and each export is a manual, visible action:
   URLs) to `Downloads/shotback/` on your computer, and copies a prompt
   referencing both files to your clipboard. This is a local file write, not a
   network request - the files stay on disk until you delete them.
+- **Copy batch for Claude Code** - the same local file write for several saved
+  captures at once: every ticked capture's image plus one `batch.json` holding
+  their annotations, selectors and environment, written into a single
+  `Downloads/shotback/batch-<ts>/` folder, with a prompt copied to your
+  clipboard.
 - **Copy Image** - copies the annotated image to your clipboard, for you to
   paste wherever you choose.
 

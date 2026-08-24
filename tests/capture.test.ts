@@ -10,6 +10,7 @@ import {
   segmentPlacement,
   sendToContentScript
 } from "../src/lib/capture";
+import type { PageMetrics } from "../src/lib/capture";
 
 describe("buildScrollSteps", () => {
   it("returns single step when content fits viewport", () => {
@@ -61,6 +62,33 @@ describe("buildEnvironment", () => {
     expect(env.scroller).toBe("element");
     expect(env.colorScheme).toBe("light");
     expect(env.capturedAt).toBe("2026-01-02T03:04:05.678Z");
+  });
+
+  it("collapses a hostile page title to one line of 200 chars", () => {
+    const title = `${"a".repeat(5000)}\n\n${"b".repeat(5000)}`;
+    const env = buildEnvironment({ ...metrics, title }, "UA/1.0", new Date());
+
+    expect(env.pageTitle).toHaveLength(200);
+    expect(env.pageTitle).not.toContain("\n");
+  });
+
+  it("clamps a very long page URL", () => {
+    const pageUrl = `https://example.test/${"q".repeat(1000)}`;
+    const env = buildEnvironment({ ...metrics, pageUrl }, "UA/1.0", new Date());
+
+    expect(env.pageUrl).toHaveLength(500);
+  });
+
+  it("yields an empty title when the page reported none", () => {
+    // The title comes off a page-controlled message, so `undefined` is a real
+    // shape at runtime even though the type says otherwise.
+    const env = buildEnvironment(
+      { ...metrics, title: undefined } as unknown as PageMetrics,
+      "UA/1.0",
+      new Date()
+    );
+
+    expect(env.pageTitle).toBe("");
   });
 });
 

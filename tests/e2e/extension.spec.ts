@@ -358,7 +358,9 @@ for (const [name, headerHeight] of [
       await expect(editor.locator("ol li")).toHaveCount(2);
       await waitForInspection(editor, inspectedBefore);
 
-      // The cloud-LLM prompt carries the captured tab's environment.
+      // The cloud-LLM prompt carries the captured tab's environment, at the
+      // default "Standard" prompt detail level - but not the Diagnostics
+      // block, which is Detailed-only (see the verbosity checks below).
       await copyCloudPrompt(editor);
       const prompt = await readClipboard(editor);
       expect(prompt).toContain(`Viewport: ${viewport.width}x${viewport.height}`);
@@ -369,12 +371,28 @@ for (const [name, headerHeight] of [
         /1\. \[box\] Chart - at \(\d+, \d+\) size \d+x\d+ px \[\d+%, \d+% of page\]/
       );
       expect(prompt).toContain("-> #app > section.hero > button.cta");
-      // ... and what the page reported going wrong: the image the server
-      // answered with 404, read back from resource timing.
-      expect(prompt).toContain("Diagnostics:");
-      expect(prompt).toContain("- Failed requests:");
-      expect(prompt).toContain("404 ");
-      expect(prompt).toContain("/missing.png");
+      expect(prompt).not.toContain("Diagnostics:");
+
+      // Compact drops the Environment block (and geometry/context) entirely.
+      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+      await editor.getByRole("option", { name: "Compact" }).click();
+      await copyCloudPrompt(editor);
+      expect(await readClipboard(editor)).not.toContain("Environment:");
+
+      // Detailed adds the Diagnostics block: what the page reported going
+      // wrong, read back from resource timing (the fixture's 404'd image).
+      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+      await editor.getByRole("option", { name: "Detailed" }).click();
+      await copyCloudPrompt(editor);
+      const detailedPrompt = await readClipboard(editor);
+      expect(detailedPrompt).toContain("Diagnostics:");
+      expect(detailedPrompt).toContain("- Failed requests:");
+      expect(detailedPrompt).toContain("404 ");
+      expect(detailedPrompt).toContain("/missing.png");
+
+      // Reset to Standard so the rest of the suite sees today's default.
+      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+      await editor.getByRole("option", { name: "Standard" }).click();
     }
 
     if (name === "inner") {

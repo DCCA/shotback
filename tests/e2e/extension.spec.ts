@@ -34,12 +34,23 @@ const BLOCKS = Array.from(
   (_, i) => `<div style="height:300px;background:hsl(${(i * 37) % 360},70%,60%)"></div>`
 ).join("");
 
+// A real, identifiable control to annotate: absolutely positioned so it sits
+// over a colour block without changing the page height the capture assertions
+// depend on, and clear of the sampled columns (x=20 and the right edge). The
+// inline script hangs a React-shaped fiber off it exactly the way React does
+// (a page expando), so the main-world component pass has something to find.
+const CTA =
+  `<div id="app" style="position:absolute;top:120px;left:200px"><section class="hero"><button class="cta" data-testid="buy" style="width:200px;height:120px;font-size:20px">Buy now</button></section></div>` +
+  `<script>document.querySelector("button.cta")["__reactFiber$e2e"] = ` +
+  `{ type: "button", return: { type: { name: "PricingCard" }, return: ` +
+  `{ type: "div", return: { type: { displayName: "Page" }, return: null } } } };</script>`;
+
 const CAPTURE_PAGES: Record<string, string> = {
   // The document itself scrolls, but with `scroll-behavior: smooth` - an
   // animated scroll must not be captured mid-flight.
   smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0">${BLOCKS}</body></html>`,
   // SPA shell: the document does not scroll at all, an inner element does.
-  inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto">${BLOCKS}</div></body></html>`
+  inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto;position:relative">${BLOCKS}${CTA}</div></body></html>`
 };
 
 let ctx: BrowserContext;
@@ -383,6 +394,50 @@ for (const [name, headerHeight] of [
       await expect(rect).toHaveAttribute("x", originalX);
       await editor.keyboard.press("Control+Shift+z");
       await expect(rows).toHaveCount(2);
+
+      // Per-annotation DOM context: a box drawn over the CTA is mapped back to
+      // the live tab, so the copied prompt names the element it covers.
+      const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+      const shown = (await img.boundingBox())!;
+      const k = shown.width / natural;
+      // Stitched image px -> editor screen px (the image is fit to the pane).
+      const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
+
+      await editor.getByRole("combobox", { name: "Interaction" }).click();
+      await editor.getByRole("option", { name: "Draw New" }).click();
+      await editor.getByRole("combobox", { name: "Tool" }).click();
+      await editor.getByRole("option", { name: "Box" }).click();
+      const from = onScreen(250, 210);
+      const to = onScreen(350, 280);
+      await editor.mouse.move(from.x, from.y);
+      await editor.mouse.down();
+      await editor.mouse.move(to.x, to.y, { steps: 5 });
+      await editor.mouse.up();
+      await expect(rows).toHaveCount(3);
+      await editor.keyboard.press("Escape");
+
+      const cloudPrompt = async (): Promise<string> => {
+        await editor.getByRole("button", { name: "Prepare for Cloud LLM" }).click();
+        await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+          "Prompt copied"
+        );
+        return editor.evaluate(async () => navigator.clipboard.readText());
+      };
+
+      // Polled: the inspection round trip runs after the commit, asynchronously.
+      await expect
+        .poll(cloudPrompt, { timeout: 15_000 })
+        .toContain("-> #app > section.hero > button.cta in <PricingCard > Page>");
+
+      // The context is derived data re-read on every commit, so it must still
+      // be there after the box is moved (while it still covers the button).
+      // Drawing an annotation already switched the editor into move mode.
+      const centre = onScreen(300, 245);
+      await editor.mouse.move(centre.x, centre.y);
+      await editor.mouse.down();
+      await editor.mouse.move(centre.x + 20, centre.y, { steps: 5 });
+      await editor.mouse.up();
+      await expect.poll(cloudPrompt, { timeout: 15_000 }).toContain("button.cta");
     }
 
     await editor.close();

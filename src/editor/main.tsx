@@ -7,8 +7,9 @@ import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
-import { captureFullPage } from "@/lib/capture";
+import { captureFullPage, inspectPoints } from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
+import { inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
 
 function EditorApp(): JSX.Element {
@@ -21,6 +22,9 @@ function EditorApp(): JSX.Element {
   const exports = useExports(state);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
+  // Stitched image px per page CSS px, set by the last capture. A ref, not
+  // state: nothing renders from it, and the commit handler must see it at once.
+  const captureScaleRef = useRef<number | null>(null);
   const autoCaptureFiredRef = useRef(false);
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
@@ -41,6 +45,7 @@ function EditorApp(): JSX.Element {
 
     state.setIsBusy(true);
     state.setStatus(null);
+    captureScaleRef.current = null;
     state.setShareUrl("");
     state.setEnvironment(undefined);
     state.resetAnnotations();
@@ -54,6 +59,7 @@ function EditorApp(): JSX.Element {
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
+      captureScaleRef.current = result.scale;
       state.setProgress("Capture completed");
     } catch (error) {
       state.setStatus({
@@ -74,6 +80,37 @@ function EditorApp(): JSX.Element {
     void takeScreenshot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Re-read the element under every annotation from the captured tab, so the
+   * prompts can name it. Deliberately outside the undo history: a context is
+   * derived data, refreshed on the next commit, and an extra history entry per
+   * inspection would double every undo. An older snapshot may therefore carry
+   * an older context, which is harmless. Best effort throughout - `inspectPoints`
+   * swallows a closed tab or a missing content script.
+   */
+  const refreshContexts = async (): Promise<void> => {
+    const scale = captureScaleRef.current;
+    if (!scale || !canCapture) return;
+
+    const items = state.getAnnotations();
+    const contexts = await inspectPoints(
+      tabId,
+      items.map((annotation) => {
+        const { x, y } = inspectAnchor(annotation);
+        return { x: x / scale, y: y / scale };
+      })
+    );
+    if (contexts.length === 0 || contexts.length !== items.length) return;
+
+    const byId = new Map(items.map((annotation, index) => [annotation.id, contexts[index]]));
+    state.setAnnotations((current) =>
+      current.map((annotation) => {
+        const context = byId.get(annotation.id);
+        return context ? { ...annotation, context } : annotation;
+      })
+    );
+  };
 
   const selectTimelineItem = (id: string): void => {
     state.setSelectedId(id);
@@ -115,7 +152,10 @@ function EditorApp(): JSX.Element {
         inlineCommentRef={inlineCommentRef}
         shouldFocusSelectedComment={shouldFocusSelectedComment}
         setShouldFocusSelectedComment={setShouldFocusSelectedComment}
-        onCommit={() => state.commitAnnotations()}
+        onCommit={() => {
+          state.commitAnnotations();
+          void refreshContexts();
+        }}
       />
     </main>
   );

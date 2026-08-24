@@ -3,6 +3,7 @@ import {
   canvasScale,
   describeGeometry,
   numberAnnotations,
+  inspectAnchor,
   pinAnchor,
   pinCenter,
   pinRadius
@@ -42,6 +43,28 @@ describe("canvasScale", () => {
     expect(canvasScale(1200)).toBe(1);
     expect(canvasScale(600)).toBeCloseTo(0.7);
     expect(canvasScale(4000)).toBeCloseTo(1.4);
+  });
+});
+
+describe("inspectAnchor", () => {
+  it("uses the centre of a box, which is what the box frames", () => {
+    const item = { ...mk("b", "2026-08-23T00:00:00Z", 100, 200), width: 60, height: 40 };
+    expect(inspectAnchor(item)).toEqual({ x: 130, y: 220 });
+  });
+
+  it("falls back to the pin anchor for arrows and text", () => {
+    const item = {
+      id: "a",
+      tool: "arrow" as const,
+      color: "#f00",
+      createdAt: "2026-08-23T00:00:00Z",
+      x1: 30,
+      y1: 40,
+      x2: 90,
+      y2: 120
+    };
+    expect(inspectAnchor(item)).toEqual(pinAnchor(item));
+    expect(inspectAnchor(item)).toEqual({ x: 30, y: 40 });
   });
 });
 

@@ -81,7 +81,10 @@ npm run build
 
    Both prompt outputs include an **Environment** block describing the captured
    tab (page title, viewport size, device pixel ratio, colour scheme, whether
-   the document or an inner element scrolled, user agent and capture time).
+   the document or an inner element scrolled, user agent and capture time), and
+   each area comment names the element it covers - a CSS selector such as
+   `#pricing > div.card:nth-of-type(2) > button.cta`, plus the React component
+   chain when the page is React - read back from the live tab as you annotate.
 
 ## 📁 Project Structure
 

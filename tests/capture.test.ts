@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   activateTab,
+  inspectPoints,
+  readFiberComponents,
   buildEnvironment,
   buildScrollSteps,
   isNoReceiverError,
@@ -141,6 +143,121 @@ describe("sendToContentScript", () => {
       "Receiving end does not exist"
     );
     expect(sendMessage).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("readFiberComponents", () => {
+  // The real thing runs in the page's world against React's own expando; here
+  // the DOM it walks is stubbed, exactly the shape Chrome hands it.
+  function fakeElement(mark: string, fiber: unknown): unknown {
+    const attributes: Record<string, string> = { "data-shotback-hit": mark };
+    return {
+      __reactFiber$abc: fiber,
+      getAttribute: (name: string) => attributes[name] ?? null,
+      removeAttribute: (name: string) => {
+        delete attributes[name];
+      }
+    };
+  }
+
+  function stubDocument(elements: unknown[]): void {
+    (globalThis as unknown as { document: unknown }).document = {
+      querySelectorAll: () => elements
+    };
+  }
+
+  const fiber = (type: unknown, parent: unknown = null): unknown => ({ type, return: parent });
+
+  it("collects named components nearest first, skipping host and anonymous types", () => {
+    function PricingCard(): null {
+      return null;
+    }
+    const Page = class Page {};
+    const element = fakeElement("0", fiber("button", fiber(PricingCard, fiber({}, fiber(Page)))));
+    stubDocument([element]);
+
+    expect(readFiberComponents()).toEqual({ "0": ["PricingCard", "Page"] });
+  });
+
+  it("prefers displayName, caps the chain at three and clears the mark", () => {
+    const named = (displayName: string) => ({ displayName });
+    const element = fakeElement(
+      "2",
+      fiber(named("A"), fiber(named("B"), fiber(named("C"), fiber(named("D")))))
+    );
+    stubDocument([element]);
+
+    expect(readFiberComponents()).toEqual({ "2": ["A", "B", "C"] });
+    expect(
+      (element as { getAttribute: (n: string) => string | null }).getAttribute("data-shotback-hit")
+    ).toBeNull();
+  });
+
+  it("reports nothing for an element with no fiber", () => {
+    stubDocument([{ getAttribute: () => "0", removeAttribute: () => undefined }]);
+
+    expect(readFiberComponents()).toEqual({});
+  });
+});
+
+describe("inspectPoints", () => {
+  function stubChrome(sendMessage: ReturnType<typeof vi.fn>, chains: unknown = {}): void {
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      tabs: { sendMessage },
+      scripting: { executeScript: vi.fn().mockResolvedValue([{ result: chains }]) }
+    };
+  }
+
+  it("sends nothing when there is nothing to inspect", async () => {
+    const sendMessage = vi.fn();
+    stubChrome(sendMessage);
+    await expect(inspectPoints(1, [])).resolves.toEqual([]);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns the contexts the page reported", async () => {
+    const contexts = [
+      {
+        cssPath: "button.cta",
+        tag: "button",
+        classes: ["cta"],
+        rect: { x: 10, y: 20, width: 30, height: 40 }
+      }
+    ];
+    const sendMessage = vi.fn().mockResolvedValue({ contexts });
+    stubChrome(sendMessage);
+    await expect(inspectPoints(7, [{ x: 1, y: 2 }])).resolves.toEqual(contexts);
+    expect(sendMessage).toHaveBeenCalledWith(7, {
+      type: "SB_INSPECT_POINTS",
+      points: [{ x: 1, y: 2 }]
+    });
+  });
+
+  it("merges the component chain the main-world pass found", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({
+      contexts: [
+        {
+          cssPath: "button.cta",
+          tag: "button",
+          classes: [],
+          rect: { x: 0, y: 0, width: 1, height: 1 }
+        },
+        null
+      ]
+    });
+    stubChrome(sendMessage, { "0": ["PricingCard"] });
+
+    const [first, second] = await inspectPoints(1, [
+      { x: 1, y: 2 },
+      { x: 3, y: 4 }
+    ]);
+    expect(first?.component).toEqual(["PricingCard"]);
+    expect(second).toBeNull();
+  });
+
+  it("never throws: a failed inspection is simply no context", async () => {
+    stubChrome(vi.fn().mockRejectedValue(new Error("Cannot access a chrome:// URL")));
+    await expect(inspectPoints(1, [{ x: 1, y: 2 }])).resolves.toEqual([]);
   });
 });
 

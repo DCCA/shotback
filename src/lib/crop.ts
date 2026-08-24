@@ -46,9 +46,10 @@ export function clampCrop(crop: Rect, image: { width: number; height: number }):
  * they cannot disagree about where an annotation is or whether it survived.
  *
  * Per tool:
- * - box: intersected with the crop, so a box half outside it is clamped to the
- *   visible part. A box that only touches the crop edge has no visible area
- *   left and is dropped.
+ * - box and redact: intersected with the crop, so one half outside it is
+ *   clamped to the visible part. One that only touches the crop edge has no
+ *   visible area left and is dropped - and a dropped redaction hides nothing
+ *   because the crop already cut those pixels out of the export.
  * - arrow: kept when either endpoint is inside, and only shifted - never
  *   clamped. Clipping the line to the crop edge would move the head, and an
  *   arrow's head is the thing it points at; an endpoint that lands slightly
@@ -69,7 +70,7 @@ export function applyCrop(annotations: Annotation[], crop: Rect): Annotation[] {
   const cropped: Annotation[] = [];
 
   for (const annotation of annotations) {
-    if (annotation.tool === "box") {
+    if (annotation.tool === "box" || annotation.tool === "redact") {
       const left = Math.max(annotation.x, crop.x);
       const top = Math.max(annotation.y, crop.y);
       const width = Math.min(annotation.x + annotation.width, right) - left;

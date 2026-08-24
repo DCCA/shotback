@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { exportAnnotatedImage, selectFeedbackRenderMode } from "../src/lib/annotate";
 import { applyCrop, type Rect } from "../src/lib/crop";
-import type { ArrowAnnotation, BoxAnnotation } from "../src/types/annotation";
+import type { ArrowAnnotation, BoxAnnotation, RedactAnnotation } from "../src/types/annotation";
 
 describe("selectFeedbackRenderMode", () => {
   it("uses footer when resulting canvas size is within limits", () => {
@@ -60,7 +60,12 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: RecordedCal
       };
     },
     set(target, property, value) {
-      if (typeof property === "string") target[property] = value;
+      if (typeof property === "string") {
+        target[property] = value;
+        // Recorded in order alongside the draw calls, so a test can assert
+        // *when* a flag such as `imageSmoothingEnabled` was set.
+        calls.push({ name: `set:${property}`, args: [value] });
+      }
       return true;
     }
   }) as unknown as CanvasRenderingContext2D;
@@ -73,14 +78,24 @@ function stubCanvasAndImage(
   calls: RecordedCall[],
   ctx: CanvasRenderingContext2D
 ): { width: number; height: number } {
-  const canvas = {
+  const newCanvas = () => ({
     width: 0,
     height: 0,
     getContext: () => ctx,
     toDataURL: () => "data:x"
-  };
+  });
+  const canvas = newCanvas();
+  let first = true;
 
-  vi.stubGlobal("document", { createElement: () => canvas });
+  // Only the first canvas is the export canvas the assertions read; the
+  // pixelation buffer gets its own object, so sizing it never rewrites it.
+  vi.stubGlobal("document", {
+    createElement: () => {
+      if (!first) return newCanvas();
+      first = false;
+      return canvas;
+    }
+  });
 
   vi.stubGlobal(
     "Image",
@@ -282,5 +297,98 @@ describe("exportAnnotatedImage crop", () => {
     expect(draw.args.slice(1)).toEqual([0, 0, 1200, 800, 0, 0, 1200, 800]);
     expect(canvas.width).toBe(1200);
     expect(canvas.height).toBe(800);
+  });
+
+  it("pixelates a redaction in crop space, since the caller already shifted it", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", applyCrop([redaction()], crop), { crop });
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    expect(draws[1].args.slice(1)).toEqual([50, 50, 60, 40, 0, 0, 5, 4]);
+    expect(draws[2].args.slice(1)).toEqual([0, 0, 5, 4, 50, 50, 60, 40]);
+  });
+});
+
+function redaction(overrides: Partial<RedactAnnotation> = {}): RedactAnnotation {
+  return {
+    id: "r1",
+    tool: "redact",
+    color: "#ff3333",
+    createdAt: "2026-02-21T00:00:04.000Z",
+    x: 150,
+    y: 250,
+    width: 60,
+    height: 40,
+    ...overrides
+  };
+}
+
+describe("exportAnnotatedImage redactions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("pixelates the region through a block-sized buffer, smoothing off", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [redaction()]);
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    // 1: the base image; 2: the region down to ceil(60/12) x ceil(40/12);
+    // 3: that buffer stretched back over the region.
+    expect(draws).toHaveLength(3);
+    expect(draws[1].args.slice(1)).toEqual([150, 250, 60, 40, 0, 0, 5, 4]);
+    expect(draws[2].args.slice(1)).toEqual([0, 0, 5, 4, 150, 250, 60, 40]);
+
+    const smoothingOff = calls.findIndex(
+      (call) => call.name === "set:imageSmoothingEnabled" && call.args[0] === false
+    );
+    // Smoothing must be off before the region is painted back, or the blocks
+    // interpolate into a blur the original can be read through.
+    expect(smoothingOff).toBeGreaterThan(-1);
+    expect(smoothingOff).toBeLessThan(calls.indexOf(draws[2]));
+  });
+
+  it("pixelates before anything is drawn on top, so no pin can cover a secret", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [box("hi"), redaction()], { generalFeedback: "ship it" });
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    const lastPixelation = calls.indexOf(draws[2]);
+    const firstAnnotationMark = calls.findIndex(
+      (call) => call.name === "strokeRect" || call.name === "arc"
+    );
+    expect(lastPixelation).toBeLessThan(firstAnnotationMark);
+  });
+
+  it("gives a redaction no pin and no legend row of its own", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [box("hi"), redaction()]);
+
+    const pins = calls.filter((call) => call.name === "arc" && call.args[2] === 20);
+    expect(pins.map((call) => [call.args[0], call.args[1]])).toEqual([[100, 200]]);
+    const labels = calls.filter((call) => call.name === "fillText").map((call) => call.args[0]);
+    expect(labels).not.toContain("2");
+  });
+
+  it("clamps a redaction that runs past the image, and skips an empty one", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [
+      redaction({ id: "r1", x: 1150, y: 780, width: 200, height: 200 }),
+      redaction({ id: "r2", x: 10, y: 10, width: 0, height: 40 })
+    ]);
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    expect(draws).toHaveLength(3);
+    expect(draws[1].args.slice(1)).toEqual([1150, 780, 50, 20, 0, 0, 5, 2]);
   });
 });

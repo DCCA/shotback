@@ -9,6 +9,7 @@ import type { EditorState, EditorTool } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
 import { applyCrop } from "@/lib/crop";
 import type { Verbosity } from "@/lib/feedback";
+import { numberAnnotations, redactions } from "@/lib/numbering";
 
 interface SidebarProps {
   state: EditorState;
@@ -52,6 +53,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
   // What the crop leaves out. The exports renumber the survivors, so saying
   // this plainly is also the answer to "why is pin 3 numbered 2 in the PNG".
   const excludedByCrop = crop ? annotations.length - applyCrop(annotations, crop).length : 0;
+  // Redactions are not notes: they are never numbered, so counting them here
+  // would disagree with the timeline, the pins and the prompt. They get their
+  // own count instead, because "how much of this is hidden" is worth saying.
+  const noteCount = numberAnnotations(annotations).length;
+  const redactedCount = redactions(annotations).length;
 
   const removeSelected = (): void => {
     if (selectedId) removeAnnotation(selectedId);
@@ -62,7 +68,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
       <CardHeader className="space-y-3">
         <div className="flex items-center justify-between">
           <CardTitle as="h1">Shotback Editor</CardTitle>
-          <Badge variant="accent">{annotations.length} notes</Badge>
+          <Badge variant="accent">{noteCount} notes</Badge>
         </div>
         <Button disabled={isBusy} onClick={onCapture}>
           Capture Page
@@ -102,6 +108,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
               { value: "box", label: "Box" },
               { value: "arrow", label: "Arrow" },
               { value: "text", label: "Text" },
+              { value: "redact", label: "Redact" },
               { value: "crop", label: "Crop" }
             ]}
           />
@@ -277,7 +284,12 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
               {status.message}
             </p>
           ) : null}
-          <p className="m-0 text-muted-foreground">Annotations: {annotations.length}</p>
+          <p className="m-0 text-muted-foreground">Annotations: {noteCount}</p>
+          {redactedCount > 0 ? (
+            <p className="m-0 text-muted-foreground">
+              Redacted regions: {redactedCount} (pixelated in every export and in the saved share)
+            </p>
+          ) : null}
         </div>
 
         {children}

@@ -1,12 +1,57 @@
 import { clampCrop, type Rect } from "@/lib/crop";
 import { noteText } from "@/lib/feedback";
-import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
-import type { Annotation } from "@/types/annotation";
+import { numberAnnotations, pinCenter, pinRadius, redactions } from "@/lib/numbering";
+import type { Annotation, RedactAnnotation } from "@/types/annotation";
 
 export const MAX_EXPORT_CANVAS_HEIGHT = 16384;
 export const MAX_EXPORT_CANVAS_AREA = 268000000;
 
 export type FeedbackRenderMode = "footer" | "overlay";
+
+/**
+ * Edge of one pixelation block, in image px. Big enough that a block spans
+ * several glyph strokes at normal capture scale, so what it replaces cannot be
+ * read back out of it.
+ */
+const REDACT_BLOCK_SIZE = 12;
+
+/**
+ * Destroy the pixels under one redaction: the region is squashed onto a buffer
+ * of one pixel per block and stretched straight back over itself, so what
+ * lands on the canvas is the block average and the original is gone from it.
+ *
+ * Clamped to the canvas because the region is drawn by hand and can hang off
+ * the edge, and skipped when it has no area - `drawImage` throws on a
+ * zero-sized source rect, and there is nothing to hide in one anyway.
+ */
+function pixelateRegion(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  region: RedactAnnotation,
+  size: { width: number; height: number }
+): void {
+  const x = Math.max(0, Math.floor(region.x));
+  const y = Math.max(0, Math.floor(region.y));
+  const width = Math.min(Math.ceil(region.x + region.width), size.width) - x;
+  const height = Math.min(Math.ceil(region.y + region.height), size.height) - y;
+  if (width <= 0 || height <= 0) return;
+
+  const blocksWide = Math.ceil(width / REDACT_BLOCK_SIZE);
+  const blocksHigh = Math.ceil(height / REDACT_BLOCK_SIZE);
+
+  const buffer = document.createElement("canvas");
+  buffer.width = blocksWide;
+  buffer.height = blocksHigh;
+  const bufferCtx = buffer.getContext("2d");
+  if (!bufferCtx) throw new Error("Failed to create canvas context");
+
+  bufferCtx.drawImage(canvas, x, y, width, height, 0, 0, blocksWide, blocksHigh);
+  // Off for the way back, or the blocks interpolate into a blur that still
+  // carries the shape of what was under them.
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(buffer, 0, 0, blocksWide, blocksHigh, x, y, width, height);
+  ctx.imageSmoothingEnabled = true;
+}
 
 export function selectFeedbackRenderMode(params: {
   imageWidth: number;
@@ -297,6 +342,11 @@ function drawNotesOverlay(params: {
 /**
  * Rasterize the annotations onto the capture and return a PNG data URL.
  *
+ * Redactions are burned in first, right on top of the base image, so the
+ * returned PNG never holds the pixels they cover. That is the whole of the
+ * redaction guarantee: every output is this data URL, so there is no second
+ * path an unredacted capture could leave by.
+ *
  * With `crop`, only that region of the capture is drawn, onto a canvas sized
  * to it. The annotations are drawn exactly as given: shifting them into crop
  * space is `applyCrop`'s job, done once by the caller so the image, the
@@ -378,6 +428,14 @@ export async function exportAnnotatedImage(
     source.height
   );
 
+  // Straight after the base image and before a single mark is drawn: every
+  // pin, shape and legend row lands on top of pixels that are already gone,
+  // and every output - download, clipboard, cloud package, Claude Code PNG and
+  // the saved share - is made from this one canvas.
+  for (const region of redactions(annotations)) {
+    pixelateRegion(ctx, canvas, region, size);
+  }
+
   const r = pinRadius(size.width);
   const shapeLineWidth = Math.max(3, Math.round(r / 5));
 
@@ -401,7 +459,7 @@ export async function exportAnnotatedImage(
         annotation.y2,
         annotation.color
       );
-    } else {
+    } else if (annotation.tool === "text") {
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = `${Math.round(r * 0.9)}px sans-serif`;

@@ -4,7 +4,12 @@ import {
   buildClaudeCodePrompt,
   buildExternalLlmPrompt
 } from "../src/lib/feedback";
-import type { ArrowAnnotation, BoxAnnotation, TextAnnotation } from "../src/types/annotation";
+import type {
+  ArrowAnnotation,
+  BoxAnnotation,
+  RedactAnnotation,
+  TextAnnotation
+} from "../src/types/annotation";
 
 // Distinct, ordered timestamps: numbering follows creation time, so the
 // helpers must not rely on the array position they happen to be passed in.
@@ -834,5 +839,58 @@ describe("prompt verbosity levels", () => {
         "3. [text] Label - at (1, 2) px"
       ].join("\n")
     );
+  });
+});
+
+function redaction(id = "r1", createdAt = "2026-02-21T00:00:04.000Z"): RedactAnnotation {
+  return {
+    id,
+    tool: "redact",
+    color: "#ff3333",
+    createdAt,
+    x: 40,
+    y: 60,
+    width: 120,
+    height: 30
+  };
+}
+
+// A redaction is a safety fact about the image, not a note: it gets one
+// counted line in every prompt and never a numbered line of its own.
+describe("redacted regions", () => {
+  const params = {
+    pageUrl: "https://example.test/page",
+    generalFeedback: "",
+    annotations: [box("fix padding"), redaction()],
+    image
+  };
+
+  it("counts them on one line above the area comments, at every verbosity", () => {
+    for (const verbosity of ["compact", "standard", "detailed"] as const) {
+      const prompt = buildExternalLlmPrompt({ ...params, verbosity });
+      expect(prompt).toContain("\nRedacted regions: 1\n\nArea comments:\n");
+    }
+  });
+
+  it("counts them in the Claude Code prompt too", () => {
+    const prompt = buildClaudeCodePrompt({ ...params, filePath: "/tmp/cap.png" });
+    expect(prompt).toContain("Redacted regions: 1");
+  });
+
+  it("says nothing at all when nothing is redacted", () => {
+    const prompt = buildExternalLlmPrompt({ ...params, annotations: [box("fix padding")] });
+    expect(prompt).not.toContain("Redacted regions");
+  });
+
+  it("never numbers a redaction alongside the annotations", () => {
+    const prompt = buildExternalLlmPrompt({
+      ...params,
+      annotations: [box("fix padding"), redaction(), redaction("r2")]
+    });
+    expect(prompt).toContain("Redacted regions: 2");
+    expect(prompt).not.toContain("[redact]");
+    expect(prompt.split("\n").filter((line) => /^\d+\. /.test(line))).toEqual([
+      "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page]"
+    ]);
   });
 });

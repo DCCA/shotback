@@ -172,3 +172,32 @@ describe("buildSidecar", () => {
     expect(sidecar.diagnostics).toEqual(diagnostics);
   });
 });
+
+const redaction: Annotation = {
+  id: "r",
+  tool: "redact",
+  color: "#ff3333",
+  createdAt: "2026-08-24T00:00:04.000Z",
+  x: 100,
+  y: 200,
+  width: 250,
+  height: 100
+};
+
+describe("buildSidecar redactions", () => {
+  it("lists them apart from the annotations, with no number, comment or context", () => {
+    const sidecar = buildSidecar({ ...base, annotations: [box, redaction] });
+    expect(sidecar.annotations.map((a) => a.tool)).toEqual(["box"]);
+    expect(sidecar.redactions).toEqual([
+      {
+        tool: "redact",
+        rect: { x: 100, y: 200, width: 250, height: 100 },
+        normalizedRect: { x: 0.1, y: 0.1, width: 0.25, height: 0.05 }
+      }
+    ]);
+  });
+
+  it("omits the field entirely when nothing is redacted", () => {
+    expect(buildSidecar({ ...base, annotations: [box] }).redactions).toBeUndefined();
+  });
+});

@@ -32,9 +32,11 @@ function EditorApp(): JSX.Element {
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
-  const timelineItems = [...state.annotations].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  // Redactions are dropped here rather than inside the timeline: they carry no
+  // note, so a row for one would be an empty row with no number to match a pin.
+  const timelineItems = state.annotations
+    .filter((annotation) => annotation.tool !== "redact")
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
@@ -101,13 +103,17 @@ function EditorApp(): JSX.Element {
    * A `null` answer clears the annotation's context instead of keeping the one
    * it had: the element it named is no longer under it (or the tab navigated),
    * and a stale name in a prompt is worse than no name.
+   *
+   * Redactions are never inspected: reading the element under one would put a
+   * selector, and up to 80 characters of its text, into the very prompts the
+   * redaction exists to keep it out of.
    */
   const refreshContexts = async (): Promise<void> => {
     const scale = captureScaleRef.current;
     if (!scale || !canCapture) return;
 
     const generation = (inspectGenRef.current += 1);
-    const items = state.getAnnotations();
+    const items = state.getAnnotations().filter((annotation) => annotation.tool !== "redact");
     const contexts = await inspectPoints(
       tabId,
       items.map((annotation) => {

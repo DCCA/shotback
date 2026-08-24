@@ -1,5 +1,6 @@
 import type * as React from "react";
 import { useLayoutEffect, useRef, useState } from "react";
+import type { CaptureEnvironment } from "@/lib/capture";
 import { commit, createHistory, redo, undo, type History } from "@/lib/history";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
 
@@ -42,6 +43,9 @@ export interface EditorState {
   setBaseDataUrl: (url: string) => void;
   pageUrl: string;
   setPageUrl: (url: string) => void;
+  /** The captured tab's context, undefined until a capture completes. */
+  environment: CaptureEnvironment | undefined;
+  setEnvironment: (environment: CaptureEnvironment | undefined) => void;
   imageSize: { width: number; height: number };
   setImageSize: (size: { width: number; height: number }) => void;
   /** How the capture is displayed: scaled to fit the pane, or at its real pixel size. */
@@ -56,6 +60,7 @@ export interface EditorState {
 export function useEditorState(): EditorState {
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
+  const [environment, setEnvironment] = useState<CaptureEnvironment | undefined>(undefined);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [history, setHistory] = useState<History<Annotation[]>>(() =>
     createHistory<Annotation[]>([])
@@ -154,6 +159,8 @@ export function useEditorState(): EditorState {
     setBaseDataUrl,
     pageUrl,
     setPageUrl,
+    environment,
+    setEnvironment,
     imageSize,
     setImageSize,
     zoom,

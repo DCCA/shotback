@@ -42,6 +42,7 @@ function EditorApp(): JSX.Element {
     state.setIsBusy(true);
     state.setStatus(null);
     state.setShareUrl("");
+    state.setEnvironment(undefined);
     state.resetAnnotations();
     state.setSelectedId(null);
     state.setGeneralFeedback("");
@@ -52,6 +53,7 @@ function EditorApp(): JSX.Element {
       });
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
+      state.setEnvironment(result.environment);
       state.setProgress("Capture completed");
     } catch (error) {
       state.setStatus({

@@ -11,11 +11,52 @@ export interface PageMetrics {
   devicePixelRatio: number;
   pageUrl: string;
   scrollerTop: number;
+  title: string;
+  colorScheme: "light" | "dark";
+  /** What the content script scrolled: the document, or an inner element. */
+  scroller: "document" | "element";
+}
+
+/**
+ * The captured tab's context, attached to the prompts and to saved shares so an
+ * agent never has to ask "which page, how wide, light or dark?". Everything but
+ * `userAgent`/`capturedAt` describes the target tab, not the editor page.
+ */
+export interface CaptureEnvironment {
+  pageTitle: string;
+  pageUrl: string;
+  /** ISO 8601. */
+  capturedAt: string;
+  /** CSS px of the captured tab. */
+  viewport: { width: number; height: number };
+  devicePixelRatio: number;
+  userAgent: string;
+  colorScheme: "light" | "dark";
+  scroller: "document" | "element";
 }
 
 export interface CaptureResult {
   dataUrl: string;
   pageUrl: string;
+  environment: CaptureEnvironment;
+}
+
+/** Pure; `now` is injected so the mapping stays testable. */
+export function buildEnvironment(
+  metrics: PageMetrics,
+  userAgent: string,
+  now: Date
+): CaptureEnvironment {
+  return {
+    pageTitle: metrics.title,
+    pageUrl: metrics.pageUrl,
+    capturedAt: now.toISOString(),
+    viewport: { width: metrics.viewportWidth, height: metrics.viewportHeight },
+    devicePixelRatio: metrics.devicePixelRatio,
+    userAgent,
+    colorScheme: metrics.colorScheme,
+    scroller: metrics.scroller
+  };
 }
 
 export function buildScrollSteps(fullHeight: number, viewportHeight: number): number[] {
@@ -236,7 +277,8 @@ export async function captureFullPage(
 
     return {
       dataUrl: canvas.toDataURL("image/png"),
-      pageUrl: metrics.pageUrl
+      pageUrl: metrics.pageUrl,
+      environment: buildEnvironment(metrics, navigator.userAgent, new Date())
     };
   } finally {
     if (previousActiveTabId && previousActiveTabId !== tabId) {

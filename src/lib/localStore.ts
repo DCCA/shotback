@@ -1,5 +1,6 @@
-import type { Annotation } from "@/types/annotation";
+import type { CaptureEnvironment } from "@/lib/capture";
 import { deleteImageBlob, getImageBlob, putImageBlob } from "@/lib/shareDb";
+import type { Annotation } from "@/types/annotation";
 
 export interface LocalShare {
   id: string;
@@ -8,6 +9,8 @@ export interface LocalShare {
   annotations: Annotation[];
   generalFeedback: string;
   createdAt: string;
+  /** Absent on shares saved before the capture environment was recorded. */
+  environment?: CaptureEnvironment;
 }
 
 export interface LocalShareMeta {
@@ -19,6 +22,8 @@ export interface LocalShareMeta {
   imageBlobKey: string;
   imageByteSize: number;
   schemaVersion: 2;
+  /** Passthrough: optional, so no schema bump and no migration. */
+  environment?: CaptureEnvironment;
 }
 
 interface LegacyLocalShareRecord {
@@ -199,6 +204,7 @@ function toLocalShareMeta(
     createdAt: string;
     blobKey: string;
     imageByteSize: number;
+    environment?: CaptureEnvironment;
   }
 ): LocalShareMeta {
   return {
@@ -209,7 +215,8 @@ function toLocalShareMeta(
     createdAt: input.createdAt,
     imageBlobKey: input.blobKey,
     imageByteSize: input.imageByteSize,
-    schemaVersion: SCHEMA_VERSION
+    schemaVersion: SCHEMA_VERSION,
+    environment: input.environment
   };
 }
 
@@ -266,6 +273,7 @@ export async function saveLocalShare(input: {
   imageDataUrl: string;
   annotations: Annotation[];
   generalFeedback: string;
+  environment?: CaptureEnvironment;
 }): Promise<LocalShareMeta> {
   const id = randomId();
   const createdAt = new Date().toISOString();
@@ -277,7 +285,8 @@ export async function saveLocalShare(input: {
     generalFeedback: input.generalFeedback,
     createdAt,
     blobKey,
-    imageByteSize: blob.size
+    imageByteSize: blob.size,
+    environment: input.environment
   });
 
   await putImageBlob(blobKey, blob);
@@ -307,6 +316,7 @@ export async function getLocalShare(id: string): Promise<LocalShare | null> {
     annotations: meta.annotations,
     generalFeedback: meta.generalFeedback,
     createdAt: meta.createdAt,
+    environment: meta.environment,
     imageDataUrl: await blobToDataUrl(blob)
   };
 }

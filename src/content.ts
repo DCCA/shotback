@@ -5,6 +5,9 @@ interface PageMetrics {
   devicePixelRatio: number;
   pageUrl: string;
   scrollerTop: number;
+  title: string;
+  colorScheme: "light" | "dark";
+  scroller: "document" | "element";
 }
 
 let originalScrollY = 0;
@@ -185,25 +188,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     hideScrollbars();
     originalScrollY = scroller ? scroller.scrollTop : window.scrollY;
 
+    // Page context the editor turns into the prompt's Environment block. It
+    // has to be read here: the editor tab has its own title, size and scheme.
+    const shared = {
+      viewportWidth: window.innerWidth,
+      devicePixelRatio: window.devicePixelRatio,
+      pageUrl: window.location.href,
+      title: document.title,
+      colorScheme: window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? ("dark" as const)
+        : ("light" as const)
+    };
+
     const metrics: PageMetrics = scroller
       ? {
+          ...shared,
           fullHeight: scroller.scrollHeight,
           viewportHeight: scroller.clientHeight,
-          viewportWidth: window.innerWidth,
-          devicePixelRatio: window.devicePixelRatio,
-          pageUrl: window.location.href,
-          scrollerTop: Math.max(0, Math.round(scroller.getBoundingClientRect().top))
+          scrollerTop: Math.max(0, Math.round(scroller.getBoundingClientRect().top)),
+          scroller: "element"
         }
       : {
+          ...shared,
           fullHeight: Math.max(
             document.documentElement.scrollHeight,
             document.body?.scrollHeight ?? 0
           ),
           viewportHeight: window.innerHeight,
-          viewportWidth: window.innerWidth,
-          devicePixelRatio: window.devicePixelRatio,
-          pageUrl: window.location.href,
-          scrollerTop: 0
+          scrollerTop: 0,
+          scroller: "document"
         };
 
     sendResponse(metrics);

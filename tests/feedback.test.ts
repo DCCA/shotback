@@ -52,6 +52,27 @@ function text(value: string): TextAnnotation {
   };
 }
 
+const environment = {
+  pageTitle: "Acme Dashboard",
+  pageUrl: "https://example.test/page",
+  capturedAt: "2026-08-24T10:11:12.000Z",
+  viewport: { width: 1280, height: 800 },
+  devicePixelRatio: 2,
+  userAgent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0.0.0",
+  colorScheme: "dark" as const,
+  scroller: "document" as const
+};
+
+const environmentBlock = [
+  "Environment:",
+  "- Page title: Acme Dashboard",
+  "- Viewport: 1280x800 @2x",
+  "- Color scheme: dark",
+  "- Scroller: document",
+  "- User agent: Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0.0.0",
+  "- Captured at: 2026-08-24T10:11:12.000Z"
+].join("\n");
+
 describe("annotationSummary", () => {
   it("returns the text content for text annotations", () => {
     expect(annotationSummary(text("Heading is misaligned"))).toBe("Heading is misaligned");
@@ -105,6 +126,61 @@ describe("buildExternalLlmPrompt", () => {
     expect(prompt).toContain("2. [text] (empty)");
   });
 
+  it("renders the environment block after the page URL when one is captured", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
+  it("falls back to a placeholder title", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment: { ...environment, pageTitle: "  " }
+    });
+
+    expect(prompt).toContain("- Page title: (untitled)");
+  });
+
+  it("omits the environment block entirely when no environment is captured", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: []
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
   it("numbers area comments by creation time", () => {
     const first = { ...box("first"), id: "b1", createdAt: "2026-02-21T00:00:01.000Z" };
     const second = { ...box("second"), id: "b2", createdAt: "2026-02-21T00:00:02.000Z" };
@@ -133,6 +209,52 @@ describe("buildClaudeCodePrompt", () => {
     expect(prompt).toContain("Page URL: https://example.test/page");
     expect(prompt).toContain("General feedback context: looks off");
     expect(prompt).toContain("1. [box] fix padding");
+  });
+
+  it("renders the environment block after the page URL when one is captured", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
+  it("omits the environment block entirely when no environment is captured", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: []
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
   });
 
   it("uses placeholders when context is empty", () => {

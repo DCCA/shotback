@@ -32,19 +32,19 @@ export function SavedShares({ shares, onOpen, onDelete }: SavedSharesProps): JSX
         </div>
       </div>
       {shares.length === 0 ? (
-        <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <p className="m-0 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
           No saved shares yet. Use “Copy Local Share Link” to save one.
         </p>
       ) : showSavedShares ? (
         <ul className="m-0 grid list-none gap-2 p-0">
           {shares.map((share) => (
             <li key={share.id}>
-              <div className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-slate-800">
+                  <div className="truncate text-sm font-medium text-foreground">
                     {shareLabel(share.pageUrl)}
                   </div>
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-[11px] text-muted-foreground">
                     {new Date(share.createdAt).toLocaleString()} •{" "}
                     {formatBytes(share.imageByteSize)}
                   </div>
@@ -62,7 +62,7 @@ export function SavedShares({ shares, onOpen, onDelete }: SavedSharesProps): JSX
                     type="button"
                     variant="secondary"
                     size="sm"
-                    className="text-red-700 hover:bg-red-50"
+                    className="text-destructive hover:bg-destructive/10"
                     aria-label={`Delete saved share for ${shareLabel(share.pageUrl)}`}
                     onClick={() => onDelete(share.id)}
                   >

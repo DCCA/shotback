@@ -64,7 +64,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         <div className="space-y-1.5">
           <span
             id="interaction-label"
-            className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
           >
             Interaction
           </span>
@@ -82,7 +82,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         <div className="space-y-1.5">
           <span
             id="tool-label"
-            className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
           >
             Tool
           </span>
@@ -99,7 +99,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         </div>
 
         <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Color
           </span>
           <Input
@@ -112,7 +112,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         </label>
 
         <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             General Feedback
           </span>
           <Textarea
@@ -123,12 +123,12 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           />
         </label>
 
-        <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <p className="m-0 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
           Draw mode creates annotations. Move mode selects or drags existing annotations. Press{" "}
-          <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Esc</kbd> to
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd> to
           deselect and{" "}
-          <kbd className="rounded border border-slate-300 bg-white px-1 text-[11px]">Del</kbd> to
-          remove the selected item.
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Del</kbd> to remove
+          the selected item.
         </p>
 
         <div className="grid grid-cols-1 gap-2">
@@ -169,17 +169,17 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         </div>
 
         <div className="space-y-1 text-sm" aria-live="polite">
-          {progress ? <p className="m-0 text-slate-700">{progress}</p> : null}
+          {progress ? <p className="m-0 text-muted-foreground">{progress}</p> : null}
           {status ? (
             <p
               className={`m-0 font-medium ${
-                status.kind === "success" ? "text-emerald-700" : "text-red-700"
+                status.kind === "success" ? "text-primary" : "text-destructive"
               }`}
             >
               {status.message}
             </p>
           ) : null}
-          <p className="m-0 text-slate-700">Annotations: {annotations.length}</p>
+          <p className="m-0 text-muted-foreground">Annotations: {annotations.length}</p>
         </div>
 
         {children}

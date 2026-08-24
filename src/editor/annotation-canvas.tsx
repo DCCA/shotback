@@ -363,7 +363,7 @@ export function AnnotationCanvas({
     <Card className="overflow-hidden">
       <CardContent className="p-4">
         {baseDataUrl ? (
-          <div className="relative inline-block rounded-lg border border-slate-200 bg-white">
+          <div className="relative inline-block rounded-lg border border-border bg-card">
             <img
               id="capture-image"
               src={baseDataUrl}
@@ -548,10 +548,10 @@ export function AnnotationCanvas({
                   height={84}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
-                  <div className="h-full w-full rounded-lg border-2 border-emerald-600 bg-white/95 p-1.5 shadow-lg">
+                  <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
                     <textarea
                       ref={inlineCommentRef}
-                      className="h-full w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/50"
+                      className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
                       value={selectedNote}
                       onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
                       placeholder="Add comment for selected area"
@@ -588,7 +588,7 @@ export function AnnotationCanvas({
             </svg>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center text-sm text-slate-600">
+          <div className="rounded-xl border border-dashed border-border bg-muted px-6 py-16 text-center text-sm text-muted-foreground">
             Capture a page to start annotating.
           </div>
         )}

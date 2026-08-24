@@ -23,7 +23,7 @@ export function CommentTimeline({
         <Badge>{items.length}</Badge>
       </div>
       {items.length === 0 ? (
-        <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <p className="m-0 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
           No comments yet.
         </p>
       ) : (
@@ -37,21 +37,21 @@ export function CommentTimeline({
                     type="button"
                     className={`rounded-lg border px-3 py-2 text-left transition ${
                       selected
-                        ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
+                        ? "border-primary bg-accent ring-2 ring-ring/40"
+                        : "border-border bg-card hover:bg-muted"
                     }`}
                     onClick={() => onSelect(item.id)}
                   >
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       #{index + 1} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
                     </div>
-                    <div className="mt-1 text-sm text-slate-800">{annotationSummary(item)}</div>
+                    <div className="mt-1 text-sm text-foreground">{annotationSummary(item)}</div>
                   </button>
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
-                    className="self-start text-red-700 hover:bg-red-50"
+                    className="self-start text-destructive hover:bg-destructive/10"
                     aria-label={`Delete timeline item ${index + 1}`}
                     onClick={() => onRemove(item.id)}
                   >

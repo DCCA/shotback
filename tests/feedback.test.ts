@@ -6,14 +6,18 @@ import {
 } from "../src/lib/feedback";
 import type { ArrowAnnotation, BoxAnnotation, TextAnnotation } from "../src/types/annotation";
 
-const baseTimestamp = "2026-02-21T00:00:00.000Z";
+// Distinct, ordered timestamps: numbering follows creation time, so the
+// helpers must not rely on the array position they happen to be passed in.
+const boxTimestamp = "2026-02-21T00:00:01.000Z";
+const arrowTimestamp = "2026-02-21T00:00:02.000Z";
+const textTimestamp = "2026-02-21T00:00:03.000Z";
 
 function box(comment?: string): BoxAnnotation {
   return {
     id: "b1",
     tool: "box",
     color: "#ff0000",
-    createdAt: baseTimestamp,
+    createdAt: boxTimestamp,
     comment,
     x: 0,
     y: 0,
@@ -27,7 +31,7 @@ function arrow(comment?: string): ArrowAnnotation {
     id: "a1",
     tool: "arrow",
     color: "#00ff00",
-    createdAt: baseTimestamp,
+    createdAt: arrowTimestamp,
     comment,
     x1: 0,
     y1: 0,
@@ -41,7 +45,7 @@ function text(value: string): TextAnnotation {
     id: "t1",
     tool: "text",
     color: "#0000ff",
-    createdAt: baseTimestamp,
+    createdAt: textTimestamp,
     x: 1,
     y: 2,
     text: value
@@ -99,6 +103,18 @@ describe("buildExternalLlmPrompt", () => {
 
     expect(prompt).toContain("1. [box] (no comment)");
     expect(prompt).toContain("2. [text] (empty)");
+  });
+
+  it("numbers area comments by creation time", () => {
+    const first = { ...box("first"), id: "b1", createdAt: "2026-02-21T00:00:01.000Z" };
+    const second = { ...box("second"), id: "b2", createdAt: "2026-02-21T00:00:02.000Z" };
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "u",
+      generalFeedback: "",
+      annotations: [second, first]
+    });
+    expect(prompt).toContain("1. [box] first");
+    expect(prompt).toContain("2. [box] second");
   });
 });
 

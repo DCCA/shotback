@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { annotationSummary } from "@/lib/feedback";
+import { numberAnnotations } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 interface CommentTimelineProps {
@@ -28,7 +29,7 @@ export function CommentTimeline({
         </p>
       ) : (
         <ol className="m-0 grid list-none gap-2 p-0">
-          {items.map((item, index) => {
+          {numberAnnotations(items).map(({ n, annotation: item }) => {
             const selected = item.id === selectedId;
             return (
               <li key={item.id}>
@@ -43,7 +44,7 @@ export function CommentTimeline({
                     onClick={() => onSelect(item.id)}
                   >
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      #{index + 1} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
+                      #{n} {item.tool} • {new Date(item.createdAt).toLocaleTimeString()}
                     </div>
                     <div className="mt-1 text-sm text-foreground">{annotationSummary(item)}</div>
                   </button>
@@ -52,7 +53,7 @@ export function CommentTimeline({
                     variant="secondary"
                     size="sm"
                     className="self-start text-destructive hover:bg-destructive/10"
-                    aria-label={`Delete timeline item ${index + 1}`}
+                    aria-label={`Delete timeline item ${n}`}
                     onClick={() => onRemove(item.id)}
                   >
                     Remove

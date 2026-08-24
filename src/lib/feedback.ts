@@ -1,3 +1,4 @@
+import { numberAnnotations } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 /** Short, human-readable summary of a single annotation for timeline rows. */
@@ -6,16 +7,23 @@ export function annotationSummary(annotation: Annotation): string {
   return annotation.comment?.trim() || "(no comment)";
 }
 
-/** Numbered, tool-tagged list of area comments shared by the prompt builders. */
-function formatAreaComments(annotations: Annotation[]): string {
-  const comments = annotations
-    .map((annotation, index) => {
-      if (annotation.tool === "text") {
-        return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
-      }
+/**
+ * The note an annotation contributes to the prompt list and to the exported
+ * legend, placeholders included. Both call this so their wording cannot drift.
+ */
+export function noteText(annotation: Annotation): string {
+  if (annotation.tool === "text") return annotation.text.trim() || "(empty)";
+  return annotation.comment?.trim() || "(no comment)";
+}
 
-      return `${index + 1}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
-    })
+/**
+ * Numbered, tool-tagged list of area comments shared by the prompt builders.
+ * The numbers come from `numberAnnotations`, so they match the pins drawn on
+ * the image and the numbers shown in the comment timeline.
+ */
+function formatAreaComments(annotations: Annotation[]): string {
+  const comments = numberAnnotations(annotations)
+    .map(({ n, annotation }) => `${n}. [${annotation.tool}] ${noteText(annotation)}`)
     .join("\n");
 
   return comments || "(none)";

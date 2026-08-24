@@ -1,0 +1,41 @@
+# Tasks: One Numbering Everywhere, Numbered Pins
+
+- [x] **1. Write the failing unit tests**
+  - [x] 1.1 `tests/numbering.test.ts`: numbering follows `createdAt` regardless of array order; `pinRadius` clamps 14/20/28 for 300/1200/4000px; `pinAnchor` returns the arrow tail, not the bounding-box corner.
+  - [x] 1.2 `tests/feedback.test.ts`: `numbers area comments by creation time` - two boxes passed newest-first must come out `1. [box] first`, `2. [box] second`.
+  - [x] 1.3 Give the existing `box`/`arrow`/`text` fixtures distinct, ordered `createdAt` values instead of one shared timestamp, so the existing order assertions state their intent rather than leaning on array position.
+- [x] **2. Run them to verify they fail**
+  - [x] 2.1 RED: `tests/numbering.test.ts` - `Failed to load ../src/lib/numbering`.
+  - [x] 2.2 RED: `expected '...' to contain '1. [box] first'`, received `1. [box] second / 2. [box] first`.
+- [x] **3. Implement `numbering.ts` and use it in `feedback.ts`**
+  - [x] 3.1 `numberAnnotations` sorts a copy by `createdAt` and pairs each with `n`.
+  - [x] 3.2 `pinRadius` = `clamp(width / 60, 14, 28)`; `pinAnchor` = arrow tail or `{x, y}`.
+  - [x] 3.3 `formatAreaComments` maps over `numberAnnotations`.
+  - [x] 3.4 `vitest.config.ts` resolves `@` to `src/` (until now every cross-module import under test was type-only, so the alias never had to work).
+- [x] **4. Run the unit tests** - 63 passed.
+- [x] **5. Export draws pins and a legend instead of text pills**
+  - [x] 5.1 `drawPin` - filled circle in the annotation colour, white ring and white bold number.
+  - [x] 5.2 The annotation loop iterates `numberAnnotations`; shape line width `max(3, round(pinRadius / 5))`; pin at `pinAnchor`. `drawCommentLabel` deleted.
+  - [x] 5.3 Text annotations are drawn at `pinRadius * 0.9` px and offset `pinRadius * 1.4` to the right so the pin never covers the first characters.
+  - [x] 5.4 Footer rebuilt as "Notes": one legend line per numbered annotation with a note, each led by a `0.6 * pinRadius` pin in the annotation's colour, then a bold "General feedback" sub-heading and the wrapped paragraph. Font size `round(pinRadius * 0.9)`; all spacing derived from it.
+  - [x] 5.5 `footerHeight` comes from the combined row count, so `selectFeedbackRenderMode` still picks the overlay card when the footer would push the canvas past the height/area limits; the overlay renders the same content, truncated at 8 rows, re-wrapped to the narrower card.
+  - [x] 5.6 No notes and no general feedback - no footer, as before.
+- [x] **6. Canvas draws the same pins**
+  - [x] 6.1 The two comment-pill `<g>` blocks removed; one `renderPin` helper renders the pin for box, arrow and text.
+  - [x] 6.2 A transparent hit circle keeps an empty text annotation selectable now that the pin itself is `pointerEvents="none"`.
+  - [x] 6.3 `comment-timeline.tsx` renders `#{n}` (and the Remove button's aria-label) from `numberAnnotations`.
+- [x] **7. Unit-test the export through a canvas stub**
+  - [x] 7.1 Recording 2D-context proxy + stubbed `document.createElement`/`Image` (1200x800) in `tests/annotate.test.ts`.
+  - [x] 7.2 Asserts two radius-20 `arc` calls at the box corner and the arrow tail, `fillText("1")`/`fillText("2")`, that the only text painted on the image itself is the two numbers (no pills), and that the comments and the "Notes" title appear below the image.
+  - [x] 7.3 RED proof: the same tests run against `HEAD:src/lib/annotate.ts` fail with `expected [] to deeply equal [[100,200],[300,400]]` and `[['second',308],['first',108]]`.
+- [x] **8. Run everything and visually verify**
+  - [x] 8.1 `npm run check` - 66 unit tests, lint, typecheck, build green. `npm run format:check` green.
+  - [x] 8.2 `npm run test:e2e` - 6/6.
+  - [x] 8.3 `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` - 0 hits.
+  - [x] 8.4 Screenshots of the editor, the timeline and the viewer in light and dark (see `completion-summary.md`).
+- [x] **9. Commit and PR**
+- [x] **10. Task-review fixes**
+  - [x] 10.1 `pinCenter(annotation, r, image)` in `numbering.ts` clamps the anchor to `[r, width - r] x [r, height - r]`; used by the export and by both canvas draw sites (pin and the text annotation's hit circle), so an annotation at the image edge no longer draws a clipped pin. Unit-tested at (5,5), (1195,795) and an interior anchor.
+  - [x] 10.2 Every numbered annotation now gets a legend row - uncommented ones read `(no comment)` / `(empty)` - via `noteText`, exported from `feedback.ts` and shared with `formatAreaComments` so the legend and the prompt cannot drift.
+  - [x] 10.3 The "General feedback" sub-heading is suppressed when it is the only block in the footer.
+  - [x] 10.4 The two CLAUDE.md bullets use " - " instead of an em dash.

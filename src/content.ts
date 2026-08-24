@@ -38,6 +38,24 @@ function findScroller(): Element | null {
   return best;
 }
 
+const SCROLLBAR_STYLE_ID = "shotback-hide-scrollbar";
+
+/** Hide scrollbars while capturing so the track is not baked into frames. */
+function hideScrollbars(): void {
+  if (document.getElementById(SCROLLBAR_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = SCROLLBAR_STYLE_ID;
+  style.textContent =
+    "html,body,[data-shotback-scroller]{scrollbar-width:none!important}" +
+    "html::-webkit-scrollbar,body::-webkit-scrollbar,[data-shotback-scroller]::-webkit-scrollbar{display:none!important}";
+  document.documentElement.appendChild(style);
+}
+
+function showScrollbars(): void {
+  document.getElementById(SCROLLBAR_STYLE_ID)?.remove();
+  document.querySelector("[data-shotback-scroller]")?.removeAttribute("data-shotback-scroller");
+}
+
 function scrollCaptureTargetTo(top: number): void {
   // "instant" overrides `scroll-behavior: smooth`, which would otherwise
   // animate past the frame capture and stitch the previous viewport again.
@@ -155,6 +173,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_CAPTURE_END") {
+    showScrollbars();
     removeCaptureOverlay();
     sendResponse({ ok: true });
     return true;
@@ -162,6 +181,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SB_GET_PAGE_METRICS") {
     scroller = findScroller();
+    scroller?.setAttribute("data-shotback-scroller", "");
+    hideScrollbars();
     originalScrollY = scroller ? scroller.scrollTop : window.scrollY;
 
     const metrics: PageMetrics = scroller
@@ -204,6 +225,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SB_RESTORE_SCROLL") {
     scrollCaptureTargetTo(originalScrollY);
     scroller = null;
+    showScrollbars();
     removeCaptureOverlay();
     sendResponse({ ok: true });
     return true;

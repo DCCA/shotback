@@ -172,8 +172,8 @@ for (const [name, headerHeight] of [
       canvas.height = image.naturalHeight;
       const c = canvas.getContext("2d")!;
       c.drawImage(image, 0, 0);
-      const hueAt = (y: number) => {
-        const [r, g, b] = c.getImageData(20, y, 1, 1).data;
+      const hueAt = (x: number, y: number) => {
+        const [r, g, b] = c.getImageData(x, y, 1, 1).data;
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         const d = max - min || 1;
@@ -183,8 +183,12 @@ for (const [name, headerHeight] of [
       const mismatched: number[] = [];
       for (let i = 0; i < 8; i += 1) {
         for (const y of [top + i * 300 + 20, top + i * 300 + 150, top + i * 300 + 280]) {
-          if (Math.abs(hueAt(y) - ((i * 37) % 360)) > 3) mismatched.push(y);
+          if (Math.abs(hueAt(20, y) - ((i * 37) % 360)) > 3) mismatched.push(y);
         }
+        // Right edge (near the scrollbar track) must show page content, not the
+        // scrollbar itself, once capture hides it.
+        if (Math.abs(hueAt(image.naturalWidth - 4, top + i * 300 + 150) - ((i * 37) % 360)) > 3)
+          mismatched.push(-(top + i * 300 + 150));
       }
       return { height: image.naturalHeight, mismatched };
     }, headerHeight);

@@ -46,6 +46,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🧑‍💻 **Copy for Claude Code** - saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
 - 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
+- 🩺 **Diagnostics** - both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
 
 ## 🚀 Quick Start
 
@@ -85,6 +86,25 @@ npm run build
    each area comment names the element it covers - a CSS selector such as
    `#pricing > div.card:nth-of-type(2) > button.cta`, plus the React component
    chain when the page is React - read back from the live tab as you annotate.
+
+   When the captured page asked for something and did not get it, the prompts
+   also carry a **Diagnostics** block listing those requests (status and URL),
+   read from the page's own resource timing at capture time:
+
+   ```text
+   Diagnostics:
+   - Failed requests:
+     1. 404 https://example.com/assets/logo.png
+     2. 500 https://example.com/api/user
+   ```
+
+   **Known limitation:** uncaught JavaScript errors from the page are _not_
+   collected. Chromium delivers an error only to listeners in the JavaScript
+   world that threw, and Shotback's content script runs in an isolated world, so
+   it never sees the page's own errors. Collecting them would need extension
+   code running in every page's own world on every page load, which is a
+   deliberate trade Shotback has not made - see [`SECURITY.md`](SECURITY.md).
+   Paste the console output yourself if an agent needs it.
 
 ## 📁 Project Structure
 

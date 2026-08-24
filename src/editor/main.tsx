@@ -51,6 +51,7 @@ function EditorApp(): JSX.Element {
     captureScaleRef.current = null;
     state.setShareUrl("");
     state.setEnvironment(undefined);
+    state.setDiagnostics(undefined);
     state.resetAnnotations();
     state.setSelectedId(null);
     state.setGeneralFeedback("");
@@ -62,6 +63,7 @@ function EditorApp(): JSX.Element {
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
+      state.setDiagnostics(result.diagnostics);
       captureScaleRef.current = result.scale;
       state.setProgress("Capture completed");
     } catch (error) {

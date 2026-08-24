@@ -37,6 +37,19 @@ export interface CaptureEnvironment {
   scroller: "document" | "element";
 }
 
+/**
+ * What went wrong on the captured page. Today that is the resources it asked
+ * for and did not get; uncaught page errors are **not** here, because Chromium
+ * reports an error only to listeners in the world that threw and the content
+ * script's isolated world never sees the page's - see SECURITY.md.
+ *
+ * Every URL is page-controlled text, so the content script clamps it before it
+ * crosses into the extension (one line, 200 chars, 20 entries).
+ */
+export interface PageDiagnostics {
+  failedRequests: Array<{ url: string; status: number; initiatorType: string }>;
+}
+
 export interface CaptureResult {
   dataUrl: string;
   pageUrl: string;
@@ -45,6 +58,8 @@ export interface CaptureResult {
   scale: number;
   /** Page CSS px above the scroller on the stitched image (0 for the document). */
   scrollerTop: number;
+  /** What the captured page reported going wrong; empty when nothing did. */
+  diagnostics: PageDiagnostics;
 }
 
 /** Pure; `now` is injected so the mapping stays testable. */
@@ -335,6 +350,22 @@ export async function inspectPoints(
   }
 }
 
+/**
+ * Read the captured page's failed requests. Best effort by design: a page with
+ * no content script (a restricted URL, a tab closed mid-capture) has no
+ * diagnostics, and that must never fail the capture it rides along with.
+ */
+export async function getDiagnostics(tabId: number): Promise<PageDiagnostics> {
+  try {
+    const response = await sendToContentScript<Partial<PageDiagnostics>>(tabId, {
+      type: "SB_GET_DIAGNOSTICS"
+    });
+    return { failedRequests: response?.failedRequests ?? [] };
+  } catch {
+    return { failedRequests: [] };
+  }
+}
+
 export async function captureFullPage(
   tabId: number,
   windowId: number,
@@ -353,6 +384,9 @@ export async function captureFullPage(
     // so retry it (re-injecting) until the listener is ready.
     const metrics = await sendToContentScript<PageMetrics>(tabId, { type: "SB_GET_PAGE_METRICS" });
     const steps = buildScrollSteps(metrics.fullHeight, metrics.viewportHeight);
+    // Read before the scroll-and-stitch loop: it is the page's own state, and
+    // asking now keeps the notice's lifetime tight around the frames.
+    const diagnostics = await getDiagnostics(tabId);
 
     // Show an on-page notice (the user is looking at this tab, not the editor)
     // and give them a moment to read it. Overlay messages are cosmetic, so a
@@ -414,7 +448,8 @@ export async function captureFullPage(
       pageUrl: metrics.pageUrl,
       environment: buildEnvironment(metrics, navigator.userAgent, new Date()),
       scale,
-      scrollerTop: metrics.scrollerTop
+      scrollerTop: metrics.scrollerTop,
+      diagnostics
     };
   } finally {
     if (previousActiveTabId && previousActiveTabId !== tabId) {

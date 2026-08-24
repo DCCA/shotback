@@ -2,7 +2,7 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Card, CardContent } from "@/components/ui/card";
-import { annotationBounds, moveAnnotation, uid } from "@/editor/annotation-geometry";
+import { moveAnnotation, uid } from "@/editor/annotation-geometry";
 import type { EditorState } from "@/editor/use-editor-state";
 import { arrowHeadPoints } from "@/lib/annotate";
 import {
@@ -13,7 +13,13 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { placeInlineEditor } from "@/lib/editor-placement";
-import { canvasScale, numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
+import {
+  annotationBounds,
+  canvasScale,
+  numberAnnotations,
+  pinCenter,
+  pinRadius
+} from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
 interface DraftShape {

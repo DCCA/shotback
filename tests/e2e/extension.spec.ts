@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,6 +151,36 @@ async function copyCloudPrompt(editor: Page): Promise<void> {
 
 const readClipboard = (editor: Page): Promise<string> =>
   editor.evaluate(async () => navigator.clipboard.readText());
+
+/**
+ * The absolute path of the most recent completed download of a given MIME
+ * type, polled through the service worker because `chrome.downloads` only
+ * reports a path once Chrome has finished writing the file. Matching on the
+ * MIME type rather than the name is deliberate: Playwright intercepts every
+ * download and renames it to a GUID artifact, so the `shotback/cap-<ts>.json`
+ * name the extension asks for is not what lands on disk here. That name is
+ * asserted through the sidecar's own `imagePath` instead.
+ */
+async function downloadedFile(mime: string): Promise<string> {
+  let filename = "";
+  await expect
+    .poll(
+      async () => {
+        filename = await sw.evaluate(async (type) => {
+          const items = await chrome.downloads.search({
+            state: "complete",
+            orderBy: ["-startTime"],
+            limit: 20
+          });
+          return items.find((item) => item.mime === type)?.filename ?? "";
+        }, mime);
+        return filename;
+      },
+      { timeout: 15_000 }
+    )
+    .not.toBe("");
+  return filename;
+}
 
 /**
  * The editor stamps `data-sb-inspect-gen` on its body every time an inspection
@@ -509,6 +540,35 @@ for (const [name, headerHeight] of [
       await waitForInspection(editor, inspectedBeforeMove);
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain("button.cta");
+
+      // The Claude Code handoff writes a JSON sidecar beside the PNG, so an
+      // agent can read the annotations instead of pixel-hunting in the image.
+      await editor.getByRole("button", { name: "Copy for Claude Code" }).click();
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+        "Copied a Claude Code prompt"
+      );
+      const claudePrompt = await readClipboard(editor);
+      const sidecarFile = await downloadedFile("application/json");
+      expect(claudePrompt.split("\n")[0]).toBe(
+        `Review this screenshot: ${await downloadedFile("image/png")}`
+      );
+      expect(claudePrompt.split("\n")[1]).toBe(
+        `Machine-readable annotations (selectors, rects, diagnostics): ${sidecarFile}`
+      );
+
+      const sidecar = JSON.parse(await readFile(sidecarFile, "utf8"));
+      expect(sidecar.version).toBe(1);
+      expect(sidecar.imagePath).toMatch(/^shotback\/cap-\d+\.png$/);
+      expect(sidecar.pageUrl).toBe(base + name);
+      expect(sidecar.annotations[0].n).toBe(1);
+      expect(sidecar.annotations[0].rect.width).toBeGreaterThan(0);
+      expect(sidecar.annotations[0].normalizedRect.width).toBeLessThanOrEqual(1);
+      // The box drawn over the CTA carries the element it covers.
+      const onCta = sidecar.annotations.find(
+        (a: { context?: { cssPath: string } }) =>
+          a.context?.cssPath === "#app > section.hero > button.cta"
+      );
+      expect(onCta).toBeTruthy();
     }
 
     await editor.close();

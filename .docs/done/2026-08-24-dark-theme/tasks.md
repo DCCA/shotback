@@ -12,9 +12,10 @@
   - [x] 3.3 Add `color-scheme` so native scrollbars and the colour input follow the theme.
 - [x] **4. Replace the literal colour classes**
   - [x] 4.1 Map the 51 literals across `src/editor/*.tsx` and `src/viewer/main.tsx` onto tokens (table in `completion-summary.md`).
-  - [x] 4.2 `grep -rn "slate-\|emerald-\|bg-white\|red-" src/` returns zero hits.
+  - [x] 4.2 `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` returns zero hits (anchored to class prefixes, so the palette-origin comments in `globals.css` survive).
   - [x] 4.3 Lift the dark `--primary` and `--destructive`, which failed the legibility bar as text.
-  - [x] 4.4 Tokenise the hardcoded card highlight/shadow colours in `card.tsx`.
+  - [x] 4.4 Tokenise the hardcoded highlight/shadow colours in `card.tsx` and `button.tsx`.
+  - [x] 4.5 Replace `disabled:opacity-50` on `Button` with a neutral disabled state, so a disabled destructive button does not become dark ink on dull maroon in dark.
 - [x] **5. Run e2e, gate, and visually verify**
   - [x] 5.1 `npm run test:e2e` - 6/6 green.
   - [x] 5.2 `npm run check` + `npm run format:check` - green.

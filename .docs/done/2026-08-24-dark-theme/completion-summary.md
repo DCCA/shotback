@@ -9,9 +9,10 @@
 - New tokens `--card-highlight` / `--card-shadow` replace the hardcoded `hsl(0 0% 100%/0.6)` inset highlight and `hsl(222 47% 11%/0.06)` drop shadow in `card.tsx`. The white highlight was a bright hairline across the top of every card in dark; it is `0 0% 100% / 0.06` there now.
 - `color-scheme: light` / `dark` per theme, so native scrollbars and the `<input type="color">` swatch follow.
 - Two dark values were wrong for text use and were lifted (see below).
-- The palette-origin comments (`/* emerald-700 */`) lost their hyphens (`/* emerald 700 */`) so the "no literal colour classes in `src/`" grep stays at zero hits without losing the documentation.
 
 **`src/components/ui/card.tsx`** - elevation now uses the two new tokens.
+
+**`src/components/ui/button.tsx`** - neutral disabled state for every variant, and the two hardcoded white insets replaced by `--button-highlight`.
 
 **`src/editor/*.tsx`, `src/viewer/main.tsx`** - 51 literal colour classes replaced with tokens.
 
@@ -45,30 +46,37 @@ Not in the original table, added here:
 
 | Literal (in `src/components/ui/card.tsx`) | Token |
 |---|---|
-| `hsl(0_0%_100%/0.6)` inset highlight | `hsl(var(--card-highlight))` |
-| `hsl(222_47%_11%/0.06)` drop shadow | `hsl(var(--card-shadow))` |
+| `hsl(0_0%_100%/0.6)` inset highlight (`card.tsx`) | `hsl(var(--card-highlight))` |
+| `hsl(222_47%_11%/0.06)` drop shadow (`card.tsx`) | `hsl(var(--card-shadow))` |
+| `hsl(0_0%_100%/0.12)` and `/0.15` insets (`button.tsx`) | `hsl(var(--button-highlight))` |
 
 ## Dark token values corrected
 
-Two dark tokens were legible as *backgrounds* but not as *text*, which the migration made load-bearing (`text-primary` for the success status and the share link, `text-destructive` for the Remove/Delete buttons and the error status):
+Two dark tokens were legible as *backgrounds* but not as *text*, and the migration made them load-bearing as text (`text-primary` for the success status, the editor share link and the viewer's source link; `text-destructive` for the Remove/Delete buttons and the error status).
 
-| Token | Was (dark) | Now (dark) | Why |
+This was a design decision, **not** something a test forced. The e2e legibility test loads an empty editor page, where none of those elements are mounted; it passed at the old values. The numbers below are luminance deltas under the same measure the test uses, which wants >= 0.3 against the nearest painted background. Dark surfaces: `bg-card` 0.073, `bg-secondary` / `bg-muted` 0.159.
+
+| Token | Was (dark) | Now (dark) | What it fixes |
 |---|---|---|---|
-| `--primary` | `161 94% 30%` | `161 94% 36%` | `text-primary` on `bg-card` was too dark to read. |
+| `--destructive` | `0 72% 51%` (lum 0.307) | `0 84% 68%` (lum 0.525) | `text-destructive` on `bg-secondary` - the Remove and Delete buttons in the timeline and saved-shares lists: **0.148 -> 0.367**. On `bg-card` - the error status line: **0.234 -> 0.452**. Both were under the bar. |
+| `--destructive-hover` | `0 74% 58%` | `0 84% 75%` | Keeps the hover step above the new base. |
+| `--destructive-foreground` | `0 0% 100%` | `222 47% 6%` | Dark ink on the now-lighter red (6.0:1), matching how dark `--primary` already pairs with a dark foreground. |
+| `--primary` | `161 94% 30%` (lum 0.449) | `161 94% 36%` (lum 0.539) | `text-primary` on `bg-muted` - the viewer's source-page link inside the metadata panel: **0.290 -> 0.380**. It already cleared the bar on `bg-card` (0.376), so this is about the panel, and it keeps the two `text-primary` uses consistent. |
 | `--primary-hover` | `161 94% 36%` | `161 94% 42%` | Keeps the hover step above the new base. |
-| `--destructive` | `0 72% 51%` | `0 84% 68%` | `text-destructive` on `bg-secondary` differed by only 0.14 luminance - failed the test outright. |
-| `--destructive-hover` | `0 74% 58%` | `0 84% 75%` | Hover step above the new base. |
-| `--destructive-foreground` | `0 0% 100%` | `222 47% 6%` | Dark ink on the now-bright red (6.0:1), matching how dark `--primary` already pairs with a dark `--primary-foreground`. |
 
-Light values are untouched.
+Light values are untouched. The same numbers and reasoning are recorded in a comment above the dark blocks in `globals.css`.
+
+## Disabled buttons
+
+Lightening `--destructive` meant `--destructive-foreground` became dark ink, and the old `disabled:opacity-50` then rendered "Delete Selected Item" as dark ink on dull maroon over a near-black card. `button.tsx` now uses a neutral disabled state for every variant instead - `disabled:bg-muted disabled:text-muted-foreground disabled:border-border disabled:shadow-none` - so a disabled button reads the same way in both themes and in every variant.
 
 ## Verification
 
 - `npm run check` - typecheck, lint, 59 unit tests, build: green.
 - `npm run format:check` - green.
 - `npm run test:e2e` - 6/6 green, including the new dark-theme test.
-- `grep -rn "slate-\|emerald-\|bg-white\|red-" src/` - zero hits.
-- Screenshots in `shots/` (real extension in Chromium, editor driven through a real capture, two annotations with comments, general feedback, a generated share link and saved shares):
+- `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` - zero hits. The pattern is anchored to Tailwind class prefixes so it does not fire on prose or on the palette-origin comments in `globals.css` (`/* emerald-700 */`), which are kept.
+- Screenshots, taken by driving the real extension in Chromium through a real capture with two annotations, comments, general feedback, a generated share link and saved shares. Not committed (~1 MB of PNGs, and this repo carries no images); they live locally at `.superpowers/sdd/2026-08-23-fix-it-all-plan/task-3-shots/`:
   - `editor-{light,dark}.png` - sidebar mid-scroll: every action button, the status line, the timeline rows, the share link.
   - `editor-top-{light,dark}.png` - sidebar top: title, notes badge, Capture Page, both selects, colour input, feedback textarea, help text.
   - `editor-selected-{light,dark}.png` - an annotation selected: the enabled destructive button, the selected timeline row, the saved-shares rows, the inline comment editor over the capture.

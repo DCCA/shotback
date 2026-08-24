@@ -12,30 +12,31 @@
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
 
-    --primary: 163 94% 24%; /* emerald 700 */
-    --primary-hover: 162 88% 20%; /* emerald 800 */
-    --primary-foreground: 152 81% 96%; /* emerald 50 */
+    --primary: 163 94% 24%; /* emerald-700 */
+    --primary-hover: 162 88% 20%; /* emerald-800 */
+    --primary-foreground: 152 81% 96%; /* emerald-50 */
 
-    --secondary: 210 40% 96%; /* slate 100 */
-    --secondary-hover: 214 32% 91%; /* slate 200 */
-    --secondary-foreground: 222 47% 11%; /* slate 900 */
+    --secondary: 210 40% 96%; /* slate-100 */
+    --secondary-hover: 214 32% 91%; /* slate-200 */
+    --secondary-foreground: 222 47% 11%; /* slate-900 */
 
-    --muted: 210 40% 96%; /* slate 100 */
-    --muted-foreground: 215 16% 47%; /* slate 500 */
+    --muted: 210 40% 96%; /* slate-100 */
+    --muted-foreground: 215 16% 47%; /* slate-500 */
 
-    --accent: 149 80% 90%; /* emerald 100 */
-    --accent-foreground: 162 88% 20%; /* emerald 800 */
+    --accent: 149 80% 90%; /* emerald-100 */
+    --accent-foreground: 162 88% 20%; /* emerald-800 */
 
-    --destructive: 0 72% 51%; /* red 600 */
-    --destructive-hover: 0 74% 42%; /* red 700 */
+    --destructive: 0 72% 51%; /* red-600 */
+    --destructive-hover: 0 74% 42%; /* red-700 */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%; /* slate 200 - structural hairlines */
-    --input: 213 27% 84%; /* slate 300 - form-control borders */
-    --ring: 161 94% 30%; /* emerald 600 - focus ring */
+    --border: 214 32% 91%; /* slate-200 — structural hairlines */
+    --input: 213 27% 84%; /* slate-300 — form-control borders */
+    --ring: 161 94% 30%; /* emerald-600 — focus ring */
 
     /* Card elevation: a top highlight inside the edge, plus a soft drop. */
     --card-highlight: 0 0% 100% / 0.6;
+    --button-highlight: 0 0% 100% / 0.12;
     --card-shadow: 222 47% 11% / 0.06;
 
     /* Decorative body glows. Alpha is a token too so the single `body` rule
@@ -86,6 +87,26 @@
  * style alpha modifier would break. Applying a class from an inline
  * pre-render script is the other usual trick, and MV3's CSP forbids inline
  * scripts. So: two blocks, kept in sync by hand. Please do not "fix" this.
+ *
+ * Two dark values are deliberately lighter than their light-theme
+ * counterparts, because they are used as *text* colours and not only as
+ * button backgrounds. Luminance deltas below use the same measure as the e2e
+ * legibility test, which wants >= 0.3 against the nearest painted background:
+ *
+ *   --destructive  0 72% 51% -> 0 84% 68%
+ *     `text-destructive` on `bg-secondary` - the Remove and Delete buttons in
+ *     the timeline and saved-shares lists: 0.148 -> 0.367
+ *     `text-destructive` on `bg-card` - the error status line: 0.234 -> 0.452
+ *     `--destructive-foreground` turns dark ink to sit on the lighter red.
+ *
+ *   --primary  161 94% 30% -> 161 94% 36%
+ *     `text-primary` on `bg-muted` - the viewer's source-page link inside the
+ *     metadata panel: 0.290 -> 0.380
+ *     It already cleared the bar on `bg-card` (0.376), so this is about the
+ *     panel, and it keeps the two `text-primary` uses consistent.
+ *
+ * That is a design decision, not something a test forced: the e2e legibility
+ * test loads an empty editor page, where none of those elements are mounted.
  */
 .dark {
   --background: 222 47% 6%;
@@ -94,29 +115,30 @@
   --card: 222 44% 9%;
   --card-foreground: 210 40% 96%;
 
-  --primary: 161 94% 36%; /* emerald 500/600 - lifted so `text-primary` reads on a dark card */
+  --primary: 161 94% 36%; /* lifted emerald, see the note above */
   --primary-hover: 161 94% 42%;
   --primary-foreground: 222 47% 6%;
 
-  --secondary: 215 25% 17%; /* slate 800 */
+  --secondary: 215 25% 17%; /* slate-800 */
   --secondary-hover: 215 19% 22%;
   --secondary-foreground: 210 40% 96%;
 
   --muted: 215 25% 17%;
-  --muted-foreground: 215 20% 65%; /* slate 400 */
+  --muted-foreground: 215 20% 65%; /* slate-400 */
 
   --accent: 162 88% 16%;
-  --accent-foreground: 152 76% 80%; /* emerald 200 */
+  --accent-foreground: 152 76% 80%; /* emerald-200 */
 
-  --destructive: 0 84% 68%; /* red 400 - `text-destructive` must read on card and secondary */
+  --destructive: 0 84% 68%; /* lifted red, see the note above */
   --destructive-hover: 0 84% 75%;
-  --destructive-foreground: 222 47% 6%; /* dark ink on the light red, as `--primary` does */
+  --destructive-foreground: 222 47% 6%; /* dark ink, see the note above */
 
   --border: 215 25% 17%;
   --input: 215 25% 20%;
   --ring: 161 94% 36%;
 
   --card-highlight: 0 0% 100% / 0.06;
+  --button-highlight: 0 0% 100% / 0.18;
   --card-shadow: 0 0% 0% / 0.4;
 
   --glow-1: 16 185 129;
@@ -135,29 +157,30 @@
     --card: 222 44% 9%;
     --card-foreground: 210 40% 96%;
 
-    --primary: 161 94% 36%; /* emerald 500/600 - lifted so `text-primary` reads on a dark card */
+    --primary: 161 94% 36%; /* lifted emerald, see the note above */
     --primary-hover: 161 94% 42%;
     --primary-foreground: 222 47% 6%;
 
-    --secondary: 215 25% 17%; /* slate 800 */
+    --secondary: 215 25% 17%; /* slate-800 */
     --secondary-hover: 215 19% 22%;
     --secondary-foreground: 210 40% 96%;
 
     --muted: 215 25% 17%;
-    --muted-foreground: 215 20% 65%; /* slate 400 */
+    --muted-foreground: 215 20% 65%; /* slate-400 */
 
     --accent: 162 88% 16%;
-    --accent-foreground: 152 76% 80%; /* emerald 200 */
+    --accent-foreground: 152 76% 80%; /* emerald-200 */
 
-    --destructive: 0 84% 68%; /* red 400 - `text-destructive` must read on card and secondary */
+    --destructive: 0 84% 68%; /* lifted red, see the note above */
     --destructive-hover: 0 84% 75%;
-    --destructive-foreground: 222 47% 6%; /* dark ink on the light red, as `--primary` does */
+    --destructive-foreground: 222 47% 6%; /* dark ink, see the note above */
 
     --border: 215 25% 17%;
     --input: 215 25% 20%;
     --ring: 161 94% 36%;
 
     --card-highlight: 0 0% 100% / 0.06;
+    --button-highlight: 0 0% 100% / 0.18;
     --card-shadow: 0 0% 0% / 0.4;
 
     --glow-1: 16 185 129;

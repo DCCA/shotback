@@ -98,7 +98,7 @@ export function useExports(state: EditorState): EditorExports {
     try {
       await deleteLocalShare(id);
       await refreshSavedShares();
-      if (state.shareUrl === buildLocalShareUrl(id)) state.setShareUrl("");
+      state.setShareUrl((current) => (current === buildLocalShareUrl(id) ? "" : current));
     } catch (error) {
       state.setStatus({
         kind: "error",

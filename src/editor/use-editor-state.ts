@@ -33,7 +33,7 @@ export interface EditorState {
   progress: string;
   setProgress: (progress: string) => void;
   shareUrl: string;
-  setShareUrl: (url: string) => void;
+  setShareUrl: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export function useEditorState(): EditorState {

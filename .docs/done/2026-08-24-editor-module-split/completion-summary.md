@@ -27,9 +27,12 @@ and `useExports` both write them.
 
 - `annotationCommentAnchor` now returns `{ x, y }` instead of `{ x, y } | null`; every branch
   always returned an object, so the `&& anchor` guards in the canvas JSX went away.
-- Functional `setSelectedId`/`setShareUrl` updates became plain assignments guarded by the
-  current value (the setters are typed `(value) => void` in `EditorState`). Both run inside
-  event handlers with a fresh render closure, so the result is identical.
+- Functional `setSelectedId` updates became plain assignments guarded by the current value
+  (the setter is typed `(id: string | null) => void` in `EditorState`). Both callers are
+  synchronous event handlers with a fresh render closure, so the result is identical.
+  `setShareUrl` kept its functional updater (`EditorState` types it as
+  `React.Dispatch<React.SetStateAction<string>>`) because `removeSavedShare` reads it after
+  two awaits, where a captured snapshot would be stale.
 - `takeScreenshot` no longer clears `draft`/`drag`/`resize` (now canvas-private), and the
   sidebar/timeline removers no longer clear `resize`. A pointer gesture cannot survive either
   action: reaching those buttons moves the pointer off the SVG, which fires `pointerleave` ->

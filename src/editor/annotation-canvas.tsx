@@ -72,6 +72,9 @@ export function AnnotationCanvas({
   const [draft, setDraft] = useState<DraftShape | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
+  // A pointer-down on an annotation or a resize handle starts a gesture but is
+  // also just a selection click; only an actual move/resize is worth committing.
+  const gestureMovedRef = useRef(false);
 
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedNote = selectedAnnotation
@@ -193,6 +196,7 @@ export function AnnotationCanvas({
       event.preventDefault();
 
       const { x, y } = pointerPos(event);
+      gestureMovedRef.current = false;
       setDrag({
         id: item.id,
         startX: x,
@@ -211,6 +215,7 @@ export function AnnotationCanvas({
       setSelectedId(item.id);
 
       const { x, y } = pointerPos(event);
+      gestureMovedRef.current = false;
       setResize({
         id: item.id,
         handle,
@@ -243,6 +248,7 @@ export function AnnotationCanvas({
         minSize: MIN_RESIZE_BOX_SIZE
       });
 
+      gestureMovedRef.current = true;
       setAnnotations((prev) =>
         prev.map((item) =>
           item.id === resize.id && item.tool === "box" ? { ...item, ...result.box } : item
@@ -263,6 +269,7 @@ export function AnnotationCanvas({
       const { x, y } = pointerPos(event);
       const dx = x - drag.startX;
       const dy = y - drag.startY;
+      gestureMovedRef.current = true;
       setAnnotations((prev) =>
         prev.map((item) => (item.id === drag.id ? moveAnnotation(drag.original, dx, dy) : item))
       );
@@ -278,13 +285,13 @@ export function AnnotationCanvas({
   const onCanvasPointerUp = (): void => {
     if (resize) {
       setResize(null);
-      onCommit();
+      if (gestureMovedRef.current) onCommit();
       return;
     }
 
     if (drag) {
       setDrag(null);
-      onCommit();
+      if (gestureMovedRef.current) onCommit();
       return;
     }
 
@@ -376,6 +383,8 @@ export function AnnotationCanvas({
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
               onPointerUp={onCanvasPointerUp}
+              // Ending the gesture on pointer-leave too is what guarantees no
+              // draft/drag/resize survives the pointer moving to the sidebar.
               onPointerLeave={onCanvasPointerUp}
             >
               <defs>

@@ -3,6 +3,7 @@
   "name": "Shotback",
   "description": "Capture full-page screenshots, annotate, and generate a local share link for LLM feedback.",
   "version": "0.1.0",
+  "homepage_url": "https://github.com/DCCA/shotback",
   "permissions": ["activeTab", "tabs", "scripting", "storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["<all_urls>"],
   "icons": {

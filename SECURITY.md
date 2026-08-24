@@ -26,6 +26,8 @@ justification:
 
 `commands` (\_execute_action for `Alt+Shift+S`) is not a permission - it only binds a keyboard shortcut to the existing toolbar action.
 
+`homepage_url` in the manifest is static metadata pointing at the project repository; it grants no permission and triggers no request on its own.
+
 Access to page content is exercised **only at user-initiated capture time and
 while the user annotates a capture**, never in the background. Capturing also
 reads the page's own resource timing and collects the requests it answered with

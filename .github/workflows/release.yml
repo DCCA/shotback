@@ -1,0 +1,35 @@
+name: Release
+
+# Builds and packages the extension for the Chrome Web Store when a version
+# tag is pushed. This workflow does NOT publish anywhere - it has no store
+# credentials - it only builds `dist/`, zips it, and attaches the zip to a
+# GitHub Release for a human to upload by hand.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Zip dist/
+        run: cd dist && zip -r ../shotback-${{ github.ref_name }}.zip .
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "shotback-${{ github.ref_name }}.zip" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

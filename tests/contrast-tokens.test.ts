@@ -22,13 +22,30 @@ function readToken(block: string, name: string): Hsl {
   return { h: Number(match[1]), s: Number(match[2]), l: Number(match[3]) };
 }
 
-/** The light `:root {}` block and the `.dark {}` block - not the duplicate
+/**
+ * The light `:root {}` block and the `.dark {}` block - not the duplicate
  * `@media (prefers-color-scheme: dark)` block, which the file's own comment
- * (and `tests/theme-tokens.test.ts`) says is kept in sync with `.dark` by hand. */
+ * (and `tests/theme-tokens.test.ts`) says is kept in sync with `.dark` by
+ * hand. A brace-depth counter, not `indexOf("\n}")`: `:root`'s own closing
+ * brace is indented, so a naive search runs on through `* {}` and `body {}`
+ * to `@layer base`'s unindented `}` instead - the same bug
+ * `tests/theme-tokens.test.ts`'s `blockDeclarations` already had to solve.
+ */
 function extractBlock(css: string, selector: string): string {
   const start = css.indexOf(`${selector} {`);
   if (start === -1) throw new Error(`${selector} block not found`);
-  const end = css.indexOf("\n}", start);
+
+  let depth = 0;
+  let end = start;
+  for (let i = css.indexOf("{", start); i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    if (css[i] === "}") depth--;
+    if (depth === 0) {
+      end = i;
+      break;
+    }
+  }
+
   return css.slice(start, end);
 }
 
@@ -65,6 +82,14 @@ describe("muted-foreground contrast (AA, 4.5:1)", () => {
   const css = readFileSync(CSS_PATH, "utf8");
   const light = extractBlock(css, ":root");
   const dark = extractBlock(css, ".dark");
+
+  it("stops the :root extraction at its own closing brace", () => {
+    // `@apply`/`font-family` only appear in the `* {}`/`body {}` rules right
+    // after `:root {}` - their absence here is proof the brace counter did
+    // not overshoot into them (or on through to `@layer base`'s own `}`).
+    expect(light).not.toContain("@apply");
+    expect(light).not.toContain("font-family");
+  });
 
   it.each(["muted", "background", "card"])("clears AA against light --%s", (name) => {
     const fg = readToken(light, "muted-foreground");

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { numberAnnotations, pinAnchor, pinCenter, pinRadius } from "../src/lib/numbering";
+import {
+  canvasScale,
+  numberAnnotations,
+  pinAnchor,
+  pinCenter,
+  pinRadius
+} from "../src/lib/numbering";
 
 const mk = (id: string, createdAt: string, x = 5, y = 7) => ({
   id,
@@ -27,6 +33,14 @@ describe("pinRadius", () => {
     expect(pinRadius(300)).toBe(14);
     expect(pinRadius(1200)).toBe(20);
     expect(pinRadius(4000)).toBe(28);
+  });
+});
+
+describe("canvasScale", () => {
+  it("is 1 at 1200px, and tracks pinRadius below/above it", () => {
+    expect(canvasScale(1200)).toBe(1);
+    expect(canvasScale(600)).toBeCloseTo(0.7);
+    expect(canvasScale(4000)).toBeCloseTo(1.4);
   });
 });
 

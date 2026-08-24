@@ -44,6 +44,9 @@ export interface EditorState {
   setPageUrl: (url: string) => void;
   imageSize: { width: number; height: number };
   setImageSize: (size: { width: number; height: number }) => void;
+  /** How the capture is displayed: scaled to fit the pane, or at its real pixel size. */
+  zoom: "fit" | "actual";
+  setZoom: (zoom: "fit" | "actual") => void;
   progress: string;
   setProgress: (progress: string) => void;
   shareUrl: string;
@@ -67,6 +70,7 @@ export function useEditorState(): EditorState {
   const [shareUrl, setShareUrl] = useState<string>("");
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
+  const [zoom, setZoom] = useState<"fit" | "actual">("fit");
 
   // The canvas commits from inside the pointer handler that just changed the
   // annotations (a `flushSync` create, for one), so the handler's own closure
@@ -152,6 +156,8 @@ export function useEditorState(): EditorState {
     setPageUrl,
     imageSize,
     setImageSize,
+    zoom,
+    setZoom,
     progress,
     setProgress,
     shareUrl,

@@ -13,7 +13,7 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { placeInlineEditor } from "@/lib/editor-placement";
-import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
+import { canvasScale, numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -38,11 +38,15 @@ interface ResizeState {
   box: Pick<BoxAnnotation, "x" | "y" | "width" | "height">;
 }
 
-const RESIZE_HANDLE_SIZE = 9;
-const RESIZE_HANDLE_HIT_SIZE = 16;
+// Base sizes at canvasScale(1200) === 1; scaled by the image width the same
+// way pinRadius is, so they stay a readable on-screen size in fit mode
+// instead of shrinking along with a wide capture.
+const BASE_RESIZE_HANDLE_SIZE = 9;
+const BASE_RESIZE_HANDLE_HIT_SIZE = 16;
 const MIN_RESIZE_BOX_SIZE = 8;
 /** Image-space size of the inline comment editor; also what its placement is solved for. */
-const INLINE_EDITOR_SIZE = { width: 240, height: 84 };
+const BASE_INLINE_EDITOR_SIZE = { width: 240, height: 84 };
+const BASE_INLINE_EDITOR_FONT_SIZE = 13;
 
 interface AnnotationCanvasProps {
   state: EditorState;
@@ -72,6 +76,7 @@ export function AnnotationCanvas({
     baseDataUrl,
     imageSize,
     setImageSize,
+    zoom,
     removeAnnotation,
     undoAnnotations,
     redoAnnotations
@@ -108,6 +113,14 @@ export function AnnotationCanvas({
     numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
   );
   const pinR = pinRadius(imageSize.width);
+  const scale = canvasScale(imageSize.width);
+  const resizeHandleSize = BASE_RESIZE_HANDLE_SIZE * scale;
+  const resizeHandleHitSize = BASE_RESIZE_HANDLE_HIT_SIZE * scale;
+  const inlineEditorSize = {
+    width: BASE_INLINE_EDITOR_SIZE.width * scale,
+    height: BASE_INLINE_EDITOR_SIZE.height * scale
+  };
+  const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
 
   const renderPin = (item: Annotation): JSX.Element => {
     const center = pinCenter(item, pinR, imageSize);
@@ -137,7 +150,7 @@ export function AnnotationCanvas({
   };
 
   const inlineEditorPosition = selectedAnnotation
-    ? placeInlineEditor(annotationBounds(selectedAnnotation), imageSize, INLINE_EDITOR_SIZE)
+    ? placeInlineEditor(annotationBounds(selectedAnnotation), imageSize, inlineEditorSize)
     : null;
 
   // Layout effect, not a plain effect: the first keystroke after the shape is
@@ -446,187 +459,210 @@ export function AnnotationCanvas({
     <Card className="overflow-hidden">
       <CardContent className="p-4">
         {baseDataUrl ? (
-          <div className="relative inline-block rounded-lg border border-border bg-card">
-            <img
-              id="capture-image"
-              src={baseDataUrl}
-              alt="Captured page"
-              className="block h-auto max-w-none"
-              onLoad={(event) => {
-                const img = event.currentTarget;
-                setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-              }}
-            />
-            <svg
-              ref={svgRef}
-              className={`absolute inset-0 h-full w-full ${
-                interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
-              }`}
-              viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onCanvasPointerMove}
-              onPointerUp={onCanvasPointerUp}
-              // Ending the gesture on pointer-leave too is what guarantees no
-              // draft/drag/resize survives the pointer moving to the sidebar.
-              onPointerLeave={onCanvasPointerUp}
+          // Outer div is the scrollport: fit mode never overflows it, actual
+          // mode (image wider than the pane) scrolls inside it, never the
+          // page body. Inner div sizes to the image's real rendered box -
+          // block/w-full in fit mode so the image's own w-full resolves
+          // against it, inline-block in actual mode so it shrink-wraps to
+          // the image's natural (possibly wider-than-pane) size. The SVG
+          // overlay's h-full/w-full is percentage-based against *this* box,
+          // so it must always match the image exactly or pointer math and
+          // hit-testing silently miss the part of the image past the pane.
+          <div
+            id="capture-viewport"
+            className="w-full overflow-auto rounded-lg border border-border bg-card"
+          >
+            <div
+              className={`relative ${zoom === "fit" ? "block w-full" : "inline-block align-bottom"}`}
             >
-              {annotations.map((item) => {
-                const isSelected = selectedId === item.id;
+              <img
+                id="capture-image"
+                src={baseDataUrl}
+                alt="Captured page"
+                className={
+                  zoom === "fit" ? "block h-auto w-full max-w-full" : "block h-auto max-w-none"
+                }
+                // Fit mode is "shrink to fit, never upscale": a capture
+                // narrower than the pane should render at its real size, not
+                // stretch to fill it.
+                style={zoom === "fit" ? { maxWidth: imageSize.width } : undefined}
+                onLoad={(event) => {
+                  const img = event.currentTarget;
+                  setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+                }}
+              />
+              <svg
+                ref={svgRef}
+                className={`absolute inset-0 h-full w-full ${
+                  interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
+                }`}
+                viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                onPointerDown={onCanvasPointerDown}
+                onPointerMove={onCanvasPointerMove}
+                onPointerUp={onCanvasPointerUp}
+                // Ending the gesture on pointer-leave too is what guarantees no
+                // draft/drag/resize survives the pointer moving to the sidebar.
+                onPointerLeave={onCanvasPointerUp}
+              >
+                {annotations.map((item) => {
+                  const isSelected = selectedId === item.id;
 
-                if (item.tool === "box") {
+                  if (item.tool === "box") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <rect
+                          x={item.x}
+                          y={item.y}
+                          width={item.width}
+                          height={item.height}
+                          fill="transparent"
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="all"
+                        />
+                        {renderPin(item)}
+                        {isSelected && interactionMode === "move"
+                          ? BOX_RESIZE_HANDLES.map((handle) => {
+                              const position = getBoxHandlePosition(item, handle);
+                              return (
+                                <g key={`${item.id}-${handle}`}>
+                                  <rect
+                                    x={position.x - resizeHandleHitSize / 2}
+                                    y={position.y - resizeHandleHitSize / 2}
+                                    width={resizeHandleHitSize}
+                                    height={resizeHandleHitSize}
+                                    fill="transparent"
+                                    style={{ cursor: getBoxResizeCursor(handle) }}
+                                    onPointerDown={onResizeHandlePointerDown(item, handle)}
+                                  />
+                                  <rect
+                                    x={position.x - resizeHandleSize / 2}
+                                    y={position.y - resizeHandleSize / 2}
+                                    width={resizeHandleSize}
+                                    height={resizeHandleSize}
+                                    fill="white"
+                                    stroke={item.color}
+                                    strokeWidth="1.5"
+                                    pointerEvents="none"
+                                  />
+                                </g>
+                              );
+                            })
+                          : null}
+                      </g>
+                    );
+                  }
+
+                  if (item.tool === "arrow") {
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke="transparent"
+                          strokeWidth="14"
+                        />
+                        <line
+                          x1={item.x1}
+                          y1={item.y1}
+                          x2={item.x2}
+                          y2={item.y2}
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="none"
+                        />
+                        <polygon
+                          points={arrowHeadPoints(item.x1, item.y1, item.x2, item.y2)
+                            .map((point) => `${point.x},${point.y}`)
+                            .join(" ")}
+                          fill={item.color}
+                          pointerEvents="none"
+                        />
+                        {renderPin(item)}
+                      </g>
+                    );
+                  }
+
                   return (
                     <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <rect
-                        x={item.x}
-                        y={item.y}
-                        width={item.width}
-                        height={item.height}
-                        fill="transparent"
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="all"
-                      />
-                      {renderPin(item)}
-                      {isSelected && interactionMode === "move"
-                        ? BOX_RESIZE_HANDLES.map((handle) => {
-                            const position = getBoxHandlePosition(item, handle);
-                            return (
-                              <g key={`${item.id}-${handle}`}>
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_HIT_SIZE / 2}
-                                  width={RESIZE_HANDLE_HIT_SIZE}
-                                  height={RESIZE_HANDLE_HIT_SIZE}
-                                  fill="transparent"
-                                  style={{ cursor: getBoxResizeCursor(handle) }}
-                                  onPointerDown={onResizeHandlePointerDown(item, handle)}
-                                />
-                                <rect
-                                  x={position.x - RESIZE_HANDLE_SIZE / 2}
-                                  y={position.y - RESIZE_HANDLE_SIZE / 2}
-                                  width={RESIZE_HANDLE_SIZE}
-                                  height={RESIZE_HANDLE_SIZE}
-                                  fill="white"
-                                  stroke={item.color}
-                                  strokeWidth="1.5"
-                                  pointerEvents="none"
-                                />
-                              </g>
-                            );
-                          })
-                        : null}
-                    </g>
-                  );
-                }
-
-                if (item.tool === "arrow") {
-                  return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke="transparent"
-                        strokeWidth="14"
-                      />
-                      <line
-                        x1={item.x1}
-                        y1={item.y1}
-                        x2={item.x2}
-                        y2={item.y2}
-                        stroke={item.color}
-                        strokeWidth={isSelected ? "4" : "3"}
-                        strokeDasharray={isSelected ? "8 5" : undefined}
-                        pointerEvents="none"
-                      />
-                      <polygon
-                        points={arrowHeadPoints(item.x1, item.y1, item.x2, item.y2)
-                          .map((point) => `${point.x},${point.y}`)
-                          .join(" ")}
-                        fill={item.color}
-                        pointerEvents="none"
-                      />
-                      {renderPin(item)}
-                    </g>
-                  );
-                }
-
-                return (
-                  <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                    {/* The pin itself is not clickable, so an empty text
+                      {/* The pin itself is not clickable, so an empty text
                         annotation still has a hit area to select and drag - on
                         the pin's own (clamped) centre, not the raw anchor. */}
-                    <circle
-                      cx={pinCenter(item, pinR, imageSize).x}
-                      cy={pinCenter(item, pinR, imageSize).y}
-                      r={pinR}
-                      fill="transparent"
-                      pointerEvents="all"
-                    />
-                    <text
-                      // Offset past the pin so the number never covers the text.
-                      x={item.x + pinR * 1.4}
-                      y={item.y}
-                      fill={item.color}
-                      fontSize={pinR * 0.9}
-                      fontWeight={isSelected ? "700" : "500"}
-                    >
-                      {item.text}
-                    </text>
-                    {renderPin(item)}
-                  </g>
-                );
-              })}
+                      <circle
+                        cx={pinCenter(item, pinR, imageSize).x}
+                        cy={pinCenter(item, pinR, imageSize).y}
+                        r={pinR}
+                        fill="transparent"
+                        pointerEvents="all"
+                      />
+                      <text
+                        // Offset past the pin so the number never covers the text.
+                        x={item.x + pinR * 1.4}
+                        y={item.y}
+                        fill={item.color}
+                        fontSize={pinR * 0.9}
+                        fontWeight={isSelected ? "700" : "500"}
+                      >
+                        {item.text}
+                      </text>
+                      {renderPin(item)}
+                    </g>
+                  );
+                })}
 
-              {selectedAnnotation && inlineEditorPosition ? (
-                <foreignObject
-                  x={inlineEditorPosition.x}
-                  y={inlineEditorPosition.y}
-                  width={INLINE_EDITOR_SIZE.width}
-                  height={INLINE_EDITOR_SIZE.height}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
-                    <textarea
-                      ref={inlineCommentRef}
-                      className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-                      value={selectedNote}
-                      onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                      onBlur={commitNoteIfDirty}
-                      placeholder="Add comment for selected area"
-                      rows={3}
-                    />
-                  </div>
-                </foreignObject>
-              ) : null}
+                {selectedAnnotation && inlineEditorPosition ? (
+                  <foreignObject
+                    x={inlineEditorPosition.x}
+                    y={inlineEditorPosition.y}
+                    width={inlineEditorSize.width}
+                    height={inlineEditorSize.height}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
+                      <textarea
+                        ref={inlineCommentRef}
+                        className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        style={{ fontSize: `${inlineEditorFontSize}px` }}
+                        value={selectedNote}
+                        onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                        onBlur={commitNoteIfDirty}
+                        placeholder="Add comment for selected area"
+                        rows={3}
+                      />
+                    </div>
+                  </foreignObject>
+                ) : null}
 
-              {draft && tool === "box" ? (
-                <rect
-                  x={Math.min(draft.xStart, draft.xCurrent)}
-                  y={Math.min(draft.yStart, draft.yCurrent)}
-                  width={Math.abs(draft.xCurrent - draft.xStart)}
-                  height={Math.abs(draft.yCurrent - draft.yStart)}
-                  fill="transparent"
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
+                {draft && tool === "box" ? (
+                  <rect
+                    x={Math.min(draft.xStart, draft.xCurrent)}
+                    y={Math.min(draft.yStart, draft.yCurrent)}
+                    width={Math.abs(draft.xCurrent - draft.xStart)}
+                    height={Math.abs(draft.yCurrent - draft.yStart)}
+                    fill="transparent"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
 
-              {draft && tool === "arrow" ? (
-                <line
-                  x1={draft.xStart}
-                  y1={draft.yStart}
-                  x2={draft.xCurrent}
-                  y2={draft.yCurrent}
-                  stroke={color}
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              ) : null}
-            </svg>
+                {draft && tool === "arrow" ? (
+                  <line
+                    x1={draft.xStart}
+                    y1={draft.yStart}
+                    x2={draft.xCurrent}
+                    y2={draft.yCurrent}
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
+              </svg>
+            </div>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-muted px-6 py-16 text-center text-sm text-muted-foreground">

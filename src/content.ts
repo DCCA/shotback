@@ -228,7 +228,7 @@ function describeElement(el: Element, scrollTop: number): ElementContext {
 
   return {
     cssPath: cssPath(toElementLike(el)),
-    tag: el.tagName.toLowerCase(),
+    tag: token(el.tagName.toLowerCase()),
     ...(el.id ? { id: token(el.id) } : {}),
     classes: Array.from(el.classList).slice(0, MAX_CONTEXT_CLASSES).map(token),
     ...(role ? { role: token(role) } : {}),

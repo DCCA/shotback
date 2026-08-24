@@ -227,6 +227,74 @@ for (const [name, headerHeight] of [
         return card.scrollWidth - card.clientWidth;
       });
       expect(overflow).toBe(0);
+
+      // Undo/redo: a drag is one history entry, so Ctrl+Z puts the box back
+      // where it was drawn and Ctrl+Shift+Z moves it again.
+      const canvas = (await img.boundingBox())!;
+      await editor.mouse.move(canvas.x + 60, canvas.y + 60);
+      await editor.mouse.down();
+      await editor.mouse.move(canvas.x + 220, canvas.y + 180, { steps: 5 });
+      await editor.mouse.up();
+
+      const rect = editor.locator("svg > g > rect").first();
+      const originalX = (await rect.getAttribute("x"))!;
+
+      await editor.getByRole("combobox", { name: "Interaction" }).click();
+      await editor.getByRole("option", { name: "Move Existing" }).click();
+
+      await editor.mouse.move(canvas.x + 140, canvas.y + 120);
+      await editor.mouse.down();
+      await editor.mouse.move(canvas.x + 190, canvas.y + 120, { steps: 5 });
+      await editor.mouse.up();
+      const movedX = (await rect.getAttribute("x"))!;
+      expect(Number(movedX)).toBeGreaterThan(Number(originalX));
+
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
+      await editor.keyboard.press("Control+Shift+z");
+      await expect(rect).toHaveAttribute("x", movedX);
+
+      // A comment edit is its own entry, and it must be committed even when the
+      // inline editor is closed by a click on empty canvas (which unmounts the
+      // textarea, so no blur is dispatched) - otherwise the next undo throws
+      // the typed comment away with no redo path.
+      const row = editor.locator("ol li button").first();
+      await editor.locator("foreignObject textarea").fill("hello");
+      await expect(row).toContainText("hello");
+      await editor.mouse.click(canvas.x + 600, canvas.y + 500);
+
+      await editor.keyboard.press("Control+z");
+      await expect(row).toContainText("(no comment)");
+      await expect(rect).toHaveAttribute("x", movedX);
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
+
+      // A delete is one entry too, from the keyboard path.
+      await editor.mouse.click(canvas.x + 140, canvas.y + 120);
+      await editor.keyboard.press("Delete");
+      await expect(rect).toHaveCount(0);
+      await editor.keyboard.press("Control+z");
+      await expect(rect).toHaveAttribute("x", originalX);
+
+      // A text annotation is created on pointer-DOWN, so it never reaches the
+      // pointer-up commit: placing one must still be its own entry, and undoing
+      // it must not reach past it into the previous edit.
+      const rows = editor.locator("ol li");
+      await expect(rows).toHaveCount(1);
+      await editor.getByRole("combobox", { name: "Interaction" }).click();
+      await editor.getByRole("option", { name: "Draw New" }).click();
+      await editor.getByRole("combobox", { name: "Tool" }).click();
+      await editor.getByRole("option", { name: "Text" }).click();
+
+      await editor.mouse.click(canvas.x + 600, canvas.y + 500);
+      await expect(rows).toHaveCount(2);
+      await editor.keyboard.press("Escape");
+
+      await editor.keyboard.press("Control+z");
+      await expect(rows).toHaveCount(1);
+      await expect(rect).toHaveAttribute("x", originalX);
+      await editor.keyboard.press("Control+Shift+z");
+      await expect(rows).toHaveCount(2);
     }
 
     await editor.close();

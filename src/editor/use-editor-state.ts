@@ -1,5 +1,6 @@
 import type * as React from "react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { commit, createHistory, redo, undo, type History } from "@/lib/history";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
 
 /**
@@ -8,8 +9,21 @@ import type { Annotation, AnnotationTool } from "@/types/annotation";
  * private to the canvas.
  */
 export interface EditorState {
+  /** Live annotations, updated on every pointer move during a gesture. */
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
+  /** Undo/redo snapshots: only completed edits land here, never in-gesture state. */
+  history: History<Annotation[]>;
+  /** Snapshot the latest annotations as one undo entry. */
+  commitAnnotations: () => void;
+  undoAnnotations: () => void;
+  redoAnnotations: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Remove one annotation and snapshot the result - every delete path uses this. */
+  removeAnnotation: (id: string) => void;
+  /** Clear the annotations and the history, for a fresh capture. */
+  resetAnnotations: () => void;
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
   tool: AnnotationTool;
@@ -40,6 +54,9 @@ export function useEditorState(): EditorState {
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [history, setHistory] = useState<History<Annotation[]>>(() =>
+    createHistory<Annotation[]>([])
+  );
   const [tool, setTool] = useState<AnnotationTool>("box");
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -51,9 +68,70 @@ export function useEditorState(): EditorState {
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
 
+  // The canvas commits from inside the pointer handler that just changed the
+  // annotations (a `flushSync` create, for one), so the handler's own closure
+  // is a render behind. This ref is what "the latest annotations" means there.
+  // A layout effect, not a plain one: `flushSync` runs layout effects before it
+  // returns, so the ref is already current when that handler resumes.
+  const annotationsRef = useRef(annotations);
+  useLayoutEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
+
+  // Same story for the history, one step worse: a commit can come from a
+  // passive effect (the comment editor unmounting), and the very next keypress
+  // must see it even though React has not re-rendered yet. Every write goes
+  // through `applyHistory`, so the ref - not the render value - is the source
+  // of truth for what undo/redo operate on.
+  const historyRef = useRef(history);
+
+  const applyHistory = (next: History<Annotation[]>): void => {
+    historyRef.current = next;
+    setHistory(next);
+  };
+
+  const commitAnnotations = (): void => {
+    applyHistory(commit(historyRef.current, annotationsRef.current));
+  };
+
+  const applySnapshot = (next: History<Annotation[]>): void => {
+    if (next === historyRef.current) return;
+    applyHistory(next);
+    setAnnotations(next.present);
+    annotationsRef.current = next.present;
+    if (selectedId && !next.present.some((item) => item.id === selectedId)) setSelectedId(null);
+  };
+
+  const undoAnnotations = (): void => applySnapshot(undo(historyRef.current));
+
+  const redoAnnotations = (): void => applySnapshot(redo(historyRef.current));
+
+  const removeAnnotation = (id: string): void => {
+    const next = annotationsRef.current.filter((item) => item.id !== id);
+    setAnnotations(next);
+    annotationsRef.current = next;
+    commitAnnotations();
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const resetAnnotations = (): void => {
+    const empty: Annotation[] = [];
+    setAnnotations(empty);
+    annotationsRef.current = empty;
+    applyHistory(createHistory(empty));
+  };
+
   return {
     annotations,
     setAnnotations,
+    history,
+    commitAnnotations,
+    undoAnnotations,
+    redoAnnotations,
+    canUndo: history.past.length > 0,
+    canRedo: history.future.length > 0,
+    removeAnnotation,
+    resetAnnotations,
     selectedId,
     setSelectedId,
     tool,

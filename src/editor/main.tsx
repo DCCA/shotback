@@ -42,7 +42,7 @@ function EditorApp(): JSX.Element {
     state.setIsBusy(true);
     state.setStatus(null);
     state.setShareUrl("");
-    state.setAnnotations([]);
+    state.resetAnnotations();
     state.setSelectedId(null);
     state.setGeneralFeedback("");
 
@@ -79,11 +79,6 @@ function EditorApp(): JSX.Element {
     setShouldFocusSelectedComment(true);
   };
 
-  const removeTimelineItem = (id: string): void => {
-    state.setAnnotations((prev) => prev.filter((item) => item.id !== id));
-    if (state.selectedId === id) state.setSelectedId(null);
-  };
-
   return (
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
       <Sidebar state={state} exports={exports} onCapture={() => void takeScreenshot()}>
@@ -92,7 +87,7 @@ function EditorApp(): JSX.Element {
           items={timelineItems}
           selectedId={state.selectedId}
           onSelect={selectTimelineItem}
-          onRemove={removeTimelineItem}
+          onRemove={state.removeAnnotation}
         />
         {state.shareUrl ? (
           <a
@@ -118,9 +113,7 @@ function EditorApp(): JSX.Element {
         inlineCommentRef={inlineCommentRef}
         shouldFocusSelectedComment={shouldFocusSelectedComment}
         setShouldFocusSelectedComment={setShouldFocusSelectedComment}
-        onCommit={() => {
-          // Wired to the undo/redo history in a later change.
-        }}
+        onCommit={() => state.commitAnnotations()}
       />
     </main>
   );

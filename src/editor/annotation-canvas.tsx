@@ -71,7 +71,10 @@ export function AnnotationCanvas({
     color,
     baseDataUrl,
     imageSize,
-    setImageSize
+    setImageSize,
+    removeAnnotation,
+    undoAnnotations,
+    redoAnnotations
   } = state;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -81,6 +84,17 @@ export function AnnotationCanvas({
   // A pointer-down on an annotation or a resize handle starts a gesture but is
   // also just a selection click; only an actual move/resize is worth committing.
   const gestureMovedRef = useRef(false);
+  // One history entry per comment editing session, not per keystroke. Typing
+  // marks the note dirty; the entry is written when the editor is left - which
+  // is either a blur or, when a click on empty canvas deselects, an unmount
+  // (React dispatches no blur for an unmounted fiber, so blur alone would lose
+  // the comment on the next undo).
+  const noteDirtyRef = useRef(false);
+  const commitNoteIfDirty = (): void => {
+    if (!noteDirtyRef.current) return;
+    noteDirtyRef.current = false;
+    onCommit();
+  };
 
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedNote = selectedAnnotation
@@ -143,14 +157,37 @@ export function AnnotationCanvas({
     setShouldFocusSelectedComment
   ]);
 
-  // Editor keyboard shortcuts: Escape clears selection/in-progress gestures,
-  // Delete/Backspace removes the selected annotation (unless typing in a field).
+  // The inline editor is gone (deselected, unmounted, or moved to another
+  // annotation): write the pending comment before the selection changes.
+  useEffect(() => {
+    if (!selectedId) return;
+    return () => commitNoteIfDirty();
+    // `selectedId` only: the cleanup must run when the selection changes, not
+    // on every render. `onCommit` reaches the live annotations through a ref,
+    // so the captured closure stays correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // Editor keyboard shortcuts, all on one window listener: Escape clears
+  // selection/in-progress gestures, Delete/Backspace removes the selected
+  // annotation, Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes.
+  // Everything but Escape is ignored while typing in a field.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       const isTyping =
         !!target &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if ((event.ctrlKey || event.metaKey) && !isTyping) {
+        const key = event.key.toLowerCase();
+        if (key === "z" || key === "y") {
+          event.preventDefault();
+          if (key === "y" || event.shiftKey) redoAnnotations();
+          else undoAnnotations();
+          return;
+        }
+      }
 
       if (event.key === "Escape") {
         if (isTyping) target.blur();
@@ -164,15 +201,14 @@ export function AnnotationCanvas({
       if ((event.key === "Delete" || event.key === "Backspace") && !isTyping) {
         if (!selectedId) return;
         event.preventDefault();
-        setAnnotations((prev) => prev.filter((item) => item.id !== selectedId));
+        removeAnnotation(selectedId);
         setResize((current) => (current?.id === selectedId ? null : current));
-        setSelectedId(null);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId, setAnnotations, setSelectedId]);
+  }, [selectedId, setSelectedId, removeAnnotation, undoAnnotations, redoAnnotations]);
 
   const pointerPos = (event: React.PointerEvent<SVGElement>): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -226,6 +262,9 @@ export function AnnotationCanvas({
         color,
         createdAt: new Date().toISOString()
       });
+      // A text annotation is placed on pointer-down and never reaches the
+      // pointer-up commit below, so it snapshots itself here.
+      onCommit();
       return;
     }
 
@@ -393,6 +432,7 @@ export function AnnotationCanvas({
 
   const updateSelectedAnnotationNote = (value: string): void => {
     if (!selectedId) return;
+    noteDirtyRef.current = true;
     setAnnotations((prev) =>
       prev.map((item) => {
         if (item.id !== selectedId) return item;
@@ -554,6 +594,7 @@ export function AnnotationCanvas({
                       className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
                       value={selectedNote}
                       onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                      onBlur={commitNoteIfDirty}
                       placeholder="Add comment for selected area"
                       rows={3}
                     />

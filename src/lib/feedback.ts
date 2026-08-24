@@ -2,6 +2,15 @@ import type { CaptureEnvironment, PageDiagnostics } from "@/lib/capture";
 import { describeGeometry, numberAnnotations } from "@/lib/numbering";
 import type { Annotation, ElementContext } from "@/types/annotation";
 
+/**
+ * How much a prompt says: `compact` is numbers, notes, general feedback and
+ * the page URL only; `standard` (the default, and today's shape) adds the
+ * Environment block, per-annotation geometry and the element each annotation
+ * covers; `detailed` adds the Diagnostics block and, under each annotation
+ * that has one, its element's text/classes/rect.
+ */
+export type Verbosity = "compact" | "standard" | "detailed";
+
 /** Short, human-readable summary of a single annotation for timeline rows. */
 export function annotationSummary(annotation: Annotation): string {
   if (annotation.tool === "text") return annotation.text;
@@ -24,26 +33,47 @@ function describeContext(context: ElementContext): string {
 }
 
 /**
+ * Detailed-only lines under a numbered comment, naming the element's visible
+ * text, classes and page-px rect - the fields `describeContext`'s one-line
+ * suffix has no room for.
+ */
+function describeContextDetail(context: ElementContext): string[] {
+  const { x, y, width, height } = context.rect;
+  return [
+    `   text: "${context.text ?? ""}"`,
+    `   classes: [${context.classes.join(", ")}]`,
+    `   rect: ${Math.round(x)},${Math.round(y)} ${Math.round(width)}x${Math.round(height)}`
+  ];
+}
+
+/**
  * Numbered, tool-tagged list of area comments shared by the prompt builders.
  * The numbers come from `numberAnnotations`, so they match the pins drawn on
- * the image and the numbers shown in the comment timeline. When an image size
- * is given, each line also carries the annotation's geometry (px and % of
- * page) so an agent can locate it without opening the picture, and when the
- * annotation was mapped back to a live element, the element that names it.
+ * the image and the numbers shown in the comment timeline. At `compact` only
+ * the number, tool and note appear. At `standard` and above, each line also
+ * carries the annotation's geometry (px and % of page) when an image size is
+ * given, and the live element it was mapped to when one was found. At
+ * `detailed`, a context also expands into indented text/classes/rect lines.
  */
 function formatAreaComments(
   annotations: Annotation[],
+  verbosity: Verbosity,
   image?: { width: number; height: number }
 ): string {
-  const comments = numberAnnotations(annotations)
-    .map(({ n, annotation }) => {
-      const note = `${n}. [${annotation.tool}] ${noteText(annotation)}`;
-      const line = image ? `${note} - ${describeGeometry(annotation, image)}` : note;
-      return annotation.context ? `${line}${describeContext(annotation.context)}` : line;
-    })
-    .join("\n");
+  const lines = numberAnnotations(annotations).flatMap(({ n, annotation }) => {
+    const note = `${n}. [${annotation.tool}] ${noteText(annotation)}`;
+    if (verbosity === "compact") return [note];
 
-  return comments || "(none)";
+    const withGeometry = image ? `${note} - ${describeGeometry(annotation, image)}` : note;
+    const line = annotation.context
+      ? `${withGeometry}${describeContext(annotation.context)}`
+      : withGeometry;
+
+    if (verbosity !== "detailed" || !annotation.context) return [line];
+    return [line, ...describeContextDetail(annotation.context)];
+  });
+
+  return lines.length > 0 ? lines.join("\n") : "(none)";
 }
 
 /** The diagnostics list is clamped to what the type promises to carry. */
@@ -84,11 +114,19 @@ function diagnosticsBlock(diagnostics?: PageDiagnostics): string[] {
  * The context blocks between the `Page URL:` line and the feedback, blank-line
  * separated, with no blank lines at all when every block is empty (an old share
  * restored from before any of this existed keeps exactly the shape it had).
+ * `compact` drops both blocks; the Diagnostics block is `detailed`-only.
  */
-function contextLines(environment?: CaptureEnvironment, diagnostics?: PageDiagnostics): string[] {
-  const blocks = [environmentBlock(environment), diagnosticsBlock(diagnostics)].filter(
-    (block) => block.length > 0
-  );
+function contextLines(
+  verbosity: Verbosity,
+  environment?: CaptureEnvironment,
+  diagnostics?: PageDiagnostics
+): string[] {
+  if (verbosity === "compact") return [];
+
+  const blocks = [
+    environmentBlock(environment),
+    verbosity === "detailed" ? diagnosticsBlock(diagnostics) : []
+  ].filter((block) => block.length > 0);
   if (blocks.length === 0) return [];
 
   return ["", ...blocks.flatMap((block, index) => (index === 0 ? block : ["", ...block])), ""];
@@ -105,16 +143,18 @@ export function buildExternalLlmPrompt(params: {
   environment?: CaptureEnvironment;
   diagnostics?: PageDiagnostics;
   image?: { width: number; height: number };
+  verbosity?: Verbosity;
 }): string {
+  const verbosity = params.verbosity ?? "standard";
   return [
     "Please review this screenshot and provide feedback.",
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,
-    ...contextLines(params.environment, params.diagnostics),
+    ...contextLines(verbosity, params.environment, params.diagnostics),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
-    formatAreaComments(params.annotations, params.image)
+    formatAreaComments(params.annotations, verbosity, params.image)
   ].join("\n");
 }
 
@@ -134,7 +174,9 @@ export function buildClaudeCodePrompt(params: {
   environment?: CaptureEnvironment;
   diagnostics?: PageDiagnostics;
   image?: { width: number; height: number };
+  verbosity?: Verbosity;
 }): string {
+  const verbosity = params.verbosity ?? "standard";
   return [
     `Review this screenshot: ${params.filePath}`,
     ...(params.sidecarPath
@@ -142,10 +184,10 @@ export function buildClaudeCodePrompt(params: {
       : []),
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,
-    ...contextLines(params.environment, params.diagnostics),
+    ...contextLines(verbosity, params.environment, params.diagnostics),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
-    formatAreaComments(params.annotations, params.image)
+    formatAreaComments(params.annotations, verbosity, params.image)
   ].join("\n");
 }

@@ -173,6 +173,10 @@ export function useExports(state: EditorState): EditorExports {
       return;
     }
 
+    // Cleared up front: the success message is worded the same on every call,
+    // so without this a second download in a row leaves stale text on screen.
+    state.setStatus(null);
+
     try {
       const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
         generalFeedback: state.generalFeedback
@@ -197,6 +201,11 @@ export function useExports(state: EditorState): EditorExports {
       state.setStatus({ kind: "error", message: "Capture a screenshot before copying." });
       return;
     }
+
+    // Cleared up front: the success message is worded the same on every call,
+    // so without this a second copy in a row leaves stale text on screen.
+    state.setStatus(null);
+
     try {
       const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
         generalFeedback: state.generalFeedback
@@ -224,6 +233,11 @@ export function useExports(state: EditorState): EditorExports {
       return;
     }
 
+    // Cleared up front, like the other async exports: the success message is
+    // worded the same on every call, so without this a second copy in a row
+    // leaves stale text on screen with no visible sign the click did anything.
+    state.setStatus(null);
+
     try {
       const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
         generalFeedback: state.generalFeedback
@@ -234,7 +248,8 @@ export function useExports(state: EditorState): EditorExports {
         annotations: state.annotations,
         environment: state.environment,
         diagnostics: state.diagnostics,
-        image: promptImage(state.imageSize)
+        image: promptImage(state.imageSize),
+        verbosity: state.promptVerbosity
       });
 
       const a = document.createElement("a");
@@ -290,7 +305,8 @@ export function useExports(state: EditorState): EditorExports {
         annotations: state.annotations,
         environment: state.environment,
         diagnostics: state.diagnostics,
-        image: promptImage(state.imageSize)
+        image: promptImage(state.imageSize),
+        verbosity: state.promptVerbosity
       });
       await navigator.clipboard.writeText(prompt);
 

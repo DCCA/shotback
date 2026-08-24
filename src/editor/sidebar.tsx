@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { EditorState } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
+import type { Verbosity } from "@/lib/feedback";
 import type { AnnotationTool } from "@/types/annotation";
 
 interface SidebarProps {
@@ -39,7 +40,9 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     status,
     isBusy,
     baseDataUrl,
-    progress
+    progress,
+    promptVerbosity,
+    setPromptVerbosity
   } = state;
 
   const removeSelected = (): void => {
@@ -149,6 +152,25 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Shift+Z</kbd>{" "}
           redoes.
         </p>
+
+        <div className="space-y-1.5">
+          <span
+            id="prompt-verbosity-label"
+            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Prompt detail
+          </span>
+          <Select
+            aria-labelledby="prompt-verbosity-label"
+            value={promptVerbosity}
+            onValueChange={(value) => setPromptVerbosity(value as Verbosity)}
+            options={[
+              { value: "compact", label: "Compact" },
+              { value: "standard", label: "Standard" },
+              { value: "detailed", label: "Detailed" }
+            ]}
+          />
+        </div>
 
         <div className="grid grid-cols-1 gap-2">
           <div className="grid grid-cols-2 gap-2">

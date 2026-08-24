@@ -1,7 +1,9 @@
 import type * as React from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CaptureEnvironment, PageDiagnostics } from "@/lib/capture";
+import type { Verbosity } from "@/lib/feedback";
 import { commit, createHistory, redo, undo, type History } from "@/lib/history";
+import { getPrefs, setPrefs } from "@/lib/prefs";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
 
 /**
@@ -64,6 +66,9 @@ export interface EditorState {
   setProgress: (progress: string) => void;
   shareUrl: string;
   setShareUrl: React.Dispatch<React.SetStateAction<string>>;
+  /** How much detail the two export prompts carry. Loaded from prefs on mount, persisted on change. */
+  promptVerbosity: Verbosity;
+  setPromptVerbosity: (verbosity: Verbosity) => void;
 }
 
 export function useEditorState(): EditorState {
@@ -86,6 +91,25 @@ export function useEditorState(): EditorState {
   const [isBusy, setIsBusy] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [zoom, setZoom] = useState<"fit" | "actual">("fit");
+  const [promptVerbosity, setPromptVerbosityState] = useState<Verbosity>("standard");
+  // Set the instant the user picks a level, so the mount load below can tell
+  // "nothing chosen yet" from "chose standard" and never clobbers a pick that
+  // lands before chrome.storage.local.get resolves.
+  const userChangedVerbosityRef = useRef(false);
+
+  useEffect(() => {
+    void getPrefs().then((prefs) => {
+      if (prefs.promptVerbosity && !userChangedVerbosityRef.current) {
+        setPromptVerbosityState(prefs.promptVerbosity);
+      }
+    });
+  }, []);
+
+  const setPromptVerbosity = (verbosity: Verbosity): void => {
+    userChangedVerbosityRef.current = true;
+    setPromptVerbosityState(verbosity);
+    void setPrefs({ promptVerbosity: verbosity });
+  };
 
   // The canvas commits from inside the pointer handler that just changed the
   // annotations (a `flushSync` create, for one), so the handler's own closure
@@ -183,6 +207,8 @@ export function useEditorState(): EditorState {
     progress,
     setProgress,
     shareUrl,
-    setShareUrl
+    setShareUrl,
+    promptVerbosity,
+    setPromptVerbosity
   };
 }

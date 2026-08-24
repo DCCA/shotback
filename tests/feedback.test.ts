@@ -69,6 +69,7 @@ const elementContext = {
   cssPath: "#app > section.hero > button.cta",
   tag: "button",
   classes: ["cta"],
+  text: "Buy now",
   rect: { x: 200, y: 184, width: 200, height: 120 }
 };
 
@@ -281,13 +282,14 @@ describe("buildExternalLlmPrompt", () => {
     );
   });
 
-  it("renders the diagnostics block after the environment block", () => {
+  it("renders the diagnostics block after the environment block (detailed only)", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
       generalFeedback: "",
       annotations: [],
       environment,
-      diagnostics
+      diagnostics,
+      verbosity: "detailed"
     });
 
     expect(prompt).toBe(
@@ -308,12 +310,25 @@ describe("buildExternalLlmPrompt", () => {
     );
   });
 
-  it("renders the diagnostics block on its own when no environment was captured", () => {
+  it("omits the diagnostics block at standard verbosity even when diagnostics were captured", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
       generalFeedback: "",
       annotations: [],
+      environment,
       diagnostics
+    });
+
+    expect(prompt).not.toContain("Diagnostics:");
+  });
+
+  it("renders the diagnostics block on its own when no environment was captured (detailed only)", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      diagnostics,
+      verbosity: "detailed"
     });
 
     expect(prompt).toBe(
@@ -332,7 +347,7 @@ describe("buildExternalLlmPrompt", () => {
     );
   });
 
-  it("caps the failed-request list at twenty entries", () => {
+  it("caps the failed-request list at twenty entries (detailed)", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
       generalFeedback: "",
@@ -343,7 +358,8 @@ describe("buildExternalLlmPrompt", () => {
           status: 500,
           initiatorType: "fetch"
         }))
-      }
+      },
+      verbosity: "detailed"
     });
 
     expect(prompt).toContain("  20. 500 https://example.test/19");
@@ -536,14 +552,15 @@ describe("buildClaudeCodePrompt", () => {
     );
   });
 
-  it("renders the diagnostics block after the environment block", () => {
+  it("renders the diagnostics block after the environment block (detailed only)", () => {
     const prompt = buildClaudeCodePrompt({
       filePath: "/mnt/c/Downloads/shotback/cap.png",
       pageUrl: "https://example.test/page",
       generalFeedback: "",
       annotations: [],
       environment,
-      diagnostics
+      diagnostics,
+      verbosity: "detailed"
     });
 
     expect(prompt).toBe(
@@ -562,6 +579,19 @@ describe("buildClaudeCodePrompt", () => {
         "(none)"
       ].join("\n")
     );
+  });
+
+  it("omits the diagnostics block at standard verbosity even when diagnostics were captured", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment,
+      diagnostics
+    });
+
+    expect(prompt).not.toContain("Diagnostics:");
   });
 
   it("omits the diagnostics block when nothing was collected (byte-identical to Task 15)", () => {
@@ -603,6 +633,205 @@ describe("buildClaudeCodePrompt", () => {
         "",
         "Area comments:",
         "1. [box] fix padding"
+      ].join("\n")
+    );
+  });
+});
+
+// A single fixed input, varied only by `verbosity`, so each level's snapshot
+// isolates exactly what that level adds or drops. Covers environment,
+// geometry, per-annotation context (including a React component chain) and
+// diagnostics all at once.
+const verbosityAnnotations = [
+  { ...box("fix padding"), context: elementContext },
+  { ...arrow("point here"), context: { ...elementContext, component: ["PricingCard", "Page"] } },
+  text("Label")
+];
+
+describe("prompt verbosity levels", () => {
+  it("buildExternalLlmPrompt: compact drops environment, geometry, context and diagnostics", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image,
+      verbosity: "compact"
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding",
+        "2. [arrow] point here",
+        "3. [text] Label"
+      ].join("\n")
+    );
+  });
+
+  it("buildExternalLlmPrompt: standard carries environment, geometry and context but not diagnostics", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image
+      // verbosity omitted: "standard" is the default.
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px -> #app > section.hero > button.cta in <PricingCard > Page>",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("buildExternalLlmPrompt: detailed adds diagnostics and per-annotation context detail lines", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image,
+      verbosity: "detailed"
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        diagnosticsBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta",
+        '   text: "Buy now"',
+        "   classes: [cta]",
+        "   rect: 200,184 200x120",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px -> #app > section.hero > button.cta in <PricingCard > Page>",
+        '   text: "Buy now"',
+        "   classes: [cta]",
+        "   rect: 200,184 200x120",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("buildClaudeCodePrompt: compact drops environment, geometry, context and diagnostics", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image,
+      verbosity: "compact"
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding",
+        "2. [arrow] point here",
+        "3. [text] Label"
+      ].join("\n")
+    );
+  });
+
+  it("buildClaudeCodePrompt: standard carries environment, geometry and context but not diagnostics", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image
+      // verbosity omitted: "standard" is the default.
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px -> #app > section.hero > button.cta in <PricingCard > Page>",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("buildClaudeCodePrompt: detailed adds diagnostics and per-annotation context detail lines", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: verbosityAnnotations,
+      environment,
+      diagnostics,
+      image,
+      verbosity: "detailed"
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        diagnosticsBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta",
+        '   text: "Buy now"',
+        "   classes: [cta]",
+        "   rect: 200,184 200x120",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px -> #app > section.hero > button.cta in <PricingCard > Page>",
+        '   text: "Buy now"',
+        "   classes: [cta]",
+        "   rect: 200,184 200x120",
+        "3. [text] Label - at (1, 2) px"
       ].join("\n")
     );
   });

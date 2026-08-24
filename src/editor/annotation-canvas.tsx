@@ -16,13 +16,7 @@ import {
 } from "@/lib/boxResize";
 import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
 import { placeInlineEditor } from "@/lib/editor-placement";
-import {
-  annotationBounds,
-  canvasScale,
-  numberAnnotations,
-  pinCenter,
-  pinRadius
-} from "@/lib/numbering";
+import { annotationBounds, canvasScale, numberAnnotations, viewPins } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation, RectAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -74,6 +68,18 @@ const MIN_RESIZE_BOX_SIZE = 8;
 /** Image-space size of the inline comment editor; also what its placement is solved for. */
 const BASE_INLINE_EDITOR_SIZE = { width: 240, height: 84 };
 const BASE_INLINE_EDITOR_FONT_SIZE = 13;
+/**
+ * On-screen size of the marquee's floating Apply/Cancel bar. Fixed, because it
+ * is HTML over the crop window rather than SVG content: the anchor clamps
+ * against these numbers so the bar can never be clipped out of reach.
+ */
+const CROP_CONTROLS_SIZE = { width: 196, height: 44 };
+/**
+ * The marquee's own resize handles. Token-backed, and applied as CSS so the
+ * `var()` really resolves - a card-coloured square outlined in the foreground
+ * colour reads in both themes, where a single hard-coded slate did not.
+ */
+const CROP_HANDLE_STYLE = { fill: "hsl(var(--card))", stroke: "hsl(var(--foreground))" };
 /** Edge of one tile of the redaction hatch, in image px at `canvasScale` 1. */
 const BASE_REDACT_HATCH_SIZE = 8;
 
@@ -99,6 +105,7 @@ export function AnnotationCanvas({
     selectedId,
     setSelectedId,
     tool,
+    isBusy,
     crop,
     setCrop,
     cropDraft,
@@ -117,6 +124,17 @@ export function AnnotationCanvas({
     undoAnnotations,
     redoAnnotations
   } = state;
+
+  /**
+   * Commit the marquee. One function for the floating button and the Enter
+   * key, so the keyboard path cannot drift from the pointer one - including
+   * the `isBusy` guard.
+   */
+  const applyCropDraft = (): void => {
+    if (!cropDraft || isBusy) return;
+    setCrop(cropDraft);
+    setCropDraft(null);
+  };
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draft, setDraft] = useState<DraftShape | null>(null);
@@ -144,11 +162,6 @@ export function AnnotationCanvas({
       ? selectedAnnotation.text
       : (selectedAnnotation.comment ?? "")
     : "";
-  // One numbering for the canvas pins, the comment timeline, the exported image
-  // and the LLM prompt: creation order, looked up here by annotation id.
-  const pinNumbers = new Map(
-    numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
-  );
   // With the crop or redact tool in draw mode the whole canvas is marquee
   // surface, so annotations must not swallow a pointer-down that starts a
   // region on top of one - a secret has to be coverable wherever it sits.
@@ -175,8 +188,20 @@ export function AnnotationCanvas({
         height: Math.max(0, shade.bottom - shade.top)
       }
     : null;
-  const pinR = pinRadius(imageSize.width);
-  const scale = canvasScale(imageSize.width);
+  // The region of the capture the canvas actually shows. With no crop that is
+  // the whole image, so the uncropped canvas is byte-for-byte the layout it
+  // always was; with one, the window below clips to exactly what every export
+  // will contain. The image and the SVG overlay are never resized by this -
+  // annotations keep their capture coordinates, and the overlay keeps covering
+  // the image exactly, which is what pointer hit-testing depends on.
+  const view: Rect = crop ?? { x: 0, y: 0, width: imageSize.width, height: imageSize.height };
+  // One numbering for the canvas pins, the comment timeline, the exported
+  // image and the LLM prompt. With a crop applied that numbering is the
+  // export's - derived through `applyCrop`, radius and clamp taken from the
+  // crop, centres shifted back into capture space for the overlay - so a pin
+  // can no longer sit somewhere on the canvas and somewhere else in the PNG.
+  const { radius: pinR, pins } = viewPins(annotations, crop, imageSize);
+  const scale = canvasScale(view.width);
   const resizeHandleSize = BASE_RESIZE_HANDLE_SIZE * scale;
   const resizeHandleHitSize = BASE_RESIZE_HANDLE_HIT_SIZE * scale;
   const inlineEditorSize = {
@@ -186,13 +211,6 @@ export function AnnotationCanvas({
   const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
   const hatchSize = BASE_REDACT_HATCH_SIZE * scale;
 
-  // The region of the capture the canvas actually shows. With no crop that is
-  // the whole image, so the uncropped canvas is byte-for-byte the layout it
-  // always was; with one, the window below clips to exactly what every export
-  // will contain. The image and the SVG overlay are never resized by this -
-  // annotations keep their capture coordinates, and the overlay keeps covering
-  // the image exactly, which is what pointer hit-testing depends on.
-  const view: Rect = crop ?? { x: 0, y: 0, width: imageSize.width, height: imageSize.height };
   const viewMetrics = cropViewMetrics(view, imageSize);
   const cropWindowStyle: React.CSSProperties =
     zoom === "fit"
@@ -201,25 +219,36 @@ export function AnnotationCanvas({
         // measured in JavaScript.
         { width: "100%", maxWidth: view.width, aspectRatio: viewMetrics.aspectRatio }
       : { width: view.width, height: view.height };
-  const imageWrapperStyle: React.CSSProperties =
-    zoom === "fit"
-      ? {
-          left: `${viewMetrics.offsetXPercent}%`,
-          top: `${viewMetrics.offsetYPercent}%`,
-          width: `${viewMetrics.widthPercent}%`
-        }
-      : { left: -view.x, top: -view.y };
+  // One mapping for both zoom modes, in percentages of whatever the window
+  // resolved to. At 1:1 the window is exactly the view's pixel size, so those
+  // percentages evaluate to `-view.x`/`-view.y` and the image's natural width;
+  // at fit-width the window is fluid and they scale with it. Only the window
+  // style above differs between the two.
+  const imageWrapperStyle: React.CSSProperties = {
+    left: `${viewMetrics.offsetXPercent}%`,
+    top: `${viewMetrics.offsetYPercent}%`,
+    width: `${viewMetrics.widthPercent}%`
+  };
 
   // The marquee's bottom-left corner as a fraction of the window, which is
   // where the floating Apply/Cancel bar anchors. Deliberately HTML over the
   // window rather than a `foreignObject` inside the SVG: content in the SVG is
   // sized in *image* px, so at fit-width the bar shrank along with the capture
   // and landed well under a readable (and tappable) size.
+  //
+  // The bar is a child of the window, which clips, so both axes are clamped
+  // against the bar's own fixed size: a narrow marquee at the right edge would
+  // otherwise push it past 100%, and a marquee against the top edge would put
+  // it above the window - either way out of reach, with no other way to apply.
+  // `clamp()` does that in CSS, mixing the percentage anchor with the px size,
+  // so nothing has to be measured. Enter applies a draft from the keyboard in
+  // any case (see the keymap), so the bar is never the only affordance.
   const cropControlsAnchor =
     cropDraft && !draft
       ? {
-          left: `${((cropDraft.x - view.x) / view.width) * 100}%`,
-          top: `${((cropDraft.y + cropDraft.height - view.y) / view.height) * 100}%`
+          width: CROP_CONTROLS_SIZE.width,
+          left: `clamp(0px, ${((cropDraft.x - view.x) / view.width) * 100}%, 100% - ${CROP_CONTROLS_SIZE.width}px)`,
+          top: `clamp(${CROP_CONTROLS_SIZE.height}px, ${((cropDraft.y + cropDraft.height - view.y) / view.height) * 100}%, 100%)`
         }
       : null;
 
@@ -255,7 +284,8 @@ export function AnnotationCanvas({
    */
   const renderHandles = (
     rect: Rect,
-    strokeColor: string,
+    /** Written as CSS, not presentation attributes, so `var()` tokens resolve. */
+    handleStyle: React.CSSProperties,
     keyPrefix: string,
     onDown: (handle: BoxResizeHandle) => (event: React.PointerEvent<SVGElement>) => void
   ): JSX.Element[] =>
@@ -277,8 +307,7 @@ export function AnnotationCanvas({
             y={position.y - resizeHandleSize / 2}
             width={resizeHandleSize}
             height={resizeHandleSize}
-            fill="white"
-            stroke={strokeColor}
+            style={handleStyle}
             strokeWidth="1.5"
             pointerEvents="none"
           />
@@ -287,10 +316,17 @@ export function AnnotationCanvas({
     });
 
   const renderResizeHandles = (item: RectAnnotation): JSX.Element[] =>
-    renderHandles(item, item.color, item.id, (handle) => onResizeHandlePointerDown(item, handle));
+    renderHandles(item, { fill: "white", stroke: item.color }, item.id, (handle) =>
+      onResizeHandlePointerDown(item, handle)
+    );
 
-  const renderPin = (item: Annotation): JSX.Element => {
-    const center = pinCenter(item, pinR, imageSize);
+  const renderPin = (item: Annotation): JSX.Element | null => {
+    const pin = pins.get(item.id);
+    // No pin for an annotation the applied crop dropped: the export drops it
+    // too, and a numbered pin for something that will not be in the PNG is
+    // exactly the disagreement this is here to prevent.
+    if (!pin) return null;
+    const center = pin.center;
     return (
       <g pointerEvents="none">
         <circle
@@ -310,7 +346,7 @@ export function AnnotationCanvas({
           textAnchor="middle"
           dominantBaseline="central"
         >
-          {pinNumbers.get(item.id)}
+          {pin.n}
         </text>
       </g>
     );
@@ -369,6 +405,15 @@ export function AnnotationCanvas({
         }
       }
 
+      // Enter applies a drawn crop, the counterpart to Escape cancelling it.
+      // It is also what keeps the floating bar from being the only way to
+      // apply one, whatever the marquee's position or the window's size.
+      if (event.key === "Enter" && !isTyping && cropDraft) {
+        event.preventDefault();
+        applyCropDraft();
+        return;
+      }
+
       if (event.key === "Escape") {
         if (isTyping) target.blur();
         setSelectedId(null);
@@ -390,7 +435,19 @@ export function AnnotationCanvas({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId, setSelectedId, setCropDraft, removeAnnotation, undoAnnotations, redoAnnotations]);
+    // `applyCropDraft` closes over the live `cropDraft`/`isBusy` and is
+    // recreated each render, so the listener is re-bound with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedId,
+    setSelectedId,
+    setCropDraft,
+    removeAnnotation,
+    undoAnnotations,
+    redoAnnotations,
+    cropDraft,
+    isBusy
+  ]);
 
   const pointerPos = (event: React.PointerEvent<SVGElement>): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -628,7 +685,7 @@ export function AnnotationCanvas({
       const region = draftRect(draft);
       setDraft(null);
       // A marquee, not a commit: too small a drag is a stray click, and the
-      // crop itself only takes effect when the sidebar's Apply is pressed. No
+      // crop itself only takes effect when Apply (or Enter) is pressed. No
       // history entry either - a crop is a view, not an edit.
       if (region.width >= MIN_CROP_SIZE && region.height >= MIN_CROP_SIZE) {
         setCropDraft(clampCrop(region, imageSize));
@@ -730,12 +787,22 @@ export function AnnotationCanvas({
       {/* An applied crop is stated where it is visible - over the canvas that
           is now showing only that region - not in the sidebar's scroll flow. */}
       {crop ? (
-        <div className="absolute left-4 top-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]">
+        // Bottom-left, not top-left: the top-left is where the capture's own
+        // origin sits and where a drag usually starts, and the chip is
+        // `pointer-events-none` with only its button opting back in - a chip
+        // that swallowed a pointer-down would make that corner undrawable.
+        <div className="pointer-events-none absolute bottom-4 left-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]">
           <div className="flex items-center justify-between gap-2">
             <span>
               Cropped to {crop.width}x{crop.height}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => setCrop(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto"
+              disabled={isBusy}
+              onClick={() => setCrop(null)}
+            >
               Clear
             </Button>
           </div>
@@ -904,8 +971,8 @@ export function AnnotationCanvas({
                         annotation still has a hit area to select and drag - on
                         the pin's own (clamped) centre, not the raw anchor. */}
                         <circle
-                          cx={pinCenter(item, pinR, imageSize).x}
-                          cy={pinCenter(item, pinR, imageSize).y}
+                          cx={pins.get(item.id)?.center.x ?? item.x}
+                          cy={pins.get(item.id)?.center.y ?? item.y}
                           r={pinR}
                           fill="transparent"
                           pointerEvents="all"
@@ -1033,12 +1100,7 @@ export function AnnotationCanvas({
                     which takes no pointer events. */}
                   {cropDraft && !draft ? (
                     <g data-crop-handles>
-                      {renderHandles(
-                        cropDraft,
-                        "rgba(15,23,42,0.9)",
-                        "crop",
-                        onCropHandlePointerDown
-                      )}
+                      {renderHandles(cropDraft, CROP_HANDLE_STYLE, "crop", onCropHandlePointerDown)}
                     </g>
                   ) : null}
                 </svg>
@@ -1052,19 +1114,23 @@ export function AnnotationCanvas({
                   clipped by the window it is drawn in. */}
               {cropControlsAnchor ? (
                 <div
+                  data-crop-controls
                   className="absolute z-10 flex -translate-y-full items-stretch gap-1.5 pb-2 pl-2 text-[13px]"
                   style={cropControlsAnchor}
                 >
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setCrop(cropDraft);
-                      setCropDraft(null);
-                    }}
-                  >
+                  {/* Guarded like every other control that changes what an
+                      export will contain: an export promise already in flight
+                      captured the crop it started with, and letting the canvas
+                      move underneath it desyncs the file from the screen. */}
+                  <Button size="sm" disabled={isBusy} onClick={applyCropDraft}>
                     Apply crop
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setCropDraft(null)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={isBusy}
+                    onClick={() => setCropDraft(null)}
+                  >
                     Cancel
                   </Button>
                 </div>

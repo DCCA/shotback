@@ -121,9 +121,14 @@ export function StatusToast({ status, setStatus, progress }: StatusToastProps): 
     if (status?.kind !== "success") return;
     const timer = window.setTimeout(() => setStatus(null), SUCCESS_DISMISS_MS);
     return () => window.clearTimeout(timer);
-    // The message too, not just the kind: two successes in a row must restart
-    // the clock rather than inherit the first one's remaining time.
-  }, [status?.kind, status?.message, setStatus]);
+    // Keyed on the status OBJECT, not on its kind and message. Every
+    // `setStatus` call builds a fresh object, so an identical message arriving
+    // a second time is still a new identity: the effect re-runs, the previous
+    // timer is cleared and the new toast gets its own full 4s. Keying on the
+    // text would have let the second toast inherit the first one's remaining
+    // time and vanish almost at once. `setStatus` is `useState`'s setter, so
+    // it is stable and cannot restart the clock on an unrelated render.
+  }, [status, setStatus]);
 
   return (
     <div

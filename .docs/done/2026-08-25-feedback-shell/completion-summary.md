@@ -31,7 +31,14 @@
   marquee gone and `overlayMatchesImage` still true (also after Clear); and
   `documentElement.scrollHeight <= innerHeight` at 1280x900 while
   `#capture-viewport` scrolls.
-- Colour-literal grep: 0 hits. No em dashes on added lines.
+- Colour-literal grep (the Tailwind-class pattern, `(text|bg|border|...)-(slate|emerald|red|white)`):
+  0 hits. **First round overclaimed this**: that grep never covered raw CSS
+  colours, and the crop marquee's handles shipped a hard-coded
+  `rgba(15,23,42,0.9)` stroke. Now token-backed (`hsl(var(--card))` /
+  `hsl(var(--foreground))`, applied as CSS so `var()` resolves) and readable in
+  both themes. The pre-existing dim/outline literals in the marquee decoration
+  are untouched and out of scope.
+- No em dashes on added lines.
 - Screenshots read back at 1280 and 900, light and dark: toast over the canvas
   after a copy, marquee with handles plus floating Apply/Cancel, applied crop
   showing only the crop region, and no double scroll.

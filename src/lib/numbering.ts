@@ -1,3 +1,4 @@
+import { applyCrop, type Rect } from "@/lib/crop";
 import type { Annotation, RedactAnnotation } from "@/types/annotation";
 
 export interface NumberedAnnotation {
@@ -138,4 +139,50 @@ export function pinCenter(
     x: clamp(anchor.x, r, image.width - r),
     y: clamp(anchor.y, r, image.height - r)
   };
+}
+
+/** One pin, ready to draw on the canvas overlay. */
+export interface ViewPin {
+  n: number;
+  /** Centre in CAPTURE space, whatever region the canvas is showing. */
+  center: { x: number; y: number };
+}
+
+/**
+ * The pins exactly as the exports will draw them, translated back into capture
+ * space so the canvas overlay - which keeps the full image's viewBox even when
+ * a crop is applied - can draw them without deriving a second numbering.
+ *
+ * With no crop this is the plain annotation list: the editor numbers
+ * everything it holds, including anything an export would later drop. With a
+ * crop applied the canvas has to agree with the export instead, so the list,
+ * the numbering, the pin radius and the clamp all come from the crop:
+ * `applyCrop` renumbers the survivors, `pinRadius` follows the crop's width,
+ * and `pinCenter` clamps against the crop's own canvas before the result is
+ * shifted back by the crop origin. Without that, an anchor a couple of px
+ * inside the crop edge drew half-clipped on the canvas and clamped a full
+ * radius inside it in the PNG.
+ *
+ * An annotation the crop dropped has no entry, so it gets no pin - the same
+ * thing the export does with it.
+ */
+export function viewPins(
+  annotations: Annotation[],
+  crop: Rect | null,
+  image: { width: number; height: number }
+): { radius: number; pins: Map<string, ViewPin> } {
+  const source = crop ? applyCrop(annotations, crop) : annotations;
+  const bounds = crop ? { width: crop.width, height: crop.height } : image;
+  const origin = crop ?? { x: 0, y: 0 };
+  const radius = pinRadius(bounds.width);
+
+  const pins = new Map<string, ViewPin>();
+  for (const { n, annotation } of numberAnnotations(source)) {
+    const center = pinCenter(annotation, radius, bounds);
+    pins.set(annotation.id, {
+      n,
+      center: { x: center.x + origin.x, y: center.y + origin.y }
+    });
+  }
+  return { radius, pins };
 }

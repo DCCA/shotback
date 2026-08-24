@@ -44,10 +44,23 @@ and width as percentages plus the window's aspect ratio. Because the wrapper is
 absolutely positioned, its `left` percentage resolves against the window's width
 and its `top` against the window's height, so each offset divides by its own
 axis of the view - the bug the test pins down. Every number being a ratio is
-what lets one mapping serve both zoom modes: fit-width gives the window
-`width:100%; max-width:<view width>; aspect-ratio:<view>`, 1:1 gives it the
-view's pixel size, and the same percentages hold either way. Nothing is
-measured in JavaScript, so there is no ResizeObserver and no layout pass.
+what lets **one wrapper mapping serve both zoom modes**: at 1:1 the window is
+exactly the view's pixel size, so the percentages evaluate to `-view.x`,
+`-view.y` and the image's natural width; at fit-width the window is fluid
+(`width:100%; max-width:<view width>; aspect-ratio:<view>`) and they scale with
+it. Only the **window's** style differs between the two - the wrapper style is
+literally the same object. Nothing is measured in JavaScript, so there is no
+ResizeObserver and no layout pass.
+
+**Deliberate departure from the brief.** The brief said "the SVG overlay viewBox
+switches to the crop rect so annotations keep their coordinates". It does not:
+the overlay keeps the full image's viewBox and the *window* clips instead. That
+is what preserves the overlay-covers-image invariant the e2e guards - a
+crop-sized viewBox would make the overlay stop matching the image's box - and it
+leaves annotation coordinates, `getScreenCTM` pointer math and `refreshContexts`
+untouched by a crop. The e2e pins the consequence directly: with a crop applied
+at 1:1, a drag 10px inside the window's top-left reports the crop origin plus
+10 in capture space.
 
 Consequences, all deliberate:
 
@@ -75,8 +88,47 @@ onDown)`; the marquee passes `cropDraft` and a handler that runs the same
   precedent); content there is sized in *image* px, so at fit-width the buttons
   shrank with the capture and rendered ~66x18 on screen - under the readable and
   tappable floor. As HTML anchored at the marquee's bottom-left corner in
-  percentages of the window, they are a constant size at any zoom, and anchoring
-  *inside* the marquee means they can never be clipped by the window.
+  percentages of the window, they are a constant size at any zoom. Both axes are
+  `clamp()`ed against the bar's own fixed size (`CROP_CONTROLS_SIZE`), because
+  the bar is a child of the clipping window: a narrow marquee at the right edge
+  would otherwise push it past 100%, and one against the top edge would put it
+  above the window - out of reach, with no other way to apply.
+- **Enter applies a drawn marquee**, through the same `applyCropDraft` the
+  button calls, so the floating bar is not a single point of failure whatever
+  the marquee's position. Escape already cancelled one.
+- **`disabled={isBusy}` on Apply, Cancel and Clear**, restoring the guard the
+  removed sidebar rows carried: an export promise in flight captured the crop it
+  started with, and letting the canvas move underneath it desyncs the file from
+  the screen. `applyCropDraft` re-checks `isBusy`, so the keyboard path cannot
+  bypass it.
+- **The chip is `pointer-events-none`** (only its Clear button opts back in) and
+  sits bottom-left. Top-left with a live button covered the capture's own origin,
+  where a drag usually starts: `elementFromPoint` at the crop window's top-left
+  returned the Clear button, and that corner was simply not drawable.
+
+## Pins under an applied crop
+
+The canvas used to number and clamp against the full image while the export
+numbered `applyCrop`'s survivors and clamped against the crop canvas, so the two
+disagreed twice over: an anchor two px inside the crop edge drew half-clipped on
+the canvas and a full radius in inside the PNG, and a pin numbered 3 on screen
+came out 2 in the export. `viewPins(annotations, crop, image)` (pure, in
+`src/lib/numbering.ts`, unit-tested on all four crop edges plus the renumbering)
+is now the single derivation: with no crop it is the plain list (the editor still
+numbers everything it holds, per the Task 21 ruling), and with one applied it is
+the export's list, radius and clamp, with centres shifted back by the crop origin
+for the full-image overlay. An annotation the crop dropped gets no pin, exactly
+as the export drops it.
+
+## Toast timer
+
+The dismiss effect keys on the status **object**, not on its kind and message.
+Every `setStatus` call builds a fresh object, so an identical message arriving a
+second time is a new identity: the effect re-runs, clears the previous timer and
+gives the new toast its own full 4s. Keyed on the text, the second toast would
+have inherited the first one's remaining time and could vanish almost at once.
+`setStatus` is `useState`'s setter, so it is stable and cannot restart the clock
+on an unrelated render.
 
 ## Shell
 

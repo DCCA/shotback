@@ -168,7 +168,9 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Z</kbd> undoes
           and{" "}
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Shift+Z</kbd>{" "}
-          redoes.
+          redoes. With a crop drawn,{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Enter</kbd> applies
+          it.
         </p>
 
         <div className="space-y-1.5">

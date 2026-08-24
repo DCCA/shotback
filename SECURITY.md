@@ -27,7 +27,16 @@ justification:
 `commands` (\_execute_action for `Alt+Shift+S`) is not a permission - it only binds a keyboard shortcut to the existing toolbar action.
 
 Access to page content is exercised **only at user-initiated capture time and
-while the user annotates a capture**, never in the background. Annotating is
+while the user annotates a capture**, never in the background. Capturing also
+reads the page's own resource timing and collects the requests it answered with
+a status of 400 or more (up to 20, each URL clamped to one line of 200 chars).
+Those URLs go into the prompts the user copies, so a page's own request URLs -
+query strings included - can leave the device through an explicit export. The
+status is readable only for same-origin responses and for cross-origin ones that
+opt in with `Access-Control-Allow-Origin`, and the browser keeps only about 250
+resource entries, so this is a partial view by construction: an absent
+diagnostics block means "nothing readable failed", not "nothing failed".
+Annotating is
 itself a user-initiated act: each drawn or moved annotation asks the captured
 tab to describe the element beneath it, which reads that element's selector
 (tag, id, classes, `role`, `data-testid`), its position, and up to 80 characters
@@ -44,6 +53,20 @@ injects no extension resources into web pages, and the editor/viewer load their
 own assets as same-origin extension pages. Omitting it removes an
 extension-fingerprinting vector.
 
+### Deliberate non-collection: page console errors
+
+Prompts do **not** carry the page's uncaught JavaScript errors, and this is a
+posture decision rather than an oversight. Chromium reports an error only to
+listeners in the JavaScript world that threw it, so a `window` error listener in
+the content script's isolated world never fires for the page's own errors
+(measured against real Chromium; the probe output is in
+`.docs/done/2026-08-24-diagnostics/`). The only way to collect them is a
+`world: "MAIN"` content script running at `document_start` on every page load -
+extension code inside every page's own JavaScript world, page-readable and
+page-tamperable, and one more extension-fingerprinting vector. That runs against
+both the omission of `web_accessible_resources` below and the follow-up right
+after it, so it is not done. Reopen it as an explicit, documented trade.
+
 ### Known follow-up
 
 The content script is registered statically on `<all_urls>` and is also injected
@@ -52,8 +75,8 @@ to avoid running on every page load.
 
 ## Data Handling
 
-- Screenshots, annotations, element descriptions, and feedback stay in the local
-  browser profile.
+- Screenshots, annotations, element descriptions, failed-request URLs, and
+  feedback stay in the local browser profile.
 - The extension makes no network requests of its own.
 - Data leaves the device only when the user explicitly uses the cloud LLM
   fallback (manual image download + clipboard paste). The "Copy for Claude Code"

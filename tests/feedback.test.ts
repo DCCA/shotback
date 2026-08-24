@@ -82,6 +82,22 @@ const environmentBlock = [
   "- Captured at: 2026-08-24T10:11:12.000Z"
 ].join("\n");
 
+const diagnostics = {
+  failedRequests: [
+    { url: "https://example.test/missing.png", status: 404, initiatorType: "img" },
+    { url: "https://example.test/api/user", status: 500, initiatorType: "fetch" }
+  ]
+};
+
+const emptyDiagnostics = { failedRequests: [] };
+
+const diagnosticsBlock = [
+  "Diagnostics:",
+  "- Failed requests:",
+  "  1. 404 https://example.test/missing.png",
+  "  2. 500 https://example.test/api/user"
+].join("\n");
+
 describe("annotationSummary", () => {
   it("returns the text content for text annotations", () => {
     expect(annotationSummary(text("Heading is misaligned"))).toBe("Heading is misaligned");
@@ -265,6 +281,96 @@ describe("buildExternalLlmPrompt", () => {
     );
   });
 
+  it("renders the diagnostics block after the environment block", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment,
+      diagnostics
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        diagnosticsBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
+  it("renders the diagnostics block on its own when no environment was captured", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      diagnostics
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        diagnosticsBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
+  it("caps the failed-request list at twenty entries", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      diagnostics: {
+        failedRequests: Array.from({ length: 25 }, (_, i) => ({
+          url: `https://example.test/${i}`,
+          status: 500,
+          initiatorType: "fetch"
+        }))
+      }
+    });
+
+    expect(prompt).toContain("  20. 500 https://example.test/19");
+    expect(prompt).not.toContain("https://example.test/20");
+  });
+
+  it("omits the diagnostics block when nothing was collected (byte-identical to Task 15)", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")],
+      diagnostics: emptyDiagnostics
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding"
+      ].join("\n")
+    );
+  });
+
   it("omits geometry entirely when no image size is given (byte-identical to Task 13)", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
@@ -399,6 +505,56 @@ describe("buildClaudeCodePrompt", () => {
         "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page]",
         "2. [arrow] point here - from (0, 0) to (5, 5) px",
         "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("renders the diagnostics block after the environment block", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      environment,
+      diagnostics
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "",
+        environmentBlock,
+        "",
+        diagnosticsBlock,
+        "",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
+      ].join("\n")
+    );
+  });
+
+  it("omits the diagnostics block when nothing was collected (byte-identical to Task 15)", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [],
+      diagnostics: emptyDiagnostics
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "(none)"
       ].join("\n")
     );
   });

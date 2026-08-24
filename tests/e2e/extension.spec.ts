@@ -47,10 +47,18 @@ const CTA =
   `{ type: "button", return: { type: { name: "PricingCard" }, return: ` +
   `{ type: "div", return: { type: { displayName: "Page" }, return: null } } } };</script>`;
 
+// A page that goes wrong on purpose, for the prompt's Diagnostics block: one
+// request the server answers with 404. The image is 1px and transparent so it
+// changes neither the page height nor any sampled pixel the capture assertions
+// depend on. (The uncaught error that belongs beside it is not here: Chromium
+// reports an error only to the world that threw, so the content script cannot
+// see the page's - see README's "Known limitations".)
+const FAILING = `<img src="/missing.png" style="position:absolute;top:0;left:0;width:1px;height:1px;opacity:0">`;
+
 const CAPTURE_PAGES: Record<string, string> = {
   // The document itself scrolls, but with `scroll-behavior: smooth` - an
   // animated scroll must not be captured mid-flight.
-  smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0;position:relative">${BLOCKS}${CTA}</body></html>`,
+  smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0;position:relative">${BLOCKS}${CTA}${FAILING}</body></html>`,
   // SPA shell: the document does not scroll at all, an inner element does.
   inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto;position:relative">${BLOCKS}${CTA}</div></body></html>`
 };
@@ -65,8 +73,16 @@ test.beforeAll(async () => {
   expect(existsSync(EXT), "dist/ must be built first (run: npm run build)").toBe(true);
 
   server = http.createServer((req, res) => {
+    const route = (req.url ?? "/").slice(1);
+    // Anything that is not a fixture page 404s, so the fixtures can ask for a
+    // resource that fails the way a real broken page does.
+    if (route && !CAPTURE_PAGES[route]) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("not found");
+      return;
+    }
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(CAPTURE_PAGES[(req.url ?? "/").slice(1)] ?? PAGE_HTML);
+    res.end(CAPTURE_PAGES[route] ?? PAGE_HTML);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
@@ -322,6 +338,12 @@ for (const [name, headerHeight] of [
         /1\. \[box\] Chart - at \(\d+, \d+\) size \d+x\d+ px \[\d+%, \d+% of page\]/
       );
       expect(prompt).toContain("-> #app > section.hero > button.cta");
+      // ... and what the page reported going wrong: the image the server
+      // answered with 404, read back from resource timing.
+      expect(prompt).toContain("Diagnostics:");
+      expect(prompt).toContain("- Failed requests:");
+      expect(prompt).toContain("404 ");
+      expect(prompt).toContain("/missing.png");
     }
 
     if (name === "inner") {

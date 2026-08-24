@@ -186,6 +186,7 @@ export function useExports(state: EditorState): EditorExports {
         generalFeedback: state.generalFeedback,
         annotations: state.annotations,
         environment: state.environment,
+        diagnostics: state.diagnostics,
         image: promptImage(state.imageSize)
       });
 
@@ -246,6 +247,7 @@ export function useExports(state: EditorState): EditorExports {
         generalFeedback: state.generalFeedback,
         annotations: state.annotations,
         environment: state.environment,
+        diagnostics: state.diagnostics,
         image: promptImage(state.imageSize)
       });
       await navigator.clipboard.writeText(prompt);

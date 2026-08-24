@@ -1,3 +1,4 @@
+import type { PageDiagnostics } from "@/lib/capture";
 import { cssPath, type ElementLike } from "@/lib/dom-context";
 import type { ElementContext } from "@/types/annotation";
 
@@ -11,6 +12,51 @@ interface PageMetrics {
   title: string;
   colorScheme: "light" | "dark";
   scroller: "document" | "element";
+}
+
+/** Failed requests reported, and chars of each URL. */
+const MAX_DIAGNOSTICS = 20;
+const MAX_DIAGNOSTIC_TEXT = 200;
+
+/**
+ * A URL is page-controlled text on its way into a prompt, so it is clamped at
+ * this boundary: one line, 200 chars.
+ */
+function diagnosticText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC_TEXT);
+}
+
+/**
+ * Resources the page asked for and did not get, read on demand from resource
+ * timing (there is no event that reports them all). `responseStatus` is recent
+ * enough to be worth feature-guarding; without it no status is knowable, so no
+ * request can be called failed.
+ *
+ * Uncaught page errors are deliberately not collected here: Chromium reports an
+ * error only to listeners in the world that threw, so a `window` listener in
+ * this isolated world never sees the page's own (measured, not assumed - the
+ * e2e probe in `.docs/done/2026-08-24-diagnostics/` records it). Catching them
+ * needs a `world: "MAIN"` content script on every page load, which is a
+ * security-posture decision, not an implementation detail.
+ */
+function failedRequests(): PageDiagnostics["failedRequests"] {
+  const seen = new Set<string>();
+  const failed: PageDiagnostics["failedRequests"] = [];
+
+  for (const entry of performance.getEntriesByType("resource")) {
+    const { responseStatus, initiatorType } = entry as PerformanceResourceTiming;
+    if (typeof responseStatus !== "number" || responseStatus < 400) continue;
+
+    const url = diagnosticText(entry.name);
+    const key = `${responseStatus} ${url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    failed.push({ url, status: responseStatus, initiatorType: diagnosticText(initiatorType) });
+    if (failed.length >= MAX_DIAGNOSTICS) break;
+  }
+
+  return failed;
 }
 
 let originalScrollY = 0;
@@ -320,6 +366,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // The URL is read here, after the hit test, so the editor can tell that the
     // contexts describe the page it captured and not one navigated to since.
     sendResponse({ contexts: inspectPoints(points), pageUrl: window.location.href });
+    return true;
+  }
+
+  if (message?.type === "SB_GET_DIAGNOSTICS") {
+    const diagnostics: PageDiagnostics = { failedRequests: failedRequests() };
+    sendResponse(diagnostics);
     return true;
   }
 

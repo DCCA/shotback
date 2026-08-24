@@ -34,13 +34,15 @@
   Detailed), placed with the output actions, same `id`+`aria-labelledby`
   pattern as Interaction/Tool/Zoom.
 - `src/editor/use-exports.ts` - `verbosity: state.promptVerbosity` added to
-  both builder calls. Also: `prepareExternalLlmPackage` now clears `status` to
-  `null` up front (see the e2e finding below).
+  both builder calls. Also: `prepareExternalLlmPackage`, `download` and
+  `copyImage` now clear `status` to `null` up front (see the e2e finding
+  below and the code-review fix report).
 
 ## A real bug found while wiring the e2e test
 
-`prepareExternalLlmPackage` was the only one of the four async export
-handlers that never reset `state.setStatus(null)` before starting. Its success
+`prepareExternalLlmPackage` (and, as a code review caught, `download` and
+`copyImage` too - see the fix report appended below) never reset
+`state.setStatus(null)` before starting. Its success
 message is worded identically on every call ("Prompt copied. Annotated image
 downloaded..."), so two `Prepare for Cloud LLM` clicks in a row left the DOM
 text completely unchanged between them. The e2e helper `copyCloudPrompt`

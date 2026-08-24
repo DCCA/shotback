@@ -92,14 +92,21 @@ export function useEditorState(): EditorState {
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [zoom, setZoom] = useState<"fit" | "actual">("fit");
   const [promptVerbosity, setPromptVerbosityState] = useState<Verbosity>("standard");
+  // Set the instant the user picks a level, so the mount load below can tell
+  // "nothing chosen yet" from "chose standard" and never clobbers a pick that
+  // lands before chrome.storage.local.get resolves.
+  const userChangedVerbosityRef = useRef(false);
 
   useEffect(() => {
     void getPrefs().then((prefs) => {
-      if (prefs.promptVerbosity) setPromptVerbosityState(prefs.promptVerbosity);
+      if (prefs.promptVerbosity && !userChangedVerbosityRef.current) {
+        setPromptVerbosityState(prefs.promptVerbosity);
+      }
     });
   }, []);
 
   const setPromptVerbosity = (verbosity: Verbosity): void => {
+    userChangedVerbosityRef.current = true;
     setPromptVerbosityState(verbosity);
     void setPrefs({ promptVerbosity: verbosity });
   };

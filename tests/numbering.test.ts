@@ -3,7 +3,9 @@ import {
   annotationBounds,
   canvasScale,
   describeGeometry,
+  inspectableAnnotations,
   numberAnnotations,
+  redactions,
   inspectAnchor,
   pinAnchor,
   pinCenter,
@@ -196,5 +198,48 @@ describe("annotationBounds", () => {
       text: "abcd"
     };
     expect(annotationBounds(text)).toEqual({ x: 100, y: 32, width: 40, height: 22 });
+  });
+
+  it("returns a redaction's own rect, like a box", () => {
+    expect(annotationBounds(redaction("r", ts))).toEqual({ x: 20, y: 30, width: 40, height: 50 });
+  });
+});
+
+const redaction = (id: string, createdAt: string) => ({
+  id,
+  tool: "redact" as const,
+  color: "#f00",
+  createdAt,
+  x: 20,
+  y: 30,
+  width: 40,
+  height: 50
+});
+
+describe("redactions", () => {
+  it("are left out of the numbering: no pin, no legend row, no prompt line", () => {
+    const list = [
+      mk("first", "2026-08-23T00:00:01Z"),
+      redaction("r1", "2026-08-23T00:00:02Z"),
+      mk("second", "2026-08-23T00:00:03Z")
+    ];
+    expect(numberAnnotations(list).map((item) => [item.n, item.annotation.id])).toEqual([
+      [1, "first"],
+      [2, "second"]
+    ]);
+  });
+
+  it("are never inspectable, so no selector is read from under one", () => {
+    const list = [mk("box", "2026-08-23T00:00:00Z"), redaction("r1", "2026-08-23T00:00:01Z")];
+    expect(inspectableAnnotations(list).map((item) => item.id)).toEqual(["box"]);
+  });
+
+  it("are returned on their own, in creation order", () => {
+    const list = [
+      redaction("late", "2026-08-23T00:00:02Z"),
+      mk("box", "2026-08-23T00:00:00Z"),
+      redaction("early", "2026-08-23T00:00:01Z")
+    ];
+    expect(redactions(list).map((item) => item.id)).toEqual(["early", "late"]);
   });
 });

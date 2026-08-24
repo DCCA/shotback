@@ -1,15 +1,42 @@
-import type { Annotation } from "@/types/annotation";
+import type { Annotation, RedactAnnotation } from "@/types/annotation";
 
 export interface NumberedAnnotation {
   n: number;
   annotation: Annotation;
 }
 
-/** Timeline order = creation order. The same list drives the timeline, the prompt, the canvas pins and the export. */
+/**
+ * Timeline order = creation order. The same list drives the timeline, the
+ * prompt, the canvas pins and the export.
+ *
+ * Redactions are excluded here, once, so every one of those surfaces skips
+ * them together: a redaction says "these pixels are gone", which is not a note
+ * to number, and numbering it would leave a pin and a legend row pointing at
+ * the region the user hid.
+ */
 export function numberAnnotations(annotations: Annotation[]): NumberedAnnotation[] {
-  return [...annotations]
+  return annotations
+    .filter((annotation) => annotation.tool !== "redact")
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((annotation, index) => ({ n: index + 1, annotation }));
+}
+
+/**
+ * The annotations it is safe to map back onto the live page. Redactions are
+ * filtered out here, in the lib, rather than at the one call site: reading the
+ * element under one would put its selector, and up to 80 characters of its
+ * text, into the very prompts the redaction exists to keep it out of, so a
+ * future inspection call site must not be able to leak by default.
+ */
+export function inspectableAnnotations(annotations: Annotation[]): Annotation[] {
+  return annotations.filter((annotation) => annotation.tool !== "redact");
+}
+
+/** The other half of that split: the redactions, in creation order. */
+export function redactions(annotations: Annotation[]): RedactAnnotation[] {
+  return annotations
+    .filter((annotation): annotation is RedactAnnotation => annotation.tool === "redact")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Pin radius in image px: readable on a phone-width capture, not absurd on a 4K one. */
@@ -55,7 +82,7 @@ export function annotationBounds(annotation: Annotation): {
   width: number;
   height: number;
 } {
-  if (annotation.tool === "box") {
+  if (annotation.tool === "box" || annotation.tool === "redact") {
     const { x, y, width, height } = annotation;
     return { x, y, width, height };
   }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { applyCrop, clampCrop, MIN_CROP_SIZE, type Rect } from "../src/lib/crop";
-import type { ArrowAnnotation, BoxAnnotation, TextAnnotation } from "../src/types/annotation";
+import type {
+  ArrowAnnotation,
+  BoxAnnotation,
+  RedactAnnotation,
+  TextAnnotation
+} from "../src/types/annotation";
 
 const CROP: Rect = { x: 100, y: 100, width: 400, height: 300 };
 
@@ -30,6 +35,20 @@ function arrow(overrides: Partial<ArrowAnnotation> = {}): ArrowAnnotation {
     y1: 150,
     x2: 250,
     y2: 250,
+    ...overrides
+  };
+}
+
+function redaction(overrides: Partial<RedactAnnotation> = {}): RedactAnnotation {
+  return {
+    id: "r1",
+    tool: "redact",
+    color: "#ff3333",
+    createdAt: "2026-02-21T00:00:04.000Z",
+    x: 150,
+    y: 150,
+    width: 60,
+    height: 40,
     ...overrides
   };
 }
@@ -90,6 +109,31 @@ describe("applyCrop boxes", () => {
 
   it("drops a box that only touches the crop edge", () => {
     expect(applyCrop([box({ x: 40, y: 150, width: 60, height: 40 })], CROP)).toEqual([]);
+  });
+});
+
+describe("applyCrop redactions", () => {
+  it("shifts a fully inside redaction into crop space, like a box", () => {
+    expect(applyCrop([redaction()], CROP)).toEqual([
+      { ...redaction(), x: 50, y: 50, width: 60, height: 40 }
+    ]);
+  });
+
+  it("clamps a redaction that hangs off the crop to the visible part", () => {
+    const cropped = applyCrop([redaction({ x: 450, y: 350, width: 200, height: 200 })], CROP);
+    expect(cropped).toEqual([
+      {
+        ...redaction({ x: 450, y: 350, width: 200, height: 200 }),
+        x: 350,
+        y: 250,
+        width: 50,
+        height: 50
+      }
+    ]);
+  });
+
+  it("drops a redaction fully outside the crop", () => {
+    expect(applyCrop([redaction({ x: 600, y: 600 })], CROP)).toEqual([]);
   });
 });
 

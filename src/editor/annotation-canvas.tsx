@@ -21,7 +21,7 @@ import {
   pinCenter,
   pinRadius
 } from "@/lib/numbering";
-import type { Annotation, BoxAnnotation } from "@/types/annotation";
+import type { Annotation, BoxAnnotation, RectAnnotation } from "@/types/annotation";
 
 interface DraftShape {
   xStart: number;
@@ -64,6 +64,8 @@ const MIN_RESIZE_BOX_SIZE = 8;
 /** Image-space size of the inline comment editor; also what its placement is solved for. */
 const BASE_INLINE_EDITOR_SIZE = { width: 240, height: 84 };
 const BASE_INLINE_EDITOR_FONT_SIZE = 13;
+/** Edge of one tile of the redaction hatch, in image px at `canvasScale` 1. */
+const BASE_REDACT_HATCH_SIZE = 8;
 
 interface AnnotationCanvasProps {
   state: EditorState;
@@ -132,9 +134,10 @@ export function AnnotationCanvas({
   const pinNumbers = new Map(
     numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
   );
-  // With the crop tool in draw mode the whole canvas is marquee surface, so
-  // annotations must not swallow a pointer-down that starts a crop on top of one.
-  const drawingCrop = interactionMode === "draw" && tool === "crop";
+  // With the crop or redact tool in draw mode the whole canvas is marquee
+  // surface, so annotations must not swallow a pointer-down that starts a
+  // region on top of one - a secret has to be coverable wherever it sits.
+  const drawingRegion = interactionMode === "draw" && (tool === "crop" || tool === "redact");
   // The region the canvas dims around: a marquee being dragged, one waiting for
   // Apply, or the crop already in force (so what the exports will show stays visible).
   const cropRegion: Rect | null = draft && tool === "crop" ? draftRect(draft) : (cropDraft ?? crop);
@@ -164,6 +167,52 @@ export function AnnotationCanvas({
     height: BASE_INLINE_EDITOR_SIZE.height * scale
   };
   const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
+  const hatchSize = BASE_REDACT_HATCH_SIZE * scale;
+
+  /**
+   * The diagonal hatch a redaction is previewed with. In user space so the
+   * tiles line up with the region whatever the zoom, and coloured from the
+   * annotation, so the palette stays the single source of colour.
+   */
+  const hatchPattern = (id: string, hatchColor: string): JSX.Element => (
+    <defs>
+      <pattern id={id} patternUnits="userSpaceOnUse" width={hatchSize} height={hatchSize}>
+        <path
+          d={`M0,${hatchSize} L${hatchSize},0`}
+          stroke={hatchColor}
+          strokeWidth={hatchSize / 3}
+        />
+      </pattern>
+    </defs>
+  );
+
+  const renderResizeHandles = (item: RectAnnotation): JSX.Element[] =>
+    BOX_RESIZE_HANDLES.map((handle) => {
+      const position = getBoxHandlePosition(item, handle);
+      return (
+        <g key={`${item.id}-${handle}`}>
+          <rect
+            x={position.x - resizeHandleHitSize / 2}
+            y={position.y - resizeHandleHitSize / 2}
+            width={resizeHandleHitSize}
+            height={resizeHandleHitSize}
+            fill="transparent"
+            style={{ cursor: getBoxResizeCursor(handle) }}
+            onPointerDown={onResizeHandlePointerDown(item, handle)}
+          />
+          <rect
+            x={position.x - resizeHandleSize / 2}
+            y={position.y - resizeHandleSize / 2}
+            width={resizeHandleSize}
+            height={resizeHandleSize}
+            fill="white"
+            stroke={item.color}
+            strokeWidth="1.5"
+            pointerEvents="none"
+          />
+        </g>
+      );
+    });
 
   const renderPin = (item: Annotation): JSX.Element => {
     const center = pinCenter(item, pinR, imageSize);
@@ -287,13 +336,16 @@ export function AnnotationCanvas({
    * so the comment textarea is mounted and focused before the pointer event
    * that created the shape returns. Anything typed straight after the release
    * then lands in the comment instead of on the window.
+   *
+   * A redaction takes no comment, so it asks for no focus: it is selected only
+   * so it can be dragged, resized or deleted straight after being drawn.
    */
   const commitNewAnnotation = (item: Annotation): void => {
     flushSync(() => {
       setAnnotations((prev) => [...prev, item]);
       setSelectedId(item.id);
       setInteractionMode("move");
-      setShouldFocusSelectedComment(true);
+      setShouldFocusSelectedComment(item.tool !== "redact");
     });
   };
 
@@ -331,8 +383,8 @@ export function AnnotationCanvas({
   const onAnnotationPointerDown =
     (item: Annotation) =>
     (event: React.PointerEvent<SVGElement>): void => {
-      // Let the event reach the canvas: a crop marquee starts anywhere.
-      if (drawingCrop) return;
+      // Let the event reach the canvas: a crop or redact drag starts anywhere.
+      if (drawingRegion) return;
 
       event.stopPropagation();
       setSelectedId(item.id);
@@ -354,7 +406,7 @@ export function AnnotationCanvas({
     };
 
   const onResizeHandlePointerDown =
-    (item: BoxAnnotation, handle: BoxResizeHandle) =>
+    (item: RectAnnotation, handle: BoxResizeHandle) =>
     (event: React.PointerEvent<SVGElement>): void => {
       event.stopPropagation();
       if (interactionMode !== "move") return;
@@ -399,7 +451,9 @@ export function AnnotationCanvas({
       gestureMovedRef.current = true;
       setAnnotations((prev) =>
         prev.map((item) =>
-          item.id === resize.id && item.tool === "box" ? { ...item, ...result.box } : item
+          item.id === resize.id && (item.tool === "box" || item.tool === "redact")
+            ? { ...item, ...result.box }
+            : item
         )
       );
 
@@ -459,6 +513,26 @@ export function AnnotationCanvas({
 
     let added = false;
 
+    if (tool === "redact") {
+      const { x, y, width, height } = draftRect(draft);
+
+      if (width > 5 && height > 5) {
+        // No `comment` and never a `context`: a note or a selector about a
+        // hidden region would describe the very thing it hides.
+        commitNewAnnotation({
+          id: uid(),
+          tool: "redact",
+          x,
+          y,
+          width,
+          height,
+          color,
+          createdAt: new Date().toISOString()
+        });
+        added = true;
+      }
+    }
+
     if (tool === "box") {
       const { x, y, width, height } = draftRect(draft);
 
@@ -505,6 +579,9 @@ export function AnnotationCanvas({
     setAnnotations((prev) =>
       prev.map((item) => {
         if (item.id !== selectedId) return item;
+        // A redaction has no comment editor to reach this, and a `never`-typed
+        // `comment` so the compiler holds that rather than the UI alone.
+        if (item.tool === "redact") return item;
         if (item.tool === "text") return { ...item, text: value };
         return { ...item, comment: value };
       })
@@ -579,32 +656,35 @@ export function AnnotationCanvas({
                         />
                         {renderPin(item)}
                         {isSelected && interactionMode === "move"
-                          ? BOX_RESIZE_HANDLES.map((handle) => {
-                              const position = getBoxHandlePosition(item, handle);
-                              return (
-                                <g key={`${item.id}-${handle}`}>
-                                  <rect
-                                    x={position.x - resizeHandleHitSize / 2}
-                                    y={position.y - resizeHandleHitSize / 2}
-                                    width={resizeHandleHitSize}
-                                    height={resizeHandleHitSize}
-                                    fill="transparent"
-                                    style={{ cursor: getBoxResizeCursor(handle) }}
-                                    onPointerDown={onResizeHandlePointerDown(item, handle)}
-                                  />
-                                  <rect
-                                    x={position.x - resizeHandleSize / 2}
-                                    y={position.y - resizeHandleSize / 2}
-                                    width={resizeHandleSize}
-                                    height={resizeHandleSize}
-                                    fill="white"
-                                    stroke={item.color}
-                                    strokeWidth="1.5"
-                                    pointerEvents="none"
-                                  />
-                                </g>
-                              );
-                            })
+                          ? renderResizeHandles(item)
+                          : null}
+                      </g>
+                    );
+                  }
+
+                  // A redaction: hatched so it reads as "covered" without
+                  // hiding what it covers from the person who drew it (the
+                  // pixels only go for good in the export). No pin, no
+                  // comment editor - it carries no note by design.
+                  if (item.tool === "redact") {
+                    const patternId = `redact-hatch-${item.id}`;
+                    return (
+                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                        {hatchPattern(patternId, item.color)}
+                        <rect
+                          x={item.x}
+                          y={item.y}
+                          width={item.width}
+                          height={item.height}
+                          fill={`url(#${patternId})`}
+                          fillOpacity="0.35"
+                          stroke={item.color}
+                          strokeWidth={isSelected ? "4" : "3"}
+                          strokeDasharray={isSelected ? "8 5" : undefined}
+                          pointerEvents="all"
+                        />
+                        {isSelected && interactionMode === "move"
+                          ? renderResizeHandles(item)
                           : null}
                       </g>
                     );
@@ -670,7 +750,9 @@ export function AnnotationCanvas({
                   );
                 })}
 
-                {selectedAnnotation && inlineEditorPosition ? (
+                {selectedAnnotation &&
+                selectedAnnotation.tool !== "redact" &&
+                inlineEditorPosition ? (
                   <foreignObject
                     x={inlineEditorPosition.x}
                     y={inlineEditorPosition.y}
@@ -704,6 +786,20 @@ export function AnnotationCanvas({
                     strokeWidth="2"
                     strokeDasharray="6 4"
                   />
+                ) : null}
+
+                {draft && tool === "redact" ? (
+                  <g pointerEvents="none">
+                    {hatchPattern("redact-hatch-draft", color)}
+                    <rect
+                      {...draftRect(draft)}
+                      fill="url(#redact-hatch-draft)"
+                      fillOpacity="0.35"
+                      stroke={color}
+                      strokeWidth="2"
+                      strokeDasharray="6 4"
+                    />
+                  </g>
                 ) : null}
 
                 {draft && tool === "arrow" ? (

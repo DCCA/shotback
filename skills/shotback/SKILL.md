@@ -33,6 +33,15 @@ the image mean, and it is where the selectors are.
       }
     }
   ],
+  // Absent unless something was hidden. No `n`, no comment, no selector: these
+  // are the regions the user deliberately blocked out.
+  "redactions": [
+    {
+      "tool": "redact",
+      "rect": { "x": 40, "y": 600, "width": 320, "height": 48 },
+      "normalizedRect": { "x": 0.05, "y": 0.26, "width": 0.42, "height": 0.02 }
+    }
+  ],
   "diagnostics": { "failedRequests": [{ "status": 404, "url": "..." }] },
   "imagePath": "shotback/cap-1756052403118.png"
 }
@@ -50,7 +59,10 @@ the image mean, and it is where the selectors are.
 4. **Open the PNG only when the sidecar is not enough** - no `context` on an
    annotation, an ambiguous selector, or a comment about how something _looks_.
    The pin numbered `n` marks the spot.
-5. **Verify against the page**, not the picture: re-run the app at `pageUrl`
+5. **Leave `redactions` alone.** Those blocks in the PNG are deliberate, the
+   pixels under them are gone, and the user chose to hide them. Do not guess at
+   the contents, and do not ask for an unredacted capture.
+6. **Verify against the page**, not the picture: re-run the app at `pageUrl`
    with the sidecar's viewport and colour scheme, and check each annotation's
    comment is answered.
 

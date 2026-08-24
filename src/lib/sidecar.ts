@@ -1,6 +1,6 @@
 import type { CaptureEnvironment, PageDiagnostics } from "@/lib/capture";
 import { noteText } from "@/lib/feedback";
-import { annotationBounds, numberAnnotations } from "@/lib/numbering";
+import { annotationBounds, numberAnnotations, redactions } from "@/lib/numbering";
 import type { Annotation, AnnotationTool, ElementContext } from "@/types/annotation";
 
 export interface SidecarRect {
@@ -23,6 +23,18 @@ export interface SidecarAnnotation {
 }
 
 /**
+ * A hidden region, listed so an agent knows the blocks in the PNG are
+ * deliberate. Deliberately barer than an annotation: no `n` (it has no pin),
+ * no `comment` and no `context` - a selector or a note about a redacted region
+ * would describe exactly what the user hid.
+ */
+export interface SidecarRedaction {
+  tool: "redact";
+  rect: SidecarRect;
+  normalizedRect: SidecarRect;
+}
+
+/**
  * The machine-readable half of the Claude Code handoff: the same review the
  * prompt describes in prose, as JSON written beside the PNG. An agent reads it
  * instead of pixel-hunting in the image.
@@ -34,6 +46,8 @@ export interface Sidecar {
   pageUrl: string;
   generalFeedback: string;
   annotations: SidecarAnnotation[];
+  /** Omitted when nothing was redacted, so an untouched capture's JSON is unchanged. */
+  redactions?: SidecarRedaction[];
   diagnostics?: PageDiagnostics;
   /** Relative to the downloads folder: `shotback/cap-<ts>.png`. */
   imagePath: string;
@@ -52,6 +66,17 @@ function normalizeRect(rect: SidecarRect, image: { width: number; height: number
     width: normalize(rect.width, image.width),
     height: normalize(rect.height, image.height)
   };
+}
+
+function redactionsField(
+  annotations: Annotation[],
+  image: { width: number; height: number }
+): { redactions?: SidecarRedaction[] } {
+  const hidden = redactions(annotations).map((region) => {
+    const rect = annotationBounds(region);
+    return { tool: "redact" as const, rect, normalizedRect: normalizeRect(rect, image) };
+  });
+  return hidden.length > 0 ? { redactions: hidden } : {};
 }
 
 /**
@@ -90,6 +115,7 @@ export function buildSidecar(params: {
         ...(annotation.context ? { context: annotation.context } : {})
       };
     }),
+    ...redactionsField(params.annotations, params.image),
     ...(params.diagnostics ? { diagnostics: params.diagnostics } : {}),
     imagePath: params.imagePath
   };

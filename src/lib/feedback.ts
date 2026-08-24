@@ -1,5 +1,5 @@
 import type { CaptureEnvironment, PageDiagnostics } from "@/lib/capture";
-import { describeGeometry, numberAnnotations } from "@/lib/numbering";
+import { describeGeometry, numberAnnotations, redactions } from "@/lib/numbering";
 import type { Annotation, ElementContext } from "@/types/annotation";
 
 /**
@@ -74,6 +74,18 @@ function formatAreaComments(
   });
 
   return lines.length > 0 ? lines.join("\n") : "(none)";
+}
+
+/**
+ * One line saying how much of the image is hidden, so a reader knows a blank
+ * block is deliberate rather than a rendering bug - and knows not to ask what
+ * is under it. Carried at every verbosity, `compact` included: it is a fact
+ * about the attached image, and one line is cheap. Nothing renders when
+ * nothing is redacted, so a prompt without one is byte-identical to before.
+ */
+function redactionLines(annotations: Annotation[]): string[] {
+  const count = redactions(annotations).length;
+  return count > 0 ? [`Redacted regions: ${count}`, ""] : [];
 }
 
 /** The diagnostics list is clamped to what the type promises to carry. */
@@ -153,6 +165,7 @@ export function buildExternalLlmPrompt(params: {
     ...contextLines(verbosity, params.environment, params.diagnostics),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
+    ...redactionLines(params.annotations),
     "Area comments:",
     formatAreaComments(params.annotations, verbosity, params.image)
   ].join("\n");
@@ -187,6 +200,7 @@ export function buildClaudeCodePrompt(params: {
     ...contextLines(verbosity, params.environment, params.diagnostics),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
+    ...redactionLines(params.annotations),
     "Area comments:",
     formatAreaComments(params.annotations, verbosity, params.image)
   ].join("\n");

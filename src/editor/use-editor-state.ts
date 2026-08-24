@@ -8,9 +8,10 @@ import { getPrefs, setPrefs } from "@/lib/prefs";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
 
 /**
- * What the canvas does with a pointer drag. The three annotation tools plus
- * `crop`, which draws a region marquee instead of an annotation - hence a
- * separate type: nothing stored in an `Annotation` can ever be a crop.
+ * What the canvas does with a pointer drag. The four annotation tools (box,
+ * arrow, text, redact) plus `crop`, which draws a region marquee instead of an
+ * annotation - hence a separate type: nothing stored in an `Annotation` can
+ * ever be a crop.
  */
 export type EditorTool = AnnotationTool | "crop";
 
@@ -105,11 +106,11 @@ export function useEditorState(): EditorState {
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
 
   // Committing an annotation (and picking one in the timeline) switches to move
-  // mode, so a crop chosen afterwards would be inert: its marquee is a draw
-  // gesture. Picking Crop therefore always puts the canvas back in draw mode.
+  // mode, so a crop or redact chosen afterwards would be inert: both are drawn
+  // by dragging out a region. Picking either puts the canvas back in draw mode.
   const setTool = (next: EditorTool): void => {
     setToolState(next);
-    if (next === "crop") setInteractionMode("draw");
+    if (next === "crop" || next === "redact") setInteractionMode("draw");
   };
 
   const [selectedId, setSelectedId] = useState<string | null>(null);

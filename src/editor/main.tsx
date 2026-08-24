@@ -9,7 +9,7 @@ import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
 import { captureFullPage, inspectPoints } from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
-import { inspectAnchor } from "@/lib/numbering";
+import { inspectableAnnotations, inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
 
 function EditorApp(): JSX.Element {
@@ -32,9 +32,11 @@ function EditorApp(): JSX.Element {
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
-  const timelineItems = [...state.annotations].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  // Redactions are dropped here rather than inside the timeline: they carry no
+  // note, so a row for one would be an empty row with no number to match a pin.
+  const timelineItems = state.annotations
+    .filter((annotation) => annotation.tool !== "redact")
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
@@ -101,13 +103,17 @@ function EditorApp(): JSX.Element {
    * A `null` answer clears the annotation's context instead of keeping the one
    * it had: the element it named is no longer under it (or the tab navigated),
    * and a stale name in a prompt is worse than no name.
+   *
+   * Redactions are never inspected. That rule lives in
+   * `inspectableAnnotations`, not here, so a second inspection call site
+   * cannot leak by default.
    */
   const refreshContexts = async (): Promise<void> => {
     const scale = captureScaleRef.current;
     if (!scale || !canCapture) return;
 
     const generation = (inspectGenRef.current += 1);
-    const items = state.getAnnotations();
+    const items = inspectableAnnotations(state.getAnnotations());
     const contexts = await inspectPoints(
       tabId,
       items.map((annotation) => {
@@ -122,7 +128,9 @@ function EditorApp(): JSX.Element {
     const byId = new Map(items.map((annotation, index) => [annotation.id, contexts[index]]));
     state.setAnnotations((current) =>
       current.map((annotation) => {
-        if (!byId.has(annotation.id)) return annotation;
+        // A redaction is never in `byId`, and the `never`-typed `context` on it
+        // means the compiler refuses this write rather than trusting that.
+        if (annotation.tool === "redact" || !byId.has(annotation.id)) return annotation;
         const context = byId.get(annotation.id) ?? undefined;
         return context === annotation.context ? annotation : { ...annotation, context };
       })

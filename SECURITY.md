@@ -77,6 +77,8 @@ to avoid running on every page load.
 
 - Screenshots, annotations, element descriptions, failed-request URLs, and
   feedback stay in the local browser profile.
+- Regions the user redacts are pixelated into every exported image and into the
+  saved share before it is stored (see "Redaction" below).
 - The extension makes no network requests of its own.
 - Data leaves the device only when the user explicitly uses the cloud LLM
   fallback (manual image download + clipboard paste). The "Copy for Claude Code"
@@ -85,6 +87,48 @@ to avoid running on every page load.
   sidecar carries the same page-derived data the prompt does (element
   selectors, page text, failed-request URLs), in a file that stays on disk
   until the user deletes it.
+
+### Redaction
+
+The Redact tool hides a region of the capture, and it does so at the raster
+level: `exportAnnotatedImage` draws the base image, immediately replaces every
+redacted region with 12px blocks resampled from the pixels underneath (a
+`imageSmoothingQuality = "high"` downscale, so a block weighs its whole area
+rather than sampling a pixel or two out of it), and only then draws the
+annotations and the notes legend. The exported PNG therefore
+never contains the original pixels, and there is no second path around it,
+because every output is that one function's result: the downloaded PNG, the
+clipboard copy, the cloud LLM package, the PNG written to `Downloads/shotback/`
+for Claude Code, and the image stored in a saved local share.
+
+State this plainly, because it is the property the tool is worth having:
+
+- **A redaction is destructive for everything that leaves the editor.** The
+  saved share holds the pixelated image, so opening `viewer.html?share=<id>`
+  cannot recover what was hidden, on this machine or any other.
+- **The original, unredacted capture exists only in the editor session**, as
+  the in-memory `baseDataUrl` of that editor tab. It is never written to
+  `chrome.storage.local`, never written to IndexedDB and never written to disk.
+  Closing the tab is what destroys it, and after that the redaction cannot be
+  undone by anyone, the user included.
+- A redaction carries no note and no element context, and it is never mapped
+  back to the live page: reading the element under one would put its selector,
+  and up to 80 characters of its text, into the very prompts the redaction
+  exists to keep it out of. Prompts and the JSON sidecar say only how many
+  regions were hidden and where they sit.
+- **Block pixelation is weaker than a solid fill**, and is not the right tool
+  for a small run of known-font text: a grid of block averages is a lossy but
+  structured encoding of what it replaced, and Depix-class attacks recover
+  short strings from one by searching a rendered corpus for a block pattern
+  that matches. Draw the region generously larger than the secret (more
+  surrounding context per block means less of the block is the secret), and
+  treat a redacted password or token as rotated rather than hidden. A
+  solid-fill mode would remove that class of attack outright and is the
+  obvious future option if this posture is not enough.
+- A redaction hides pixels, not the page. Everything else a prompt carries
+  about the page (the URL, the environment, other annotations' selectors and
+  failed-request URLs) is unaffected, so a secret in a URL still needs removing
+  by hand.
 
 ## Reporting a Vulnerability
 

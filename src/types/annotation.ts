@@ -1,4 +1,4 @@
-export type AnnotationTool = "box" | "arrow" | "text";
+export type AnnotationTool = "box" | "arrow" | "text" | "redact";
 
 /**
  * The live element an annotation points at, read back from the captured tab so
@@ -56,4 +56,26 @@ export interface TextAnnotation extends AnnotationBase {
   text: string;
 }
 
-export type Annotation = BoxAnnotation | ArrowAnnotation | TextAnnotation;
+/**
+ * A region hidden from every export: `exportAnnotatedImage` pixelates it onto
+ * the base image before it draws anything else, so no output carries the
+ * pixels underneath. It is deliberately mute - it is never numbered, never
+ * inspected against the live page, gets no pin and no comment editor, and its
+ * `comment`/`context` are never populated - because a note or a selector about
+ * a hidden region would describe the very thing the user hid.
+ */
+export interface RedactAnnotation extends AnnotationBase {
+  tool: "redact";
+  /** Never populated, and `never` so the compiler is the one enforcing that. */
+  comment?: never;
+  context?: never;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type Annotation = BoxAnnotation | ArrowAnnotation | TextAnnotation | RedactAnnotation;
+
+/** The annotations that are plain rectangles: drawn, dragged and resized alike. */
+export type RectAnnotation = BoxAnnotation | RedactAnnotation;

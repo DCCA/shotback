@@ -685,6 +685,126 @@ for (const [name, headerHeight] of [
   });
 }
 
+/**
+ * How much fine detail a region of an image holds: the mean luminance step
+ * between horizontally adjacent pixels. That is exactly what pixelation
+ * destroys - inside a block every pixel is identical, so only the block seams
+ * contribute - which makes it the honest measure of "the text is gone",
+ * unlike plain variance, which survives as the spread between block averages.
+ */
+function pixelDetail(
+  image: Locator,
+  region: { x: number; y: number; width: number; height: number }
+): Promise<number> {
+  return image.evaluate((el, rect) => {
+    const source = el as HTMLImageElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = source.naturalWidth;
+    canvas.height = source.naturalHeight;
+    const c = canvas.getContext("2d")!;
+    c.drawImage(source, 0, 0);
+    const { data } = c.getImageData(rect.x, rect.y, rect.width, rect.height);
+    const luma = (i: number) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+
+    let total = 0;
+    let pairs = 0;
+    for (let y = 0; y < rect.height; y += 1) {
+      for (let x = 0; x + 1 < rect.width; x += 1) {
+        const i = (y * rect.width + x) * 4;
+        total += Math.abs(luma(i + 4) - luma(i));
+        pairs += 1;
+      }
+    }
+    return total / pairs;
+  }, region);
+}
+
+test("a redaction is pixelated in the export and in the saved share", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  // The fixture's CTA sits at 200,120 and is 200x120. `sample` is its label,
+  // which the redaction below covers; `control` is the button's own left edge
+  // against the colour block behind it, 15px clear of the redaction. Both hold
+  // real detail, and only the first is allowed to lose it - otherwise
+  // "detail collapsed" would also pass for a blank or corrupted export.
+  const sample = { x: 245, y: 165, width: 110, height: 30 };
+  const control = { x: 185, y: 130, width: 35, height: 100 };
+  const before = await pixelDetail(img, sample);
+  const controlBefore = await pixelDetail(img, control);
+  expect(before).toBeGreaterThan(5);
+  expect(controlBefore).toBeGreaterThan(2);
+
+  const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+  const shown = (await img.boundingBox())!;
+  const k = shown.width / natural;
+  const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
+
+  // Move mode first, and no switch back: picking Redact must put the canvas
+  // into draw mode by itself, the way picking Crop does.
+  await editor.getByRole("combobox", { name: "Interaction" }).click();
+  await editor.getByRole("option", { name: "Move Existing" }).click();
+  await editor.getByRole("combobox", { name: "Tool" }).click();
+  await editor.getByRole("option", { name: "Redact" }).click();
+
+  const from = onScreen(235, 155);
+  const to = onScreen(365, 210);
+  await editor.mouse.move(from.x, from.y);
+  await editor.mouse.down();
+  await editor.mouse.move(to.x, to.y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.keyboard.press("Escape");
+
+  // Drawn, and mute: a hatched region on the canvas, no timeline row, no pin.
+  await expect(editor.locator("svg rect[fill^='url(#redact-hatch-']")).toHaveCount(1);
+  await expect(editor.locator("ol li")).toHaveCount(0);
+  // The sidebar counts them apart from the notes, and says where they land.
+  await expect(editor.getByText("0 notes")).toBeVisible();
+  await expect(editor.getByText("Redacted regions: 1 (pixelated")).toBeVisible();
+
+  // The prompt counts it and says nothing else about it - no numbered line, no
+  // tool tag, and no element name read from under it.
+  await copyCloudPrompt(editor);
+  const prompt = await readClipboard(editor);
+  expect(prompt).toContain("Redacted regions: 1");
+  expect(prompt).not.toContain("[redact]");
+  expect(prompt).not.toContain("button.cta");
+  expect(prompt.split("\n").filter((line) => /^\d+\. /.test(line))).toEqual([]);
+
+  // The saved share carries the pixelated image, not the capture: this is the
+  // only copy of the annotated capture that outlives the editor tab.
+  await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  const shareHref = (await editor.locator("a[href*='viewer.html']").getAttribute("href"))!;
+  const viewer = await ctx.newPage();
+  await viewer.goto(shareHref);
+  const shared = viewer.locator("img[alt='Annotated share']");
+  await expect(shared).toHaveJSProperty("complete", true, { timeout: 15_000 });
+  const after = await pixelDetail(shared, sample);
+  expect(after).toBeLessThan(before / 4);
+  // ...and the damage stopped at the region's edge: everything else in the
+  // share still carries the detail it was captured with.
+  expect(await pixelDetail(shared, control)).toBeGreaterThan(controlBefore * 0.7);
+
+  await viewer.close();
+  await editor.close();
+  await page.close();
+});
+
 test("editor page renders the capture UI", async () => {
   const editor = await ctx.newPage();
   await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });

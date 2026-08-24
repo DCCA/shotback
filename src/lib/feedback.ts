@@ -177,6 +177,32 @@ export function buildExternalLlmPrompt(params: {
  * Windows Downloads path translated to its WSL `/mnt/...` equivalent), followed
  * by the JSON sidecar written beside it when one was saved.
  */
+/**
+ * The Claude Code prompt for a batch of saved shares. It leads with the one
+ * JSON path, because that file holds every capture's annotations, selectors
+ * and environment - the prompt itself stays a numbered index (page, how many
+ * annotations, image path) so a ten-capture batch does not bury the reader in
+ * prose that is already in the JSON.
+ */
+export function buildBatchPrompt(
+  entries: Array<{ pageUrl: string; imagePath: string; annotationCount: number }>,
+  sidecarPath: string
+): string {
+  const heading =
+    entries.length === 1
+      ? "Review this screenshot."
+      : `Review these ${entries.length} screenshots together.`;
+  return [
+    heading,
+    `Machine-readable annotations for every capture (selectors, rects, environment): ${sidecarPath}`,
+    "",
+    ...entries.map((entry, index) => {
+      const count = `${entry.annotationCount} annotation${entry.annotationCount === 1 ? "" : "s"}`;
+      return `${index + 1}. ${entry.pageUrl || "(unknown)"} - ${count} - ${entry.imagePath}`;
+    })
+  ].join("\n");
+}
+
 export function buildClaudeCodePrompt(params: {
   filePath: string;
   /** Absolute path of the JSON sidecar; omitted when it could not be written. */

@@ -8,10 +8,30 @@ interface SavedSharesProps {
   shares: LocalShareMeta[];
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Hands the ticked shares, newest first, to the batch Claude Code export. */
+  onBatchExport: (ids: string[]) => void;
 }
 
-export function SavedShares({ shares, onOpen, onDelete }: SavedSharesProps): JSX.Element {
+export function SavedShares({
+  shares,
+  onOpen,
+  onDelete,
+  onBatchExport
+}: SavedSharesProps): JSX.Element {
   const [showSavedShares, setShowSavedShares] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Derived from the live list, not from the Set alone, so a share deleted
+  // while ticked cannot linger in the batch.
+  const selectedIds = shares.filter((share) => selected.has(share.id)).map((share) => share.id);
+
+  const toggle = (id: string): void => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
 
   return (
     <section className="space-y-2">
@@ -36,43 +56,63 @@ export function SavedShares({ shares, onOpen, onDelete }: SavedSharesProps): JSX
           No saved shares yet. Use “Copy Local Share Link” to save one.
         </p>
       ) : showSavedShares ? (
-        <ul className="m-0 grid list-none gap-2 p-0">
-          {shares.map((share) => (
-            <li key={share.id}>
-              <div className="grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-foreground">
-                    {shareLabel(share.pageUrl)}
+        <>
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {shares.map((share) => (
+              <li key={share.id}>
+                <div className="grid grid-cols-[auto_1fr_auto] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-primary"
+                    checked={selected.has(share.id)}
+                    aria-label={`Select saved share for ${shareLabel(share.pageUrl)}`}
+                    onChange={() => toggle(share.id)}
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {shareLabel(share.pageUrl)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {new Date(share.createdAt).toLocaleString()} •{" "}
+                      {formatBytes(share.imageByteSize)}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {new Date(share.createdAt).toLocaleString()} •{" "}
-                    {formatBytes(share.imageByteSize)}
+                  <div className="flex gap-1.5">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onOpen(share.id)}
+                    >
+                      Open
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10"
+                      aria-label={`Delete saved share for ${shareLabel(share.pageUrl)}`}
+                      onClick={() => onDelete(share.id)}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-1.5">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onOpen(share.id)}
-                  >
-                    Open
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="text-destructive hover:bg-destructive/10"
-                    aria-label={`Delete saved share for ${shareLabel(share.pageUrl)}`}
-                    onClick={() => onDelete(share.id)}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+          {selectedIds.length > 0 ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={() => onBatchExport(selectedIds)}
+            >
+              Copy batch for Claude Code ({selectedIds.length})
+            </Button>
+          ) : null}
+        </>
       ) : null}
     </section>
   );

@@ -46,6 +46,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
   - downloads annotated image
   - copies a structured prompt to clipboard
 - 🧑‍💻 **Copy for Claude Code** - saves the PNG **and a JSON sidecar** to `Downloads/shotback/` and copies a prompt referencing both by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read them directly
+- 📦 **Batch handoff** - tick any saved shares and **Copy batch for Claude Code** writes every capture plus one `batch.json` into a single `Downloads/shotback/batch-<ts>/` folder, then copies a prompt that leads with that JSON
 - 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
 - 🩺 **Diagnostics** - both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
@@ -166,6 +167,33 @@ ambiguous.
 
 The sidecar is best effort: if it cannot be written, the prompt still copies -
 without the machine-readable line - and the status says so.
+
+### Several captures at once
+
+Every saved share in the sidebar has a checkbox. Tick one or more and **Copy
+batch for Claude Code** writes them all into one folder and copies a single
+prompt for the lot:
+
+```text
+Downloads/shotback/batch-1756052403118/cap-0.png
+Downloads/shotback/batch-1756052403118/cap-1.png
+Downloads/shotback/batch-1756052403118/batch.json
+```
+
+```text
+Review these 2 screenshots together.
+Machine-readable annotations for every capture (selectors, rects, environment): /mnt/c/Users/you/Downloads/shotback/batch-1756052403118/batch.json
+
+1. https://example.com/pricing - 3 annotations - /mnt/c/Users/you/Downloads/shotback/batch-1756052403118/cap-0.png
+2. https://example.com/checkout - 1 annotation - /mnt/c/Users/you/Downloads/shotback/batch-1756052403118/cap-1.png
+```
+
+`batch.json` is `version: 1` with a `captures` array holding exactly the same
+per-capture sidecar shown above, each one's `imagePath` relative to the batch
+folder so the whole folder can be moved. The prompt itself stays an index: the
+detail is in the JSON. Unlike the single-capture handoff, the batch is
+all-or-nothing - if any capture cannot be written the export stops, no prompt is
+copied, and the status names what failed and which folder may hold leftovers.
 
 ## 📁 Project Structure
 

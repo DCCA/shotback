@@ -99,7 +99,7 @@ function EditorApp(): JSX.Element {
             href={state.shareUrl}
             target="_blank"
             rel="noreferrer"
-            className="block text-sm font-medium text-primary underline underline-offset-2"
+            className="block break-all text-sm font-medium text-primary underline underline-offset-2"
           >
             {state.shareUrl}
           </a>

@@ -35,6 +35,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
 - 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
 - ✏️ **Area annotations**: box, arrow, text
+- ✂️ **Crop before export** - draw a region with the Crop tool and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
 - ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) - sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
@@ -75,7 +76,11 @@ npm run build
 1. **Open** a target webpage.
 2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
 3. **Draw** annotations and add comments. Undo or redo any step with the sidebar buttons or `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z`.
-4. **Use** one of the outputs:
+4. **Crop** (optional) - pick `Crop` in the Tool select, drag the region you
+   want to hand over, then **Apply crop**. Everything below is then about that
+   region only; **Clear** restores the full capture (nothing is thrown away -
+   annotations are kept in capture coordinates and only shifted on export).
+5. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
    - **Copy for Claude Code** saves the PNG and a JSON sidecar to `Downloads/shotback/` and copies a prompt that points to both by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read them directly - see [Use with Claude Code](#-use-with-claude-code)

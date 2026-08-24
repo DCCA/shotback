@@ -12,6 +12,7 @@ import {
   getBoxResizeCursor,
   type BoxResizeHandle
 } from "@/lib/boxResize";
+import { clampCrop, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
 import { placeInlineEditor } from "@/lib/editor-placement";
 import {
   annotationBounds,
@@ -27,6 +28,16 @@ interface DraftShape {
   yStart: number;
   xCurrent: number;
   yCurrent: number;
+}
+
+/** A drag, normalised to a rect: drawn in any direction, stored top-left first. */
+function draftRect(draft: DraftShape): Rect {
+  return {
+    x: Math.min(draft.xStart, draft.xCurrent),
+    y: Math.min(draft.yStart, draft.yCurrent),
+    width: Math.abs(draft.xCurrent - draft.xStart),
+    height: Math.abs(draft.yCurrent - draft.yStart)
+  };
 }
 
 interface DragState {
@@ -76,6 +87,9 @@ export function AnnotationCanvas({
     selectedId,
     setSelectedId,
     tool,
+    crop,
+    cropDraft,
+    setCropDraft,
     interactionMode,
     setInteractionMode,
     color,
@@ -118,6 +132,29 @@ export function AnnotationCanvas({
   const pinNumbers = new Map(
     numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
   );
+  // With the crop tool in draw mode the whole canvas is marquee surface, so
+  // annotations must not swallow a pointer-down that starts a crop on top of one.
+  const drawingCrop = interactionMode === "draw" && tool === "crop";
+  // The region the canvas dims around: a marquee being dragged, one waiting for
+  // Apply, or the crop already in force (so what the exports will show stays visible).
+  const cropRegion: Rect | null = draft && tool === "crop" ? draftRect(draft) : (cropDraft ?? crop);
+  const shade = cropRegion
+    ? {
+        left: Math.min(Math.max(cropRegion.x, 0), imageSize.width),
+        top: Math.min(Math.max(cropRegion.y, 0), imageSize.height),
+        right: Math.min(Math.max(cropRegion.x + cropRegion.width, 0), imageSize.width),
+        bottom: Math.min(Math.max(cropRegion.y + cropRegion.height, 0), imageSize.height)
+      }
+    : null;
+  // The region's own box, drawn twice: a dark line under dashed white.
+  const outline = shade
+    ? {
+        x: shade.left,
+        y: shade.top,
+        width: Math.max(0, shade.right - shade.left),
+        height: Math.max(0, shade.bottom - shade.top)
+      }
+    : null;
   const pinR = pinRadius(imageSize.width);
   const scale = canvasScale(imageSize.width);
   const resizeHandleSize = BASE_RESIZE_HANDLE_SIZE * scale;
@@ -211,6 +248,7 @@ export function AnnotationCanvas({
       if (event.key === "Escape") {
         if (isTyping) target.blur();
         setSelectedId(null);
+        setCropDraft(null);
         setDraft(null);
         setDrag(null);
         setResize(null);
@@ -227,7 +265,7 @@ export function AnnotationCanvas({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId, setSelectedId, removeAnnotation, undoAnnotations, redoAnnotations]);
+  }, [selectedId, setSelectedId, setCropDraft, removeAnnotation, undoAnnotations, redoAnnotations]);
 
   const pointerPos = (event: React.PointerEvent<SVGElement>): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -293,6 +331,9 @@ export function AnnotationCanvas({
   const onAnnotationPointerDown =
     (item: Annotation) =>
     (event: React.PointerEvent<SVGElement>): void => {
+      // Let the event reach the canvas: a crop marquee starts anywhere.
+      if (drawingCrop) return;
+
       event.stopPropagation();
       setSelectedId(item.id);
 
@@ -404,13 +445,22 @@ export function AnnotationCanvas({
 
     if (!draft) return;
 
+    if (tool === "crop") {
+      const region = draftRect(draft);
+      setDraft(null);
+      // A marquee, not a commit: too small a drag is a stray click, and the
+      // crop itself only takes effect when the sidebar's Apply is pressed. No
+      // history entry either - a crop is a view, not an edit.
+      if (region.width >= MIN_CROP_SIZE && region.height >= MIN_CROP_SIZE) {
+        setCropDraft(clampCrop(region, imageSize));
+      }
+      return;
+    }
+
     let added = false;
 
     if (tool === "box") {
-      const x = Math.min(draft.xStart, draft.xCurrent);
-      const y = Math.min(draft.yStart, draft.yCurrent);
-      const width = Math.abs(draft.xCurrent - draft.xStart);
-      const height = Math.abs(draft.yCurrent - draft.yStart);
+      const { x, y, width, height } = draftRect(draft);
 
       if (width > 5 && height > 5) {
         const item: Annotation = {
@@ -666,6 +716,44 @@ export function AnnotationCanvas({
                     strokeWidth="2"
                     strokeDasharray="6 4"
                   />
+                ) : null}
+
+                {/* The crop region: everything outside it dimmed, the region
+                    itself outlined in dark-under-dashed-white so the edge reads
+                    on a light and a dark capture alike. Not an annotation - no
+                    pin, no timeline row, no history entry. Purely decorative,
+                    so it never takes a pointer event. */}
+                {shade && outline ? (
+                  <g pointerEvents="none" fill="rgba(15,23,42,0.55)">
+                    <rect x={0} y={0} width={imageSize.width} height={shade.top} />
+                    <rect
+                      x={0}
+                      y={shade.bottom}
+                      width={imageSize.width}
+                      height={Math.max(0, imageSize.height - shade.bottom)}
+                    />
+                    <rect x={0} y={shade.top} width={shade.left} height={outline.height} />
+                    <rect
+                      x={shade.right}
+                      y={shade.top}
+                      width={Math.max(0, imageSize.width - shade.right)}
+                      height={outline.height}
+                    />
+                    <rect
+                      id="crop-region"
+                      {...outline}
+                      fill="none"
+                      stroke="rgba(15,23,42,0.9)"
+                      strokeWidth="3"
+                    />
+                    <rect
+                      {...outline}
+                      fill="none"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                      strokeDasharray="8 6"
+                    />
+                  </g>
                 ) : null}
               </svg>
             </div>

@@ -1,10 +1,18 @@
 import type * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CaptureEnvironment, PageDiagnostics } from "@/lib/capture";
+import type { Rect } from "@/lib/crop";
 import type { Verbosity } from "@/lib/feedback";
 import { commit, createHistory, redo, undo, type History } from "@/lib/history";
 import { getPrefs, setPrefs } from "@/lib/prefs";
 import type { Annotation, AnnotationTool } from "@/types/annotation";
+
+/**
+ * What the canvas does with a pointer drag. The three annotation tools plus
+ * `crop`, which draws a region marquee instead of an annotation - hence a
+ * separate type: nothing stored in an `Annotation` can ever be a crop.
+ */
+export type EditorTool = AnnotationTool | "crop";
 
 /**
  * Every piece of editor state the surrounding modules (canvas, sidebar,
@@ -35,8 +43,19 @@ export interface EditorState {
   resetAnnotations: () => void;
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
-  tool: AnnotationTool;
-  setTool: (tool: AnnotationTool) => void;
+  tool: EditorTool;
+  setTool: (tool: EditorTool) => void;
+  /**
+   * The region every output renders, in capture px, or `null` for the whole
+   * capture. Deliberately outside the annotation history (like `zoom`): it is
+   * a view onto the capture, not an edit of it, so undo must not step through
+   * it. Cleared when a new capture starts.
+   */
+  crop: Rect | null;
+  setCrop: (crop: Rect | null) => void;
+  /** A crop marquee drawn but not applied yet: the sidebar offers Apply/Cancel. */
+  cropDraft: Rect | null;
+  setCropDraft: (crop: Rect | null) => void;
   interactionMode: "draw" | "move";
   setInteractionMode: (mode: "draw" | "move") => void;
   color: string;
@@ -80,7 +99,9 @@ export function useEditorState(): EditorState {
   const [history, setHistory] = useState<History<Annotation[]>>(() =>
     createHistory<Annotation[]>([])
   );
-  const [tool, setTool] = useState<AnnotationTool>("box");
+  const [tool, setTool] = useState<EditorTool>("box");
+  const [crop, setCrop] = useState<Rect | null>(null);
+  const [cropDraft, setCropDraft] = useState<Rect | null>(null);
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [color, setColor] = useState("#ff3333");
@@ -182,6 +203,10 @@ export function useEditorState(): EditorState {
     setSelectedId,
     tool,
     setTool,
+    crop,
+    setCrop,
+    cropDraft,
+    setCropDraft,
     interactionMode,
     setInteractionMode,
     color,

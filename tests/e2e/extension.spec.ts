@@ -208,3 +208,38 @@ test("editor page renders the capture UI", async () => {
   await expect(editor.getByRole("button", { name: "Copy for Claude Code" })).toBeVisible();
   await editor.close();
 });
+
+test("dark theme keeps every control legible", async () => {
+  const editor = await ctx.newPage();
+  await editor.emulateMedia({ colorScheme: "dark" });
+  await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });
+  const unreadable = await editor.evaluate(() => {
+    const lum = (rgb: string): number => {
+      const [r, g, b] = rgb
+        .match(/\d+/g)!
+        .map(Number)
+        .map((v) => v / 255);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const bad: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>("button, p, span, h1, h2, label")) {
+      if (!el.textContent?.trim()) continue;
+      const s = getComputedStyle(el);
+      // walk up to the first painted background
+      let bg = s.backgroundColor;
+      let node: HTMLElement | null = el;
+      while (node && (bg === "rgba(0, 0, 0, 0)" || bg === "transparent")) {
+        node = node.parentElement;
+        if (node) bg = getComputedStyle(node).backgroundColor;
+      }
+      if (Math.abs(lum(s.color) - lum(bg)) < 0.3)
+        bad.push(`${el.tagName}:${el.textContent.trim().slice(0, 24)}`);
+    }
+    return bad;
+  });
+  expect(unreadable).toEqual([]);
+  expect(await editor.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(
+    "rgb(248, 250, 252)"
+  );
+  await editor.close();
+});

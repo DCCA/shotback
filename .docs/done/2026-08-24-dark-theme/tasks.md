@@ -1,0 +1,22 @@
+# Tasks: Finish the Dark Theme
+
+- [x] **1. Write the failing e2e test**
+  - [x] 1.1 `dark theme keeps every control legible` in `tests/e2e/extension.spec.ts`: load the editor with `colorScheme: "dark"`, walk every `button, p, span, h1, h2, label` with text, resolve its first painted ancestor background and flag any pair whose luminance differs by less than 0.3.
+  - [x] 1.2 Assert the body background is no longer the light `rgb(248, 250, 252)`.
+- [x] **2. Run it to verify it fails**
+  - [x] 2.1 RED (1): body background still light - no media query.
+  - [x] 2.2 RED (2), after the CSS landed: `["P:Annotations: 0"]` - a literal `text-slate-700` on a dark card.
+- [x] **3. Apply dark tokens by media query as well as by class**
+  - [x] 3.1 Keep `.dark { ... }`; add the same declarations under `@media (prefers-color-scheme: dark) { :root:not(.light) { ... } }`, with a comment explaining why the duplication stands.
+  - [x] 3.2 Add `--glow-1`/`--glow-2` (+ `-alpha`) tokens and drive the body radial gradients from them; weaker alphas in dark.
+  - [x] 3.3 Add `color-scheme` so native scrollbars and the colour input follow the theme.
+- [x] **4. Replace the literal colour classes**
+  - [x] 4.1 Map the 51 literals across `src/editor/*.tsx` and `src/viewer/main.tsx` onto tokens (table in `completion-summary.md`).
+  - [x] 4.2 `grep -rn "slate-\|emerald-\|bg-white\|red-" src/` returns zero hits.
+  - [x] 4.3 Lift the dark `--primary` and `--destructive`, which failed the legibility bar as text.
+  - [x] 4.4 Tokenise the hardcoded card highlight/shadow colours in `card.tsx`.
+- [x] **5. Run e2e, gate, and visually verify**
+  - [x] 5.1 `npm run test:e2e` - 6/6 green.
+  - [x] 5.2 `npm run check` + `npm run format:check` - green.
+  - [x] 5.3 Screenshots of the editor (capture + 2 annotations + share link + saved shares) and the viewer, in light and dark.
+- [x] **6. Commit and PR**

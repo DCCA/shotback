@@ -71,19 +71,19 @@ function ViewerApp(): JSX.Element {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <div className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-sm">
               <p className="m-0">
-                <span className="font-semibold text-slate-700">Source page:</span>{" "}
-                <a className="text-emerald-700 underline underline-offset-2" href={share.pageUrl}>
+                <span className="font-semibold text-muted-foreground">Source page:</span>{" "}
+                <a className="text-primary underline underline-offset-2" href={share.pageUrl}>
                   {share.pageUrl}
                 </a>
               </p>
               <p className="m-0">
-                <span className="font-semibold text-slate-700">Saved at:</span>{" "}
+                <span className="font-semibold text-muted-foreground">Saved at:</span>{" "}
                 {new Date(share.createdAt).toLocaleString()}
               </p>
               <p className="m-0">
-                <span className="font-semibold text-slate-700">General feedback:</span>{" "}
+                <span className="font-semibold text-muted-foreground">General feedback:</span>{" "}
                 {share.generalFeedback?.trim() || "No general feedback provided."}
               </p>
             </div>
@@ -115,7 +115,7 @@ function ViewerApp(): JSX.Element {
             <img
               src={share.imageDataUrl}
               alt="Annotated share"
-              className="h-auto w-full rounded-lg border border-slate-200 bg-white"
+              className="h-auto w-full rounded-lg border border-border bg-card"
             />
           </CardContent>
         </Card>

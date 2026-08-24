@@ -34,3 +34,7 @@ skills-lock.json
 .DS_Store
 .idea/
 .vscode/
+
+# Agent scratch directories
+.superpowers/
+.claude/worktrees/

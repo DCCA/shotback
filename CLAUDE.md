@@ -42,7 +42,8 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Two HT
 
 **Pure, unit-tested helpers** (these are where the real logic and the tests live — `tests/*.test.ts` mirror them):
 
-- `src/lib/annotate.ts` — `exportAnnotatedImage` rasterizes annotations onto the screenshot; `selectFeedbackRenderMode` picks footer vs. overlay so the export canvas never exceeds `MAX_EXPORT_CANVAS_HEIGHT`/`AREA` limits.
+- `src/lib/annotate.ts` — `exportAnnotatedImage` rasterizes annotations onto the screenshot as **numbered pins** (circle + number at `pinAnchor`, sized by `pinRadius`) and appends a **"Notes" legend footer**: `n. comment` per annotated area, each led by the same coloured pin, then the general-feedback paragraph. `selectFeedbackRenderMode` picks footer vs. overlay so the export canvas never exceeds `MAX_EXPORT_CANVAS_HEIGHT`/`AREA` limits (the overlay card renders the same content, truncated).
+- `src/lib/numbering.ts` — `numberAnnotations` (creation order, the **one** numbering shared by the comment timeline, the prompt, the canvas pins and the exported image), `pinRadius` (clamped to the capture width) and `pinAnchor` (box corner / arrow tail / text baseline start).
 - `src/lib/feedback.ts` — `buildExternalLlmPrompt` / `buildClaudeCodePrompt` (the structured prompts copied for the cloud-LLM and Claude Code exports) and `annotationSummary`.
 - `src/lib/capture.ts` — `buildScrollSteps` (scroll offsets), `segmentPlacement` (where each frame lands on the stitched canvas) plus the retry helpers/guards `activateTab`, `sendToContentScript`, `isTabsBusyError`, `isNoReceiverError`.
 - `src/lib/wslPath.ts` — `toClaudePath` translates a Windows path to its WSL `/mnt/<drive>/…` mount for the Claude Code export.

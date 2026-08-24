@@ -1,3 +1,4 @@
+import { numberAnnotations } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 /** Short, human-readable summary of a single annotation for timeline rows. */
@@ -6,15 +7,19 @@ export function annotationSummary(annotation: Annotation): string {
   return annotation.comment?.trim() || "(no comment)";
 }
 
-/** Numbered, tool-tagged list of area comments shared by the prompt builders. */
+/**
+ * Numbered, tool-tagged list of area comments shared by the prompt builders.
+ * The numbers come from `numberAnnotations`, so they match the pins drawn on
+ * the image and the numbers shown in the comment timeline.
+ */
 function formatAreaComments(annotations: Annotation[]): string {
-  const comments = annotations
-    .map((annotation, index) => {
+  const comments = numberAnnotations(annotations)
+    .map(({ n, annotation }) => {
       if (annotation.tool === "text") {
-        return `${index + 1}. [text] ${annotation.text || "(empty)"}`;
+        return `${n}. [text] ${annotation.text || "(empty)"}`;
       }
 
-      return `${index + 1}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
+      return `${n}. [${annotation.tool}] ${annotation.comment?.trim() || "(no comment)"}`;
     })
     .join("\n");
 

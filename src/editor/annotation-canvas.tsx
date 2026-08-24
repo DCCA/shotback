@@ -10,6 +10,7 @@ import {
   getBoxResizeCursor,
   type BoxResizeHandle
 } from "@/lib/boxResize";
+import { numberAnnotations, pinAnchor, pinRadius } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -82,6 +83,40 @@ export function AnnotationCanvas({
       ? selectedAnnotation.text
       : (selectedAnnotation.comment ?? "")
     : "";
+  // One numbering for the canvas pins, the comment timeline, the exported image
+  // and the LLM prompt: creation order, looked up here by annotation id.
+  const pinNumbers = new Map(
+    numberAnnotations(annotations).map(({ n, annotation }) => [annotation.id, n])
+  );
+  const pinR = pinRadius(imageSize.width);
+
+  const renderPin = (item: Annotation): JSX.Element => {
+    const anchor = pinAnchor(item);
+    return (
+      <g pointerEvents="none">
+        <circle
+          cx={anchor.x}
+          cy={anchor.y}
+          r={pinR}
+          fill={item.color}
+          stroke="#fff"
+          strokeWidth={Math.max(2, pinR / 7)}
+        />
+        <text
+          x={anchor.x}
+          y={anchor.y}
+          fill="#fff"
+          fontSize={pinR * 1.15}
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="central"
+        >
+          {pinNumbers.get(item.id)}
+        </text>
+      </g>
+    );
+  };
+
   const selectedAnchor = selectedAnnotation ? annotationCommentAnchor(selectedAnnotation) : null;
   const inlineEditorPosition = selectedAnchor
     ? {
@@ -402,7 +437,6 @@ export function AnnotationCanvas({
 
               {annotations.map((item) => {
                 const isSelected = selectedId === item.id;
-                const anchor = annotationCommentAnchor(item);
 
                 if (item.tool === "box") {
                   return (
@@ -418,29 +452,7 @@ export function AnnotationCanvas({
                         strokeDasharray={isSelected ? "8 5" : undefined}
                         pointerEvents="all"
                       />
-                      {item.comment ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
+                      {renderPin(item)}
                       {isSelected && interactionMode === "move"
                         ? BOX_RESIZE_HANDLES.map((handle) => {
                             const position = getBoxHandlePosition(item, handle);
@@ -498,45 +510,34 @@ export function AnnotationCanvas({
                         // head matches the arrow stroke instead of inheriting page text color.
                         style={{ color: item.color }}
                       />
-                      {item.comment ? (
-                        <g pointerEvents="none">
-                          <rect
-                            x={anchor.x}
-                            y={Math.max(0, anchor.y - 24)}
-                            width={Math.max(52, item.comment.length * 8 + 14)}
-                            height={22}
-                            rx={4}
-                            fill="rgba(255,255,255,0.92)"
-                            stroke={item.color}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={anchor.x + 7}
-                            y={Math.max(14, anchor.y - 9)}
-                            fill={item.color}
-                            fontSize="13"
-                            fontWeight="600"
-                          >
-                            {item.comment}
-                          </text>
-                        </g>
-                      ) : null}
+                      {renderPin(item)}
                     </g>
                   );
                 }
 
                 return (
-                  <text
-                    key={item.id}
-                    x={item.x}
-                    y={item.y}
-                    fill={item.color}
-                    fontSize="18"
-                    fontWeight={isSelected ? "700" : "500"}
-                    onPointerDown={onAnnotationPointerDown(item)}
-                  >
-                    {item.text}
-                  </text>
+                  <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                    {/* The pin itself is not clickable, so an empty text
+                        annotation still has a hit area to select and drag. */}
+                    <circle
+                      cx={item.x}
+                      cy={item.y}
+                      r={pinR}
+                      fill="transparent"
+                      pointerEvents="all"
+                    />
+                    <text
+                      // Offset past the pin so the number never covers the text.
+                      x={item.x + pinR * 1.4}
+                      y={item.y}
+                      fill={item.color}
+                      fontSize={pinR * 0.9}
+                      fontWeight={isSelected ? "700" : "500"}
+                    >
+                      {item.text}
+                    </text>
+                    {renderPin(item)}
+                  </g>
                 );
               })}
 

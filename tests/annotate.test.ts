@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { selectFeedbackRenderMode } from "../src/lib/annotate";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { exportAnnotatedImage, selectFeedbackRenderMode } from "../src/lib/annotate";
+import type { ArrowAnnotation, BoxAnnotation } from "../src/types/annotation";
 
 describe("selectFeedbackRenderMode", () => {
   it("uses footer when resulting canvas size is within limits", () => {
@@ -32,5 +33,147 @@ describe("selectFeedbackRenderMode", () => {
         maxCanvasArea: 250000000
       })
     ).toBe("overlay");
+  });
+});
+
+interface RecordedCall {
+  name: string;
+  args: unknown[];
+}
+
+/**
+ * The unit tests run in Node, so the export is exercised against a recording
+ * 2D-context stub: every drawing call is captured and can be asserted on.
+ */
+function recordingContext(): { ctx: CanvasRenderingContext2D; calls: RecordedCall[] } {
+  const calls: RecordedCall[] = [];
+  const state: Record<string, unknown> = {};
+
+  const ctx = new Proxy(state, {
+    get(target, property) {
+      if (typeof property !== "string") return undefined;
+      if (property === "measureText") return (text: string) => ({ width: text.length * 7 });
+      if (property in target) return target[property];
+      return (...args: unknown[]) => {
+        calls.push({ name: property, args });
+      };
+    },
+    set(target, property, value) {
+      if (typeof property === "string") target[property] = value;
+      return true;
+    }
+  }) as unknown as CanvasRenderingContext2D;
+
+  return { ctx, calls };
+}
+
+function stubCanvasAndImage(calls: RecordedCall[], ctx: CanvasRenderingContext2D): void {
+  vi.stubGlobal("document", {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ctx,
+      toDataURL: () => "data:x"
+    })
+  });
+
+  vi.stubGlobal(
+    "Image",
+    class {
+      width = 1200;
+      height = 800;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+  );
+
+  calls.length = 0;
+}
+
+function box(comment: string): BoxAnnotation {
+  return {
+    id: "b1",
+    tool: "box",
+    color: "#ff0000",
+    createdAt: "2026-02-21T00:00:01.000Z",
+    comment,
+    x: 100,
+    y: 200,
+    width: 60,
+    height: 40
+  };
+}
+
+function arrow(comment: string): ArrowAnnotation {
+  return {
+    id: "a1",
+    tool: "arrow",
+    color: "#00ff00",
+    createdAt: "2026-02-21T00:00:02.000Z",
+    comment,
+    x1: 300,
+    y1: 400,
+    x2: 500,
+    y2: 600
+  };
+}
+
+describe("exportAnnotatedImage pins", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("draws a numbered pin per annotation instead of a comment pill", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    const dataUrl = await exportAnnotatedImage("data:", [box("hi"), arrow("there")]);
+    expect(dataUrl).toBe("data:x");
+
+    // pinRadius(1200) === 20: one full-size pin per annotation, at its anchor.
+    const pins = calls.filter((call) => call.name === "arc" && call.args[2] === 20);
+    expect(pins.map((call) => [call.args[0], call.args[1]])).toEqual([
+      [100, 200],
+      [300, 400]
+    ]);
+
+    const labels = calls.filter((call) => call.name === "fillText");
+    expect(labels.some((call) => call.args[0] === "1")).toBe(true);
+    expect(labels.some((call) => call.args[0] === "2")).toBe(true);
+
+    // The comments belong in the footer legend (drawn below the 800px image),
+    // never as a pill painted over the screenshot itself.
+    const onImage = labels.filter((call) => (call.args[2] as number) <= 800);
+    expect(onImage.map((call) => call.args[0])).toEqual(["1", "2"]);
+    expect(labels.some((call) => call.args[0] === "Notes")).toBe(true);
+    expect(labels.some((call) => call.args[0] === "hi")).toBe(true);
+    expect(labels.some((call) => call.args[0] === "there")).toBe(true);
+  });
+
+  it("numbers pins by creation time, not array order", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [arrow("second"), box("first")]);
+
+    const numbered = calls
+      .filter((call) => call.name === "fillText" && (call.args[2] as number) <= 800)
+      .map((call) => [call.args[0], call.args[1]]);
+    expect(numbered).toEqual([
+      ["1", 100],
+      ["2", 300]
+    ]);
+  });
+
+  it("draws no footer when there is nothing to say", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [{ ...box(""), comment: "" }]);
+
+    expect(calls.some((call) => call.name === "fillText" && call.args[0] === "Notes")).toBe(false);
   });
 });

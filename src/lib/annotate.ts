@@ -1,3 +1,4 @@
+import { numberAnnotations, pinAnchor, pinRadius } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 export const MAX_EXPORT_CANVAS_HEIGHT = 16384;
@@ -44,34 +45,29 @@ function drawArrowHead(
   ctx.fill();
 }
 
-function drawCommentLabel(
+/** Numbered pin: the only thing that ties a marked area to its note in the footer legend. */
+function drawPin(
   ctx: CanvasRenderingContext2D,
-  text: string,
+  n: number,
   x: number,
   y: number,
+  r: number,
   color: string
 ): void {
-  const label = text.trim();
-  if (!label) return;
-
-  ctx.font = "14px sans-serif";
-  const paddingX = 8;
-  const paddingY = 6;
-  const textWidth = ctx.measureText(label).width;
-  const boxWidth = textWidth + paddingX * 2;
-  const boxHeight = 24;
-
-  const boxX = Math.max(0, x);
-  const boxY = Math.max(0, y - boxHeight);
-
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
-  ctx.fillText(label, boxX + paddingX, boxY + paddingY + 10);
+  ctx.fill();
+  ctx.lineWidth = Math.max(2, r / 7);
+  ctx.strokeStyle = "#ffffff";
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${Math.round(r * 1.15)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(n), x, y + r * 0.05);
+  ctx.restore();
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -99,15 +95,126 @@ function withEllipsis(text: string): string {
   return text.length > 3 ? `${text.slice(0, text.length - 3)}...` : "...";
 }
 
-function drawGeneralFeedbackFooter(params: {
+/** One rendered line of the notes block: a legend line, its wrapped tail, or a sub-heading. */
+interface NoteRow {
+  text: string;
+  /** Present on the first line of an annotation's note; draws the matching pin. */
+  pin?: { n: number; color: string };
+  bold?: boolean;
+}
+
+function noteText(annotation: Annotation): string {
+  if (annotation.tool === "text") return annotation.text.trim();
+  return annotation.comment?.trim() ?? "";
+}
+
+function buildNoteRows(params: {
+  ctx: CanvasRenderingContext2D;
+  annotations: Annotation[];
+  generalFeedback: string;
+  maxTextWidth: number;
+  fontSize: number;
+}): NoteRow[] {
+  const { ctx, annotations, generalFeedback, maxTextWidth, fontSize } = params;
+  const rows: NoteRow[] = [];
+
+  ctx.font = `${fontSize}px sans-serif`;
+  for (const { n, annotation } of numberAnnotations(annotations)) {
+    const note = noteText(annotation);
+    if (!note) continue;
+
+    wrapText(ctx, note, maxTextWidth).forEach((line, index) => {
+      rows.push(index === 0 ? { text: line, pin: { n, color: annotation.color } } : { text: line });
+    });
+  }
+
+  if (generalFeedback) {
+    rows.push({ text: "General feedback", bold: true });
+    for (const line of wrapText(ctx, generalFeedback, maxTextWidth)) {
+      rows.push({ text: line });
+    }
+  }
+
+  return rows;
+}
+
+interface NotesLayout {
+  fontSize: number;
+  lineHeight: number;
+  titleHeight: number;
+  padding: number;
+  gutter: number;
+  legendPinRadius: number;
+}
+
+function notesLayout(imageWidth: number): NotesLayout {
+  const fontSize = Math.round(pinRadius(imageWidth) * 0.9);
+  const legendPinRadius = Math.round(pinRadius(imageWidth) * 0.6);
+  return {
+    fontSize,
+    lineHeight: Math.round(fontSize * 1.5),
+    titleHeight: Math.round(fontSize * 1.9),
+    padding: fontSize,
+    gutter: legendPinRadius * 2 + Math.round(fontSize * 0.6),
+    legendPinRadius
+  };
+}
+
+function notesHeight(rows: NoteRow[], layout: NotesLayout): number {
+  return (
+    layout.padding * 2 + layout.fontSize + layout.titleHeight + rows.length * layout.lineHeight
+  );
+}
+
+/** Draws the "Notes" title plus every row, pins included, from a top-left origin. */
+function drawNotes(params: {
+  ctx: CanvasRenderingContext2D;
+  x: number;
+  y: number;
+  rows: NoteRow[];
+  layout: NotesLayout;
+}): void {
+  const { ctx, x, y, rows, layout } = params;
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#0f172a";
+  ctx.font = `bold ${layout.fontSize}px sans-serif`;
+  ctx.fillText("Notes", x, y);
+
+  let textY = y + layout.titleHeight;
+  for (const row of rows) {
+    if (row.pin) {
+      drawPin(
+        ctx,
+        row.pin.n,
+        x + layout.legendPinRadius,
+        textY - layout.fontSize * 0.35,
+        layout.legendPinRadius,
+        row.pin.color
+      );
+    }
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#1f2937";
+    ctx.font = `${row.bold ? "bold " : ""}${layout.fontSize}px sans-serif`;
+    ctx.fillText(row.text, x + layout.gutter, textY);
+    textY += layout.lineHeight;
+  }
+}
+
+function drawNotesFooter(params: {
   ctx: CanvasRenderingContext2D;
   canvas: HTMLCanvasElement;
   imageHeight: number;
   footerHeight: number;
-  feedbackLines: string[];
+  rows: NoteRow[];
+  layout: NotesLayout;
 }): void {
-  const { ctx, canvas, imageHeight, footerHeight, feedbackLines } = params;
+  const { ctx, canvas, imageHeight, footerHeight, rows, layout } = params;
   const top = imageHeight;
+
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, top, canvas.width, footerHeight);
   ctx.strokeStyle = "#d1d5db";
@@ -117,39 +224,34 @@ function drawGeneralFeedbackFooter(params: {
   ctx.lineTo(canvas.width, top);
   ctx.stroke();
 
-  const left = 16;
-  let y = top + 28;
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "bold 15px sans-serif";
-  ctx.fillText("General Feedback", left, y);
-  y += 24;
-
-  ctx.font = "15px sans-serif";
-  ctx.fillStyle = "#1f2937";
-  for (const line of feedbackLines) {
-    ctx.fillText(line, left, y);
-    y += 22;
-  }
+  drawNotes({
+    ctx,
+    x: layout.padding,
+    y: top + layout.padding + layout.fontSize,
+    rows,
+    layout
+  });
 }
 
-function drawGeneralFeedbackOverlay(params: {
+function drawNotesOverlay(params: {
   ctx: CanvasRenderingContext2D;
   imageWidth: number;
   imageHeight: number;
-  feedbackLines: string[];
+  cardWidth: number;
+  rows: NoteRow[];
+  layout: NotesLayout;
 }): void {
-  const { ctx, imageWidth, imageHeight } = params;
-  const maxLines = 8;
-  const lines = [...params.feedbackLines];
-  if (lines.length > maxLines) {
-    lines.splice(maxLines - 1, lines.length - (maxLines - 1), withEllipsis(lines[maxLines - 1]));
+  const { ctx, imageHeight, cardWidth, layout } = params;
+  const maxRows = 8;
+  const rows = [...params.rows];
+  if (rows.length > maxRows) {
+    rows.splice(maxRows - 1, rows.length - (maxRows - 1), {
+      ...rows[maxRows - 1],
+      text: withEllipsis(rows[maxRows - 1].text)
+    });
   }
 
-  const padding = 12;
-  const lineHeight = 20;
-  const titleHeight = 24;
-  const cardWidth = Math.min(Math.max(260, imageWidth * 0.48), imageWidth - 24);
-  const cardHeight = padding * 2 + titleHeight + lines.length * lineHeight;
+  const cardHeight = notesHeight(rows, layout);
   const x = 12;
   const y = Math.max(12, imageHeight - cardHeight - 12);
 
@@ -159,17 +261,13 @@ function drawGeneralFeedbackOverlay(params: {
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, cardWidth, cardHeight);
 
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "bold 15px sans-serif";
-  ctx.fillText("General Feedback", x + padding, y + padding + 14);
-
-  ctx.font = "14px sans-serif";
-  ctx.fillStyle = "#1f2937";
-  let textY = y + padding + titleHeight + 12;
-  for (const line of lines) {
-    ctx.fillText(line, x + padding, textY);
-    textY += lineHeight;
-  }
+  drawNotes({
+    ctx,
+    x: x + layout.padding,
+    y: y + layout.padding + layout.fontSize,
+    rows,
+    layout
+  });
 }
 
 export async function exportAnnotatedImage(
@@ -185,7 +283,6 @@ export async function exportAnnotatedImage(
   });
 
   const generalFeedback = options?.generalFeedback?.trim() ?? "";
-  const hasGeneralFeedback = generalFeedback.length > 0;
 
   const canvas = document.createElement("canvas");
   canvas.width = img.width;
@@ -194,74 +291,96 @@ export async function exportAnnotatedImage(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to create canvas context");
 
-  let footerHeight = 0;
-  let feedbackLines: string[] = [];
-  let feedbackRenderMode: FeedbackRenderMode = "footer";
-  if (hasGeneralFeedback) {
-    const maxTextWidth = Math.max(200, img.width - 40);
-    ctx.font = "15px sans-serif";
-    feedbackLines = wrapText(ctx, generalFeedback, maxTextWidth);
-    const titleHeight = 24;
-    const lineHeight = 22;
-    const padding = 14;
-    footerHeight = titleHeight + feedbackLines.length * lineHeight + padding * 2;
-    feedbackRenderMode = selectFeedbackRenderMode({
-      imageWidth: img.width,
-      imageHeight: img.height,
-      footerHeight
-    });
+  const layout = notesLayout(img.width);
+  const overlayCardWidth = Math.min(Math.max(260, img.width * 0.48), img.width - 24);
+  const footerTextWidth = Math.max(200, img.width - layout.padding * 2 - layout.gutter);
 
-    if (feedbackRenderMode === "footer") {
-      canvas.height = img.height + footerHeight;
-    }
+  let rows = buildNoteRows({
+    ctx,
+    annotations,
+    generalFeedback,
+    maxTextWidth: footerTextWidth,
+    fontSize: layout.fontSize
+  });
+  const footerHeight = rows.length > 0 ? notesHeight(rows, layout) : 0;
+  const renderMode: FeedbackRenderMode =
+    rows.length === 0
+      ? "footer"
+      : selectFeedbackRenderMode({
+          imageWidth: img.width,
+          imageHeight: img.height,
+          footerHeight
+        });
+
+  if (rows.length > 0 && renderMode === "footer") {
+    canvas.height = img.height + footerHeight;
+  }
+
+  if (renderMode === "overlay") {
+    // The overlay card is narrower than the footer, so re-wrap to its width.
+    rows = buildNoteRows({
+      ctx,
+      annotations,
+      generalFeedback,
+      maxTextWidth: Math.max(120, overlayCardWidth - layout.padding * 2 - layout.gutter),
+      fontSize: layout.fontSize
+    });
   }
 
   ctx.drawImage(img, 0, 0);
 
-  for (const a of annotations) {
-    ctx.strokeStyle = a.color;
-    ctx.fillStyle = a.color;
-    ctx.lineWidth = 3;
+  const r = pinRadius(img.width);
+  const shapeLineWidth = Math.max(3, Math.round(r / 5));
 
-    if (a.tool === "box") {
-      ctx.strokeRect(a.x, a.y, a.width, a.height);
-      if (a.comment) {
-        drawCommentLabel(ctx, a.comment, a.x, a.y, a.color);
-      }
-      continue;
-    }
+  for (const { n, annotation } of numberAnnotations(annotations)) {
+    ctx.strokeStyle = annotation.color;
+    ctx.fillStyle = annotation.color;
+    ctx.lineWidth = shapeLineWidth;
 
-    if (a.tool === "arrow") {
+    if (annotation.tool === "box") {
+      ctx.strokeRect(annotation.x, annotation.y, annotation.width, annotation.height);
+    } else if (annotation.tool === "arrow") {
       ctx.beginPath();
-      ctx.moveTo(a.x1, a.y1);
-      ctx.lineTo(a.x2, a.y2);
+      ctx.moveTo(annotation.x1, annotation.y1);
+      ctx.lineTo(annotation.x2, annotation.y2);
       ctx.stroke();
-      drawArrowHead(ctx, a.x1, a.y1, a.x2, a.y2, a.color);
-      if (a.comment) {
-        drawCommentLabel(ctx, a.comment, Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), a.color);
-      }
-      continue;
+      drawArrowHead(
+        ctx,
+        annotation.x1,
+        annotation.y1,
+        annotation.x2,
+        annotation.y2,
+        annotation.color
+      );
+    } else {
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = `${Math.round(r * 0.9)}px sans-serif`;
+      ctx.fillText(annotation.text, annotation.x + r * 1.4, annotation.y);
     }
 
-    ctx.font = "16px sans-serif";
-    ctx.fillText(a.text, a.x, a.y);
+    const anchor = pinAnchor(annotation);
+    drawPin(ctx, n, anchor.x, anchor.y, r, annotation.color);
   }
 
-  if (hasGeneralFeedback) {
-    if (feedbackRenderMode === "footer") {
-      drawGeneralFeedbackFooter({
+  if (rows.length > 0) {
+    if (renderMode === "footer") {
+      drawNotesFooter({
         ctx,
         canvas,
         imageHeight: img.height,
         footerHeight,
-        feedbackLines
+        rows,
+        layout
       });
     } else {
-      drawGeneralFeedbackOverlay({
+      drawNotesOverlay({
         ctx,
         imageWidth: img.width,
         imageHeight: img.height,
-        feedbackLines
+        cardWidth: overlayCardWidth,
+        rows,
+        layout
       });
     }
   }

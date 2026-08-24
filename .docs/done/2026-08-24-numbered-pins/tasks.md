@@ -34,3 +34,8 @@
   - [x] 8.3 `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white)\b" src/` - 0 hits.
   - [x] 8.4 Screenshots of the editor, the timeline and the viewer in light and dark (see `completion-summary.md`).
 - [x] **9. Commit and PR**
+- [x] **10. Task-review fixes**
+  - [x] 10.1 `pinCenter(annotation, r, image)` in `numbering.ts` clamps the anchor to `[r, width - r] x [r, height - r]`; used by the export and by both canvas draw sites (pin and the text annotation's hit circle), so an annotation at the image edge no longer draws a clipped pin. Unit-tested at (5,5), (1195,795) and an interior anchor.
+  - [x] 10.2 Every numbered annotation now gets a legend row - uncommented ones read `(no comment)` / `(empty)` - via `noteText`, exported from `feedback.ts` and shared with `formatAreaComments` so the legend and the prompt cannot drift.
+  - [x] 10.3 The "General feedback" sub-heading is suppressed when it is the only block in the footer.
+  - [x] 10.4 The two CLAUDE.md bullets use " - " instead of an em dash.

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { numberAnnotations, pinAnchor, pinRadius } from "../src/lib/numbering";
+import { numberAnnotations, pinAnchor, pinCenter, pinRadius } from "../src/lib/numbering";
 
-const mk = (id: string, createdAt: string) => ({
+const mk = (id: string, createdAt: string, x = 5, y = 7) => ({
   id,
   tool: "box" as const,
   color: "#f00",
   createdAt,
-  x: 5,
-  y: 7,
+  x,
+  y,
   width: 10,
   height: 10
 });
@@ -43,5 +43,27 @@ describe("pinAnchor", () => {
       y2: 0
     };
     expect(pinAnchor(arrow)).toEqual({ x: 30, y: 40 });
+  });
+});
+
+describe("pinCenter", () => {
+  const image = { width: 1200, height: 800 };
+
+  it("pulls a pin at the top-left corner fully inside the image", () => {
+    expect(pinCenter(mk("a", "2026-08-23T00:00:00Z", 5, 5), 20, image)).toEqual({ x: 20, y: 20 });
+  });
+
+  it("pulls a pin at the bottom-right corner fully inside the image", () => {
+    expect(pinCenter(mk("a", "2026-08-23T00:00:00Z", 1195, 795), 20, image)).toEqual({
+      x: 1180,
+      y: 780
+    });
+  });
+
+  it("leaves an interior anchor alone", () => {
+    expect(pinCenter(mk("a", "2026-08-23T00:00:00Z", 400, 300), 20, image)).toEqual({
+      x: 400,
+      y: 300
+    });
   });
 });

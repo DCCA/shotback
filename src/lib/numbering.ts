@@ -22,3 +22,24 @@ export function pinAnchor(annotation: Annotation): { x: number; y: number } {
   if (annotation.tool === "arrow") return { x: annotation.x1, y: annotation.y1 };
   return { x: annotation.x, y: annotation.y };
 }
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+/**
+ * The pin's centre: its anchor pulled inside the image by its own radius, so a
+ * pin on an annotation drawn at the very edge is never clipped. Shared by the
+ * canvas and the export so the two cannot drift apart.
+ */
+export function pinCenter(
+  annotation: Annotation,
+  r: number,
+  image: { width: number; height: number }
+): { x: number; y: number } {
+  const anchor = pinAnchor(annotation);
+  return {
+    x: clamp(anchor.x, r, image.width - r),
+    y: clamp(anchor.y, r, image.height - r)
+  };
+}

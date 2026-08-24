@@ -1,4 +1,5 @@
-import { numberAnnotations, pinAnchor, pinRadius } from "@/lib/numbering";
+import { noteText } from "@/lib/feedback";
+import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 export const MAX_EXPORT_CANVAS_HEIGHT = 16384;
@@ -103,11 +104,6 @@ interface NoteRow {
   bold?: boolean;
 }
 
-function noteText(annotation: Annotation): string {
-  if (annotation.tool === "text") return annotation.text.trim();
-  return annotation.comment?.trim() ?? "";
-}
-
 function buildNoteRows(params: {
   ctx: CanvasRenderingContext2D;
   annotations: Annotation[];
@@ -119,17 +115,19 @@ function buildNoteRows(params: {
   const rows: NoteRow[] = [];
 
   ctx.font = `${fontSize}px sans-serif`;
+  // Every numbered annotation gets a legend row, placeholder included, so no
+  // pin on the image is missing from the list. `noteText` is the prompt's, so
+  // the two wordings cannot drift.
   for (const { n, annotation } of numberAnnotations(annotations)) {
-    const note = noteText(annotation);
-    if (!note) continue;
-
-    wrapText(ctx, note, maxTextWidth).forEach((line, index) => {
+    wrapText(ctx, noteText(annotation), maxTextWidth).forEach((line, index) => {
       rows.push(index === 0 ? { text: line, pin: { n, color: annotation.color } } : { text: line });
     });
   }
 
   if (generalFeedback) {
-    rows.push({ text: "General feedback", bold: true });
+    // Worth a sub-heading only when there are annotation rows above it to
+    // separate it from; alone under "Notes" it would be a second heading.
+    if (rows.length > 0) rows.push({ text: "General feedback", bold: true });
     for (const line of wrapText(ctx, generalFeedback, maxTextWidth)) {
       rows.push({ text: line });
     }
@@ -359,8 +357,8 @@ export async function exportAnnotatedImage(
       ctx.fillText(annotation.text, annotation.x + r * 1.4, annotation.y);
     }
 
-    const anchor = pinAnchor(annotation);
-    drawPin(ctx, n, anchor.x, anchor.y, r, annotation.color);
+    const center = pinCenter(annotation, r, img);
+    drawPin(ctx, n, center.x, center.y, r, annotation.color);
   }
 
   if (rows.length > 0) {

@@ -47,6 +47,15 @@ Driven through the real unpacked extension (Playwright, one-click autocapture of
 
 Observations: numbering matches across canvas, timeline, legend and prompt; the text annotation sits clear of its pin; nothing from the pill era remains on the image.
 
+## Task-review fixes (second pass)
+
+- **Edge clamping.** `pinCenter(annotation, r, image)` in `numbering.ts` returns the anchor pulled inside the image by the pin radius. The export and both canvas draw sites (the pin, and the text annotation's transparent hit circle) use it, so a box drawn at (2, 2) puts its pin fully on-canvas instead of three-quarters off it. The old `drawCommentLabel` clamped with `Math.max(0, ...)`; nothing had replaced that.
+- **No legend gaps.** Every numbered annotation now produces a legend row. An uncommented one reads `(no comment)` (an empty text annotation `(empty)`) - the exact strings the prompt uses, because both call `noteText`, now exported from `feedback.ts`. A pin on the image can no longer be missing from the Notes list.
+- **Single heading.** The bold "General feedback" sub-heading only appears when there are annotation rows above it; a share with general feedback and no annotations shows one heading, not two.
+- CLAUDE.md bullets use " - " rather than an em dash.
+
+`viewer-export.png` and `editor-canvas.png` were regenerated with the box drawn at the very top-left corner of the capture, so the clamp is visible: pin 1 sits fully inside the image in both, at the same place.
+
 ## Known follow-ups (not in this change)
 
 - Two annotations anchored at the same point still stack their pins; no collision avoidance.

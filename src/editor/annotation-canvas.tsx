@@ -10,7 +10,7 @@ import {
   getBoxResizeCursor,
   type BoxResizeHandle
 } from "@/lib/boxResize";
-import { numberAnnotations, pinAnchor, pinRadius } from "@/lib/numbering";
+import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -91,20 +91,20 @@ export function AnnotationCanvas({
   const pinR = pinRadius(imageSize.width);
 
   const renderPin = (item: Annotation): JSX.Element => {
-    const anchor = pinAnchor(item);
+    const center = pinCenter(item, pinR, imageSize);
     return (
       <g pointerEvents="none">
         <circle
-          cx={anchor.x}
-          cy={anchor.y}
+          cx={center.x}
+          cy={center.y}
           r={pinR}
           fill={item.color}
           stroke="#fff"
           strokeWidth={Math.max(2, pinR / 7)}
         />
         <text
-          x={anchor.x}
-          y={anchor.y}
+          x={center.x}
+          y={center.y}
           fill="#fff"
           fontSize={pinR * 1.15}
           fontWeight="700"
@@ -518,10 +518,11 @@ export function AnnotationCanvas({
                 return (
                   <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
                     {/* The pin itself is not clickable, so an empty text
-                        annotation still has a hit area to select and drag. */}
+                        annotation still has a hit area to select and drag - on
+                        the pin's own (clamped) centre, not the raw anchor. */}
                     <circle
-                      cx={item.x}
-                      cy={item.y}
+                      cx={pinCenter(item, pinR, imageSize).x}
+                      cy={pinCenter(item, pinR, imageSize).y}
                       r={pinR}
                       fill="transparent"
                       pointerEvents="all"

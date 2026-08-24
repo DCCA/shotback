@@ -168,12 +168,53 @@ describe("exportAnnotatedImage pins", () => {
     ]);
   });
 
-  it("draws no footer when there is nothing to say", async () => {
+  it("legends an uncommented annotation with the prompt's placeholder", async () => {
     const { ctx, calls } = recordingContext();
     stubCanvasAndImage(calls, ctx);
 
     await exportAnnotatedImage("data:", [{ ...box(""), comment: "" }]);
 
+    const labels = calls.filter((call) => call.name === "fillText");
+    expect(labels.some((call) => call.args[0] === "Notes")).toBe(true);
+    // Same wording as `formatAreaComments`, so pin 1 on the image and `1.` in
+    // the prompt always have a matching legend row.
+    expect(labels.some((call) => call.args[0] === "(no comment)")).toBe(true);
+  });
+
+  it("draws no footer when there is nothing to say", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", []);
+
     expect(calls.some((call) => call.name === "fillText" && call.args[0] === "Notes")).toBe(false);
+  });
+
+  it("drops the General feedback sub-heading when it is the only block", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [], { generalFeedback: "ship it" });
+
+    const labels = calls.filter((call) => call.name === "fillText").map((call) => call.args[0]);
+    expect(labels).toContain("Notes");
+    expect(labels).toContain("ship it");
+    expect(labels).not.toContain("General feedback");
+  });
+
+  it("keeps a pin drawn at the image corner fully inside the image", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [
+      { ...box("corner"), x: 2, y: 3 },
+      { ...arrow("far"), x1: 1199, y1: 799 }
+    ]);
+
+    const pins = calls.filter((call) => call.name === "arc" && call.args[2] === 20);
+    expect(pins.map((call) => [call.args[0], call.args[1]])).toEqual([
+      [20, 20],
+      [1180, 780]
+    ]);
   });
 });

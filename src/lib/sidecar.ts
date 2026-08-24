@@ -55,6 +55,22 @@ export interface Sidecar {
   imagePath: string;
 }
 
+/**
+ * The one JSON written for a batch of saved shares: every capture's own
+ * sidecar, in the order the prompt numbers them. Each capture's `imagePath` is
+ * relative to the batch folder the JSON sits in, so the whole folder can be
+ * moved without breaking the links.
+ */
+export interface BatchSidecar {
+  version: 1;
+  captures: Sidecar[];
+}
+
+/** Pure: the captures are already whole sidecars, so this only stamps the version. */
+export function buildBatchSidecar(captures: Sidecar[]): BatchSidecar {
+  return { version: 1, captures };
+}
+
 /** 4dp is ~0.1px on a 1000px-wide capture: precise enough, still readable. */
 function normalize(value: number, extent: number): number {
   if (!(extent > 0)) return 0;

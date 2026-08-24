@@ -727,6 +727,56 @@ for (const [name, headerHeight] of [
       // Clearing the crop puts the whole capture back.
       await editor.getByRole("button", { name: "Clear", exact: true }).click();
       await expect(editor.locator("#crop-region")).toHaveCount(0);
+
+      // Batch handoff: two shares are saved by now (the sidebar-overflow one
+      // and the cropped one). Ticking both writes every PNG plus a single
+      // batch.json into one folder, and copies a prompt that leads with it.
+      await editor.getByRole("button", { name: "Show" }).click();
+      const checkboxes = editor.getByRole("checkbox");
+      await expect(checkboxes).toHaveCount(2);
+      await checkboxes.nth(0).check();
+      await checkboxes.nth(1).check();
+
+      await editor.getByRole("button", { name: "Copy batch for Claude Code (2)" }).click();
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+        "Copied a Claude Code prompt for 2 saved captures"
+      );
+
+      const batchPrompt = await readClipboard(editor);
+      const batchLines = batchPrompt.split("\n");
+      const batchFile = await downloadedFile("application/json");
+      expect(batchLines[0]).toBe("Review these 2 screenshots together.");
+      // The JSON leads, before any capture is listed.
+      expect(batchLines[1]).toBe(
+        `Machine-readable annotations for every capture (selectors, rects, environment): ${batchFile}`
+      );
+
+      // One numbered line per capture, each naming a PNG that is really there.
+      const batchImages = batchLines
+        .filter((line) => /^\d+\. /.test(line))
+        .map((line) => line.split(" - ").pop()!);
+      expect(batchImages).toHaveLength(2);
+      expect(new Set(batchImages).size).toBe(2);
+      for (const file of batchImages) expect(existsSync(file)).toBe(true);
+
+      const batchSidecar = JSON.parse(await readFile(batchFile, "utf8"));
+      expect(batchSidecar.version).toBe(1);
+      expect(batchSidecar.captures).toHaveLength(2);
+      expect(batchSidecar.captures.map((c: { imagePath: string }) => c.imagePath)).toEqual([
+        "cap-0.png",
+        "cap-1.png"
+      ]);
+      for (const capture of batchSidecar.captures) {
+        expect(capture.version).toBe(1);
+        expect(capture.pageUrl).toBe(base + name);
+      }
+      // The prompt's counts come from the same sidecars, so they cannot drift.
+      expect(batchLines[3]).toContain(`${batchSidecar.captures[0].annotations.length} annotation`);
+
+      // Untick both so no later test inherits a selection.
+      await checkboxes.nth(0).uncheck();
+      await checkboxes.nth(1).uncheck();
+      await editor.getByRole("button", { name: "Hide" }).click();
     }
 
     await editor.close();

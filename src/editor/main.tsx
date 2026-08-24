@@ -172,6 +172,8 @@ function EditorApp(): JSX.Element {
           shares={exports.savedShares}
           onOpen={(id) => window.open(buildLocalShareUrl(id), "_blank")}
           onDelete={(id) => void exports.removeSavedShare(id)}
+          onBatchExport={(ids) => void exports.copyBatchForClaudeCode(ids)}
+          isBusy={state.isBusy}
         />
       </Sidebar>
 

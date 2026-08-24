@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import type { EditorState } from "@/editor/use-editor-state";
 import { dataUrlByteLength, exportAnnotatedImage } from "@/lib/annotate";
 import { applyCrop, clampCrop, type Rect } from "@/lib/crop";
-import { buildClaudeCodePrompt, buildExternalLlmPrompt } from "@/lib/feedback";
+import { buildBatchPrompt, buildClaudeCodePrompt, buildExternalLlmPrompt } from "@/lib/feedback";
 import {
   buildLocalShareUrl,
   deleteLocalShare,
+  getLocalShare,
   listLocalShares,
   saveLocalShare,
   type LocalShareMeta
 } from "@/lib/localStore";
-import { buildSidecar } from "@/lib/sidecar";
+import { buildBatchSidecar, buildSidecar, type Sidecar } from "@/lib/sidecar";
 import { toClaudePath } from "@/lib/wslPath";
 import type { Annotation } from "@/types/annotation";
 
@@ -125,11 +126,26 @@ async function saveSidecar(
   }
 }
 
+/**
+ * The pixel size of a stored share's image, read by decoding it. Shares predate
+ * the crop feature and carry no size of their own, so the only honest source is
+ * the image itself - and `normalizedRect` in the sidecar needs it.
+ */
+function decodeImageSize(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => reject(new Error("Failed to decode the saved share image"));
+    image.src = dataUrl;
+  });
+}
+
 export interface EditorExports {
   download: () => Promise<void>;
   copyImage: () => Promise<void>;
   prepareExternalLlmPackage: () => Promise<void>;
   copyForClaudeCode: () => Promise<void>;
+  copyBatchForClaudeCode: (ids: string[]) => Promise<void>;
   createShareUrl: () => Promise<void>;
   savedShares: LocalShareMeta[];
   refreshSavedShares: () => Promise<void>;
@@ -397,11 +413,86 @@ export function useExports(state: EditorState): EditorExports {
     }
   };
 
+  // Hand several saved shares to Claude Code in one go: every share's PNG into
+  // one `shotback/batch-<ts>/` folder, one `batch.json` beside them holding
+  // each capture's sidecar, and a prompt that leads with that JSON. The shares
+  // are exported exactly as stored (their images are already annotated), so
+  // nothing here re-renders or re-numbers them.
+  const copyBatchForClaudeCode = async (ids: string[]): Promise<void> => {
+    if (ids.length === 0) {
+      state.setStatus({ kind: "error", message: "Select at least one saved share first." });
+      return;
+    }
+
+    state.setIsBusy(true);
+    state.setStatus(null);
+
+    const folder = `shotback/batch-${Date.now()}`;
+    try {
+      const captures: Sidecar[] = [];
+      const entries: Array<{ pageUrl: string; imagePath: string; annotationCount: number }> = [];
+
+      // Sequential on purpose: the first share that cannot be written aborts
+      // the batch, rather than leaving a prompt that points at missing files.
+      for (const [index, id] of ids.entries()) {
+        const share = await getLocalShare(id);
+        if (!share) throw new Error(`Saved share ${index + 1} is no longer stored`);
+
+        const imageName = `cap-${index}.png`;
+        const blob = await (await fetch(share.imageDataUrl)).blob();
+        const absolutePath = await downloadBlob(blob, `${folder}/${imageName}`);
+        if (!absolutePath) {
+          throw new Error(`Capture ${index + 1} could not be written to Downloads`);
+        }
+
+        const capture = buildSidecar({
+          capturedAt: share.environment?.capturedAt ?? share.createdAt,
+          pageUrl: share.pageUrl,
+          generalFeedback: share.generalFeedback,
+          annotations: share.annotations,
+          image: await decodeImageSize(share.imageDataUrl),
+          // Relative to the batch folder, so the folder stays portable.
+          imagePath: imageName,
+          environment: share.environment,
+          imageFormat: "png"
+        });
+        captures.push(capture);
+        entries.push({
+          pageUrl: share.pageUrl,
+          imagePath: toClaudePath(absolutePath),
+          annotationCount: capture.annotations.length
+        });
+      }
+
+      const batch = buildBatchSidecar(captures);
+      const batchBlob = new Blob([JSON.stringify(batch, null, 2)], { type: "application/json" });
+      const batchPath = await downloadBlob(batchBlob, `${folder}/batch.json`);
+      if (!batchPath) throw new Error("The batch JSON could not be written to Downloads");
+
+      await navigator.clipboard.writeText(buildBatchPrompt(entries, toClaudePath(batchPath)));
+      state.setStatus({
+        kind: "success",
+        message: `Copied a Claude Code prompt for ${entries.length} saved ${
+          entries.length === 1 ? "capture" : "captures"
+        } in ${folder}. Paste it into your session.`
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Batch export failed";
+      state.setStatus({
+        kind: "error",
+        message: `${reason}. No prompt was copied; any files already written to Downloads/${folder} can be deleted.`
+      });
+    } finally {
+      state.setIsBusy(false);
+    }
+  };
+
   return {
     download,
     copyImage,
     prepareExternalLlmPackage,
     copyForClaudeCode,
+    copyBatchForClaudeCode,
     createShareUrl,
     savedShares,
     refreshSavedShares,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CaptureEnvironment, PageDiagnostics } from "../src/lib/capture";
-import { buildSidecar } from "../src/lib/sidecar";
+import { buildBatchSidecar, buildSidecar } from "../src/lib/sidecar";
 import type { Annotation } from "../src/types/annotation";
 
 const image = { width: 1000, height: 2000 };
@@ -210,5 +210,32 @@ describe("buildSidecar redactions", () => {
 
   it("omits the field entirely when nothing is redacted", () => {
     expect(buildSidecar({ ...base, annotations: [box] }).redactions).toBeUndefined();
+  });
+});
+
+describe("buildBatchSidecar", () => {
+  const first = buildSidecar({ ...base, annotations: [box], imagePath: "cap-0.png" });
+  const second = buildSidecar({
+    ...base,
+    annotations: [],
+    pageUrl: "https://example.test/checkout",
+    imagePath: "cap-1.png"
+  });
+
+  it("wraps the per-capture sidecars untouched under one version", () => {
+    const batch = buildBatchSidecar([first, second]);
+    expect(batch.version).toBe(1);
+    expect(batch.captures).toEqual([first, second]);
+  });
+
+  it("keeps every capture's batch-relative image path", () => {
+    expect(buildBatchSidecar([first, second]).captures.map((c) => c.imagePath)).toEqual([
+      "cap-0.png",
+      "cap-1.png"
+    ]);
+  });
+
+  it("has no captures for an empty batch", () => {
+    expect(buildBatchSidecar([])).toEqual({ version: 1, captures: [] });
   });
 });

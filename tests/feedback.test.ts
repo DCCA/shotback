@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   annotationSummary,
+  buildBatchPrompt,
   buildClaudeCodePrompt,
   buildExternalLlmPrompt
 } from "../src/lib/feedback";
@@ -892,5 +893,44 @@ describe("redacted regions", () => {
     expect(prompt.split("\n").filter((line) => /^\d+\. /.test(line))).toEqual([
       "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page]"
     ]);
+  });
+});
+
+describe("buildBatchPrompt", () => {
+  const entries = [
+    { pageUrl: "https://example.test/pricing", imagePath: "/d/cap-0.png", annotationCount: 2 },
+    { pageUrl: "https://example.test/checkout", imagePath: "/d/cap-1.png", annotationCount: 0 }
+  ];
+
+  it("leads with the JSON path before any capture is listed", () => {
+    const lines = buildBatchPrompt(entries, "/d/batch.json").split("\n");
+    expect(lines[0]).toBe("Review these 2 screenshots together.");
+    expect(lines[1]).toBe(
+      "Machine-readable annotations for every capture (selectors, rects, environment): /d/batch.json"
+    );
+    expect(lines.findIndex((line) => line.startsWith("1. "))).toBeGreaterThan(1);
+  });
+
+  it("numbers one line per capture with its page, count and image path", () => {
+    const prompt = buildBatchPrompt(entries, "/d/batch.json");
+    expect(prompt.split("\n").filter((line) => /^\d+\. /.test(line))).toEqual([
+      "1. https://example.test/pricing - 2 annotations - /d/cap-0.png",
+      "2. https://example.test/checkout - 0 annotations - /d/cap-1.png"
+    ]);
+  });
+
+  it("keeps the per-capture detail in the sidecar, not in the prompt", () => {
+    const prompt = buildBatchPrompt(entries, "/d/batch.json");
+    expect(prompt).not.toContain("[box]");
+    expect(prompt).not.toContain("General feedback");
+  });
+
+  it("says one capture in the singular and names an unknown page", () => {
+    const prompt = buildBatchPrompt(
+      [{ pageUrl: "", imagePath: "/d/cap-0.png", annotationCount: 1 }],
+      "/d/batch.json"
+    );
+    expect(prompt.split("\n")[0]).toBe("Review this screenshot.");
+    expect(prompt).toContain("1. (unknown) - 1 annotation - /d/cap-0.png");
   });
 });

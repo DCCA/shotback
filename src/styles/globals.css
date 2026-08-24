@@ -30,9 +30,9 @@
     --destructive-hover: 0 74% 42%; /* red-700 */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%; /* slate-200 — structural hairlines */
-    --input: 213 27% 84%; /* slate-300 — form-control borders */
-    --ring: 161 94% 30%; /* emerald-600 — focus ring */
+    --border: 214 32% 91%; /* slate-200 - structural hairlines */
+    --input: 213 27% 84%; /* slate-300 - form-control borders */
+    --ring: 161 94% 30%; /* emerald-600 - focus ring */
 
     /* Card elevation: a top highlight inside the edge, plus a soft drop. */
     --card-highlight: 0 0% 100% / 0.6;

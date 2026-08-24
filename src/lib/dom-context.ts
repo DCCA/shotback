@@ -21,17 +21,21 @@ export interface ElementLike {
 const MAX_PATH_DEPTH = 5;
 /** Classes kept per segment: utility-CSS pages have dozens of them. */
 const MAX_CLASSES_PER_SEGMENT = 2;
+/** Ids, classes and tag names are page-controlled text, so they are clamped. */
+const MAX_TOKEN = 50;
+
+const token = (value: string): string => value.slice(0, MAX_TOKEN);
 
 function segment(el: ElementLike): string {
-  if (el.id) return `#${el.id}`;
+  if (el.id) return `#${token(el.id)}`;
 
   const classes = el.classList
     .slice(0, MAX_CLASSES_PER_SEGMENT)
-    .map((name) => `.${name}`)
+    .map((name) => `.${token(name)}`)
     .join("");
   const nth = el.siblingsOfTypeCount > 1 ? `:nth-of-type(${el.indexOfType})` : "";
 
-  return `${el.tagName.toLowerCase()}${classes}${nth}`;
+  return `${token(el.tagName.toLowerCase())}${classes}${nth}`;
 }
 
 /**

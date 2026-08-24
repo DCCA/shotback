@@ -259,3 +259,19 @@ em dashes on added lines
   injection when the main-world pass fails; `visibleText` slices to 500 chars
   before collapsing whitespace; the CLAUDE.md lines this change touched use
   " - " instead of an em dash.
+
+## Review fixes (third pass)
+
+- **Every page-controlled token is clamped to 50 chars**, not just component
+  names: `cssPath` clamps the id, each class and the tag name it composes
+  (`token` in `dom-context.ts`), and `describeElement` clamps the `id`, `role`,
+  `testId` and `classes` it stores on the context. The clamp sits in `cssPath`
+  rather than in `toElementLike` because that is the pure, unit-testable place
+  every adapter goes through - `tests/dom-context.test.ts` drives it with a
+  100 kB class name and asserts the composed path stays bounded.
+- **The e2e no longer races the inspection round trip.** `refreshContexts`
+  stamps `document.body.dataset.sbInspectGen` with its generation after writing
+  contexts (a test hook, editor page only). The e2e reads that number before a
+  gesture and polls for it to advance before copying the prompt, so each
+  assertion still costs exactly one click (one PNG download) and cannot read a
+  prompt built before the contexts landed.

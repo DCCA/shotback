@@ -136,6 +136,19 @@ const readClipboard = (editor: Page): Promise<string> =>
   editor.evaluate(async () => navigator.clipboard.readText());
 
 /**
+ * The editor stamps `data-sb-inspect-gen` on its body every time an inspection
+ * writes contexts back (a test hook, set in `refreshContexts`). Waiting for it
+ * to move past the value read before a gesture is what makes "the prompt names
+ * the element" deterministic instead of a race with the round trip.
+ */
+const inspectGen = (editor: Page): Promise<number> =>
+  editor.evaluate(() => Number(document.body.dataset.sbInspectGen ?? 0));
+
+async function waitForInspection(editor: Page, previous: number): Promise<void> {
+  await expect.poll(() => inspectGen(editor), { timeout: 10_000 }).toBeGreaterThan(previous);
+}
+
+/**
  * Draw a box over the fixture's CTA button. `top` is the header band above the
  * scroller on the stitched image, so the same call works for the document
  * scroller (0) and the inner one (64). Returns the button centre on screen.
@@ -293,8 +306,10 @@ for (const [name, headerHeight] of [
 
       // A second box, over the CTA: with the document scrolling, the element
       // under an annotation must be named just as it is for an inner scroller.
+      const inspectedBefore = await inspectGen(editor);
       await boxOverCta(editor, img, headerHeight);
       await expect(editor.locator("ol li")).toHaveCount(2);
+      await waitForInspection(editor, inspectedBefore);
 
       // The cloud-LLM prompt carries the captured tab's environment.
       await copyCloudPrompt(editor);
@@ -451,8 +466,10 @@ for (const [name, headerHeight] of [
       // Per-annotation DOM context: a box drawn over the CTA is mapped back to
       // the live tab, so the copied prompt names the element it covers - and
       // the component chain comes from the page's own JavaScript world.
+      const inspectedBefore = await inspectGen(editor);
       const centre = await boxOverCta(editor, img, headerHeight);
       await expect(rows).toHaveCount(3);
+      await waitForInspection(editor, inspectedBefore);
 
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain(
@@ -462,10 +479,12 @@ for (const [name, headerHeight] of [
       // The context is derived data re-read on every commit, so it must still
       // be there after the box is moved (while it still covers the button).
       // Drawing an annotation already switched the editor into move mode.
+      const inspectedBeforeMove = await inspectGen(editor);
       await editor.mouse.move(centre.x, centre.y);
       await editor.mouse.down();
       await editor.mouse.move(centre.x + 20, centre.y, { steps: 5 });
       await editor.mouse.up();
+      await waitForInspection(editor, inspectedBeforeMove);
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain("button.cta");
     }

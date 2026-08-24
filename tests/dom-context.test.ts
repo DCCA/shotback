@@ -45,6 +45,16 @@ describe("cssPath", () => {
     expect(cssPath(oneOfMany)).toBe("li:nth-of-type(3)");
   });
 
+  it("clamps page-controlled tokens so a hostile class cannot blow up the path", () => {
+    const huge = "x".repeat(100_000);
+
+    expect(cssPath(el({ tagName: "BUTTON", id: huge }))).toBe(`#${"x".repeat(50)}`);
+    // Two classes per segment, 50 chars each, plus the tag and the dots.
+    expect(cssPath(el({ tagName: "BUTTON", classList: [huge, huge, huge] }))).toHaveLength(
+      "button".length + 2 * (1 + 50)
+    );
+  });
+
   it("keeps at most five levels, nearest to the element", () => {
     const elements = Array.from({ length: 8 }, (_, i) => el({ tagName: `T${i}` }));
     const leaf = chain(...elements);

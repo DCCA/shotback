@@ -121,6 +121,8 @@ function EditorApp(): JSX.Element {
         return context === annotation.context ? annotation : { ...annotation, context };
       })
     );
+    // Test hook: the e2e waits on this to know an inspection has landed.
+    document.body.dataset.sbInspectGen = String(generation);
   };
 
   const selectTimelineItem = (id: string): void => {

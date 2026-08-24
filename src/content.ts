@@ -168,6 +168,10 @@ function afterPaint(callback: () => void): void {
 const MAX_ANCESTORS = 5;
 const MAX_CONTEXT_CLASSES = 5;
 const MAX_CONTEXT_TEXT = 80;
+/** An id, class, role or testid is page-controlled text, so it is clamped. */
+const MAX_CONTEXT_TOKEN = 50;
+
+const token = (value: string): string => value.slice(0, MAX_CONTEXT_TOKEN);
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
@@ -225,10 +229,10 @@ function describeElement(el: Element, scrollTop: number): ElementContext {
   return {
     cssPath: cssPath(toElementLike(el)),
     tag: el.tagName.toLowerCase(),
-    ...(el.id ? { id: el.id } : {}),
-    classes: Array.from(el.classList).slice(0, MAX_CONTEXT_CLASSES),
-    ...(role ? { role } : {}),
-    ...(testId ? { testId } : {}),
+    ...(el.id ? { id: token(el.id) } : {}),
+    classes: Array.from(el.classList).slice(0, MAX_CONTEXT_CLASSES).map(token),
+    ...(role ? { role: token(role) } : {}),
+    ...(testId ? { testId: token(testId) } : {}),
     ...(text ? { text } : {}),
     // Page CSS px: the same space the stitched capture is measured in.
     rect: {

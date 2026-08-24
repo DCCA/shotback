@@ -1,5 +1,5 @@
 import type { CaptureEnvironment } from "@/lib/capture";
-import { numberAnnotations } from "@/lib/numbering";
+import { describeGeometry, numberAnnotations } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 /** Short, human-readable summary of a single annotation for timeline rows. */
@@ -20,11 +20,19 @@ export function noteText(annotation: Annotation): string {
 /**
  * Numbered, tool-tagged list of area comments shared by the prompt builders.
  * The numbers come from `numberAnnotations`, so they match the pins drawn on
- * the image and the numbers shown in the comment timeline.
+ * the image and the numbers shown in the comment timeline. When an image size
+ * is given, each line also carries the annotation's geometry (px and % of
+ * page) so an agent can locate it without opening the picture.
  */
-function formatAreaComments(annotations: Annotation[]): string {
+function formatAreaComments(
+  annotations: Annotation[],
+  image?: { width: number; height: number }
+): string {
   const comments = numberAnnotations(annotations)
-    .map(({ n, annotation }) => `${n}. [${annotation.tool}] ${noteText(annotation)}`)
+    .map(({ n, annotation }) => {
+      const line = `${n}. [${annotation.tool}] ${noteText(annotation)}`;
+      return image ? `${line} - ${describeGeometry(annotation, image)}` : line;
+    })
     .join("\n");
 
   return comments || "(none)";
@@ -60,6 +68,7 @@ export function buildExternalLlmPrompt(params: {
   generalFeedback: string;
   annotations: Annotation[];
   environment?: CaptureEnvironment;
+  image?: { width: number; height: number };
 }): string {
   return [
     "Please review this screenshot and provide feedback.",
@@ -69,7 +78,7 @@ export function buildExternalLlmPrompt(params: {
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
-    formatAreaComments(params.annotations)
+    formatAreaComments(params.annotations, params.image)
   ].join("\n");
 }
 
@@ -84,6 +93,7 @@ export function buildClaudeCodePrompt(params: {
   generalFeedback: string;
   annotations: Annotation[];
   environment?: CaptureEnvironment;
+  image?: { width: number; height: number };
 }): string {
   return [
     `Review this screenshot: ${params.filePath}`,
@@ -93,6 +103,6 @@ export function buildClaudeCodePrompt(params: {
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
-    formatAreaComments(params.annotations)
+    formatAreaComments(params.annotations, params.image)
   ].join("\n");
 }

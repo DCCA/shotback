@@ -14,6 +14,17 @@ import { toClaudePath } from "@/lib/wslPath";
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * The prompt builders' optional `image` param, present only once a real
+ * capture has replaced the 1x1 placeholder `imageSize` starts at.
+ */
+function promptImage(imageSize: {
+  width: number;
+  height: number;
+}): { width: number; height: number } | undefined {
+  return imageSize.width > 1 ? imageSize : undefined;
+}
+
+/**
  * Resolve a completed download's absolute on-disk path. Polls because the path
  * is only populated once Chrome finishes writing the file. Returns "" if the
  * path cannot be resolved (interrupted, or still pending after the timeout).
@@ -174,7 +185,8 @@ export function useExports(state: EditorState): EditorExports {
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
         annotations: state.annotations,
-        environment: state.environment
+        environment: state.environment,
+        image: promptImage(state.imageSize)
       });
 
       const a = document.createElement("a");
@@ -233,7 +245,8 @@ export function useExports(state: EditorState): EditorExports {
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
         annotations: state.annotations,
-        environment: state.environment
+        environment: state.environment,
+        image: promptImage(state.imageSize)
       });
       await navigator.clipboard.writeText(prompt);
 

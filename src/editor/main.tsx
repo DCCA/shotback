@@ -7,8 +7,9 @@ import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
-import { captureFullPage } from "@/lib/capture";
+import { captureFullPage, inspectPoints } from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
+import { inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
 
 function EditorApp(): JSX.Element {
@@ -21,6 +22,12 @@ function EditorApp(): JSX.Element {
   const exports = useExports(state);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
+  // Stitched image px per page CSS px, set by the last capture. A ref, not
+  // state: nothing renders from it, and the commit handler must see it at once.
+  const captureScaleRef = useRef<number | null>(null);
+  // Bumped per inspection: only the newest response may write contexts, so a
+  // slow one cannot land on top of a newer commit's result.
+  const inspectGenRef = useRef(0);
   const autoCaptureFiredRef = useRef(false);
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
@@ -41,6 +48,7 @@ function EditorApp(): JSX.Element {
 
     state.setIsBusy(true);
     state.setStatus(null);
+    captureScaleRef.current = null;
     state.setShareUrl("");
     state.setEnvironment(undefined);
     state.resetAnnotations();
@@ -54,6 +62,7 @@ function EditorApp(): JSX.Element {
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
+      captureScaleRef.current = result.scale;
       state.setProgress("Capture completed");
     } catch (error) {
       state.setStatus({
@@ -74,6 +83,47 @@ function EditorApp(): JSX.Element {
     void takeScreenshot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Re-read the element under every annotation from the captured tab, so the
+   * prompts can name it. Deliberately outside the undo history: a context is
+   * derived data, refreshed on the next commit, and an extra history entry per
+   * inspection would double every undo. An older snapshot may therefore carry
+   * an older context, which is harmless. Best effort throughout - `inspectPoints`
+   * swallows a closed tab or a missing content script.
+   *
+   * A `null` answer clears the annotation's context instead of keeping the one
+   * it had: the element it named is no longer under it (or the tab navigated),
+   * and a stale name in a prompt is worse than no name.
+   */
+  const refreshContexts = async (): Promise<void> => {
+    const scale = captureScaleRef.current;
+    if (!scale || !canCapture) return;
+
+    const generation = (inspectGenRef.current += 1);
+    const items = state.getAnnotations();
+    const contexts = await inspectPoints(
+      tabId,
+      items.map((annotation) => {
+        const { x, y } = inspectAnchor(annotation);
+        return { x: x / scale, y: y / scale };
+      }),
+      state.pageUrl
+    );
+    if (generation !== inspectGenRef.current) return;
+    if (contexts.length === 0 || contexts.length !== items.length) return;
+
+    const byId = new Map(items.map((annotation, index) => [annotation.id, contexts[index]]));
+    state.setAnnotations((current) =>
+      current.map((annotation) => {
+        if (!byId.has(annotation.id)) return annotation;
+        const context = byId.get(annotation.id) ?? undefined;
+        return context === annotation.context ? annotation : { ...annotation, context };
+      })
+    );
+    // Test hook: the e2e waits on this to know an inspection has landed.
+    document.body.dataset.sbInspectGen = String(generation);
+  };
 
   const selectTimelineItem = (id: string): void => {
     state.setSelectedId(id);
@@ -115,7 +165,10 @@ function EditorApp(): JSX.Element {
         inlineCommentRef={inlineCommentRef}
         shouldFocusSelectedComment={shouldFocusSelectedComment}
         setShouldFocusSelectedComment={setShouldFocusSelectedComment}
-        onCommit={() => state.commitAnnotations()}
+        onCommit={() => {
+          state.commitAnnotations();
+          void refreshContexts();
+        }}
       />
     </main>
   );

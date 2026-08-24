@@ -15,6 +15,12 @@ export interface EditorState {
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
   /** Undo/redo snapshots: only completed edits land here, never in-gesture state. */
   history: History<Annotation[]>;
+  /**
+   * The latest annotations, including a gesture React has not re-rendered yet.
+   * Callers that run straight after a commit (mapping annotations back to the
+   * page, for one) must read this, not the render value.
+   */
+  getAnnotations: () => Annotation[];
   /** Snapshot the latest annotations as one undo entry. */
   commitAnnotations: () => void;
   undoAnnotations: () => void;
@@ -99,6 +105,8 @@ export function useEditorState(): EditorState {
     setHistory(next);
   };
 
+  const getAnnotations = (): Annotation[] => annotationsRef.current;
+
   const commitAnnotations = (): void => {
     applyHistory(commit(historyRef.current, annotationsRef.current));
   };
@@ -134,6 +142,7 @@ export function useEditorState(): EditorState {
     annotations,
     setAnnotations,
     history,
+    getAnnotations,
     commitAnnotations,
     undoAnnotations,
     redoAnnotations,

@@ -1,3 +1,5 @@
+import type { ElementContext } from "@/types/annotation";
+
 /**
  * Geometry of whatever actually scrolls: the document, or - for SPA shells
  * with `html,body{overflow:hidden}` - the largest scrollable element.
@@ -39,6 +41,10 @@ export interface CaptureResult {
   dataUrl: string;
   pageUrl: string;
   environment: CaptureEnvironment;
+  /** Stitched image px per page CSS px, so image coords can be mapped back. */
+  scale: number;
+  /** Page CSS px above the scroller on the stitched image (0 for the document). */
+  scrollerTop: number;
 }
 
 /** Pure; `now` is injected so the mapping stays testable. */
@@ -201,6 +207,134 @@ export async function sendToContentScript<T>(
   throw lastError instanceof Error ? lastError : new Error("Content script did not respond");
 }
 
+/**
+ * Collect the React component chain around every element the content script
+ * marked with `data-shotback-hit`, keyed by that mark (the point's index).
+ *
+ * This runs **in the page's own JavaScript world** (`world: "MAIN"`): React
+ * hangs its fiber off the DOM node as an expando, and a content script's
+ * isolated world cannot see page expandos at all (`Object.keys(element)` comes
+ * back empty there, verified against real Chromium). Chrome serializes this
+ * function's source to inject it, so it must reference nothing outside itself -
+ * no imports, no module constants. It also clears the marks it consumes.
+ */
+export function readFiberComponents(): Record<string, string[]> {
+  const chains: Record<string, string[]> = {};
+
+  for (const element of document.querySelectorAll("[data-shotback-hit]")) {
+    const mark = element.getAttribute("data-shotback-hit");
+    element.removeAttribute("data-shotback-hit");
+    if (mark === null) continue;
+
+    const key = Object.keys(element).find((name) => name.startsWith("__reactFiber$"));
+    let node = key ? (element as unknown as Record<string, unknown>)[key] : null;
+
+    // Nearest first, three components deep; the step cap keeps a cyclic
+    // `return` chain from hanging the page.
+    const names: string[] = [];
+    for (let step = 0; node && step < 60 && names.length < 3; step += 1) {
+      const fiber = node as { type?: unknown; return?: unknown };
+      const type = fiber.type;
+      if (type && typeof type !== "string") {
+        const named = type as { displayName?: unknown; name?: unknown };
+        const name = typeof named.displayName === "string" ? named.displayName : named.name;
+        if (typeof name === "string" && name) names.push(name);
+      }
+      node = (fiber.return ?? null) as Record<string, unknown> | null;
+    }
+
+    if (names.length > 0) chains[mark] = names;
+  }
+
+  return chains;
+}
+
+/** Drop the hit marks if the main-world pass never got to consume them. */
+async function clearHitMarks(tabId: number): Promise<void> {
+  await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => {
+        for (const element of document.querySelectorAll("[data-shotback-hit]")) {
+          element.removeAttribute("data-shotback-hit");
+        }
+      }
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * A component name is page-controlled text, so it is clamped on this side of
+ * the boundary: one line, 50 chars. A hostile page cannot get an unbounded
+ * string into a prompt by naming a component after it.
+ */
+function sanitizeComponentName(name: unknown): string {
+  return String(name).replace(/\s+/g, " ").trim().slice(0, 50);
+}
+
+async function readComponentChains(tabId: number): Promise<Record<string, string[]>> {
+  try {
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: readFiberComponents
+    });
+    const chains = (injected?.result as Record<string, string[]> | undefined) ?? {};
+    return Object.fromEntries(
+      Object.entries(chains).map(([mark, names]) => [
+        mark,
+        names.map(sanitizeComponentName).filter(Boolean)
+      ])
+    );
+  } catch {
+    // Non-React pages, restricted pages, a closed tab: no component chain.
+    await clearHitMarks(tabId);
+    return {};
+  }
+}
+
+/**
+ * Ask the captured tab to describe the element under each point (page CSS px).
+ * Best effort by design: it runs after every annotation commit, so a closed
+ * tab or a missing content script must return "no context" (an empty array,
+ * which leaves the stored contexts alone) and never surface an error or block
+ * the edit.
+ *
+ * `pageUrl` is the page the capture came from. If the tab has navigated since,
+ * every point is answered with `null` rather than kept: the stored contexts
+ * describe a page that is gone, and a stale selector is worse than none.
+ */
+export async function inspectPoints(
+  tabId: number,
+  points: Array<{ x: number; y: number }>,
+  pageUrl: string
+): Promise<Array<ElementContext | null>> {
+  if (points.length === 0) return [];
+
+  try {
+    const response = await sendToContentScript<{
+      contexts?: Array<ElementContext | null>;
+      pageUrl?: string;
+    }>(tabId, { type: "SB_INSPECT_POINTS", points });
+    if (response?.pageUrl !== pageUrl) {
+      // The marks landed on the page that is there now; take them back off.
+      await clearHitMarks(tabId);
+      return points.map(() => null);
+    }
+
+    const contexts = response?.contexts ?? [];
+    if (contexts.length === 0) return contexts;
+
+    const chains = await readComponentChains(tabId);
+    return contexts.map((context, index) => {
+      const component = chains[String(index)];
+      return context && component ? { ...context, component } : context;
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function captureFullPage(
   tabId: number,
   windowId: number,
@@ -278,7 +412,9 @@ export async function captureFullPage(
     return {
       dataUrl: canvas.toDataURL("image/png"),
       pageUrl: metrics.pageUrl,
-      environment: buildEnvironment(metrics, navigator.userAgent, new Date())
+      environment: buildEnvironment(metrics, navigator.userAgent, new Date()),
+      scale,
+      scrollerTop: metrics.scrollerTop
     };
   } finally {
     if (previousActiveTabId && previousActiveTabId !== tabId) {

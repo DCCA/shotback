@@ -15,19 +15,29 @@ Security-sensitive areas:
 Shotback requests only what full-page capture requires. Each permission and its
 justification:
 
-| Permission                     | Why it is needed                                                                                                                                                                                                       |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `activeTab`                    | Access the tab the user is viewing when they invoke capture.                                                                                                                                                           |
-| `tabs`                         | Coordinate capture: query the active tab, focus the target tab, and open the editor/viewer. Uses tab/window ids only.                                                                                                  |
-| `scripting`                    | Inject the capture helper that measures the page and drives scroll-and-stitch.                                                                                                                                         |
-| `storage` + `unlimitedStorage` | Persist share metadata in `chrome.storage.local` and large annotated images in IndexedDB without quota errors.                                                                                                         |
-| `downloads`                    | Save the annotated PNG to `Downloads/shotback/` and read back its on-disk path for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the path of the file it just created. |
-| `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.                                                                                                             |
+| Permission                     | Why it is needed                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activeTab`                    | Access the tab the user is viewing when they invoke capture.                                                                                                                                                                                                                                                                                      |
+| `tabs`                         | Coordinate capture: query the active tab, focus the target tab, and open the editor/viewer. Uses tab/window ids only.                                                                                                                                                                                                                             |
+| `scripting`                    | Inject the capture helper that measures the page and drives scroll-and-stitch, and - when the user annotates - run a minimal, self-contained function in the page's own JavaScript world (`world: "MAIN"`) to read React component names. No extension state crosses into that world; only sanitised strings (one line, 50 chars each) come back. |
+| `storage` + `unlimitedStorage` | Persist share metadata in `chrome.storage.local` and large annotated images in IndexedDB without quota errors.                                                                                                                                                                                                                                    |
+| `downloads`                    | Save the annotated PNG to `Downloads/shotback/` and read back its on-disk path for the "Copy for Claude Code" handoff. Writes only files the user explicitly exports; reads only the path of the file it just created.                                                                                                                            |
+| `host_permissions: <all_urls>` | A general screenshot tool must capture whatever page the user is on; there is no fixed allowlist of sites.                                                                                                                                                                                                                                        |
 
 `commands` (\_execute_action for `Alt+Shift+S`) is not a permission - it only binds a keyboard shortcut to the existing toolbar action.
 
-Access to page content is exercised **only at user-initiated capture time**, not
-in the background.
+Access to page content is exercised **only at user-initiated capture time and
+while the user annotates a capture**, never in the background. Annotating is
+itself a user-initiated act: each drawn or moved annotation asks the captured
+tab to describe the element beneath it, which reads that element's selector
+(tag, id, classes, `role`, `data-testid`), its position, and up to 80 characters
+of its visible text. That description is stored on the annotation, so it lands
+in saved shares and in the prompts the user copies.
+
+To hand the hit element between the isolated content script and the page-world
+component read, the element is briefly marked with a `data-shotback-hit`
+attribute. It is page-observable while it is there and is removed as soon as the
+component read consumes it (or, if that fails, on the next inspection).
 
 `web_accessible_resources` is intentionally **not** declared: the content script
 injects no extension resources into web pages, and the editor/viewer load their
@@ -42,7 +52,8 @@ to avoid running on every page load.
 
 ## Data Handling
 
-- Screenshots, annotations, and feedback stay in the local browser profile.
+- Screenshots, annotations, element descriptions, and feedback stay in the local
+  browser profile.
 - The extension makes no network requests of its own.
 - Data leaves the device only when the user explicitly uses the cloud LLM
   fallback (manual image download + clipboard paste). The "Copy for Claude Code"

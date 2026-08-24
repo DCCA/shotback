@@ -1,3 +1,6 @@
+import { cssPath, type ElementLike } from "@/lib/dom-context";
+import type { ElementContext } from "@/types/annotation";
+
 interface PageMetrics {
   fullHeight: number;
   viewportHeight: number;
@@ -161,6 +164,136 @@ function afterPaint(callback: () => void): void {
   window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
 }
 
+/** Ancestors described in a path: `cssPath` keeps five levels, so build five. */
+const MAX_ANCESTORS = 5;
+const MAX_CONTEXT_CLASSES = 5;
+const MAX_CONTEXT_TEXT = 80;
+/** An id, class, role or testid is page-controlled text, so it is clamped. */
+const MAX_CONTEXT_TOKEN = 50;
+
+const token = (value: string): string => value.slice(0, MAX_CONTEXT_TOKEN);
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+/** Adapt a live element into the plain shape `src/lib/dom-context.ts` walks. */
+function toElementLike(el: Element, depth = MAX_ANCESTORS): ElementLike {
+  const parent = el.parentElement;
+  const sameTag = parent
+    ? Array.from(parent.children).filter((child) => child.tagName === el.tagName)
+    : [el];
+  const attributes: Record<string, string> = {};
+  for (const name of ["role", "data-testid"]) {
+    const value = el.getAttribute(name);
+    if (value) attributes[name] = value;
+  }
+
+  return {
+    tagName: el.tagName,
+    id: el.id,
+    classList: Array.from(el.classList),
+    parent: parent && depth > 1 ? toElementLike(parent, depth - 1) : null,
+    indexOfType: sameTag.indexOf(el) + 1,
+    siblingsOfTypeCount: sameTag.length,
+    attributes
+  };
+}
+
+function visibleText(el: Element): string {
+  // Slice before collapsing: a hit on <body> would otherwise build a
+  // page-sized string just to throw all but 80 chars of it away.
+  const raw = el instanceof HTMLElement ? el.innerText : (el.textContent ?? "");
+  return raw.slice(0, 500).replace(/\s+/g, " ").trim().slice(0, MAX_CONTEXT_TEXT);
+}
+
+/**
+ * Marks the element an annotation landed on, so the main-world pass in
+ * `capture.ts` can read its React fiber: page expandos like `__reactFiber$...`
+ * are invisible from a content script's isolated world, DOM attributes are not.
+ */
+const HIT_ATTRIBUTE = "data-shotback-hit";
+
+function clearHitMarks(): void {
+  for (const marked of document.querySelectorAll(`[${HIT_ATTRIBUTE}]`)) {
+    marked.removeAttribute(HIT_ATTRIBUTE);
+  }
+}
+
+function describeElement(el: Element, scrollTop: number): ElementContext {
+  const rect = el.getBoundingClientRect();
+  const role = el.getAttribute("role");
+  const testId = el.getAttribute("data-testid");
+  const text = visibleText(el);
+
+  return {
+    cssPath: cssPath(toElementLike(el)),
+    tag: token(el.tagName.toLowerCase()),
+    ...(el.id ? { id: token(el.id) } : {}),
+    classes: Array.from(el.classList).slice(0, MAX_CONTEXT_CLASSES).map(token),
+    ...(role ? { role: token(role) } : {}),
+    ...(testId ? { testId: token(testId) } : {}),
+    ...(text ? { text } : {}),
+    // Page CSS px: the same space the stitched capture is measured in.
+    rect: {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top + scrollTop),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    }
+  };
+}
+
+/** The topmost real element at a viewport point, ignoring shotback's own DOM. */
+function describeAt(x: number, y: number, scrollTop: number, index: number): ElementContext | null {
+  const el = document
+    .elementsFromPoint(x, y)
+    .find(
+      (candidate) => candidate.tagName !== "STYLE" && !candidate.closest("[data-shotback-overlay]")
+    );
+  if (!el) return null;
+
+  // The main-world pass reads the fiber off this element; see capture.ts.
+  el.setAttribute(HIT_ATTRIBUTE, String(index));
+  return describeElement(el, scrollTop);
+}
+
+/**
+ * Describe the element under each stitched-page point. Points come in page CSS
+ * px, so the capture scroller is moved to bring each one into view - quietly:
+ * no notice, no scrollbar hiding, and the original scroll position restored in
+ * a `finally`. The point is centred in the viewport rather than parked at its
+ * top edge, so a sticky header cannot answer for the element underneath it.
+ */
+function inspectPoints(points: Array<{ x: number; y: number }>): Array<ElementContext | null> {
+  // A capture owns the scroll position while it runs; never fight it.
+  if (captureOverlay) return points.map(() => null);
+
+  // `scroller` is cleared when a capture finishes (and by re-injection), so
+  // resolve it again here rather than assuming the capture just ran.
+  const target = scroller ?? findScroller();
+  const scrollTopOf = (): number => (target ? target.scrollTop : window.scrollY);
+  const scrollerTop = target ? Math.max(0, Math.round(target.getBoundingClientRect().top)) : 0;
+  const viewportHeight = target ? target.clientHeight : window.innerHeight;
+  const maxScroll = target
+    ? target.scrollHeight - target.clientHeight
+    : Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0) -
+      window.innerHeight;
+  const originalTop = scrollTopOf();
+  clearHitMarks();
+
+  try {
+    return points.map((point, index) => {
+      const wanted = clamp(point.y - scrollerTop - viewportHeight / 2, 0, maxScroll);
+      (target ?? window).scrollTo({ top: wanted, behavior: "instant" });
+      const scrollTop = scrollTopOf();
+      return describeAt(point.x, point.y - scrollTop, scrollTop, index);
+    });
+  } finally {
+    (target ?? window).scrollTo({ top: originalTop, behavior: "instant" });
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SB_CAPTURE_BEGIN") {
     ensureCaptureOverlay().style.display = "flex";
@@ -179,6 +312,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     showScrollbars();
     removeCaptureOverlay();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "SB_INSPECT_POINTS") {
+    const points = Array.isArray(message.points) ? message.points : [];
+    // The URL is read here, after the hit test, so the editor can tell that the
+    // contexts describe the page it captured and not one navigated to since.
+    sendResponse({ contexts: inspectPoints(points), pageUrl: window.location.href });
     return true;
   }
 

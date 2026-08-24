@@ -34,6 +34,18 @@ export function pinAnchor(annotation: Annotation): { x: number; y: number } {
 }
 
 /**
+ * The point an annotation means, for mapping it back onto the live page: the
+ * centre of a box (what it frames), the tail of an arrow and the start of a
+ * text label (where their pin sits, which is what they point at).
+ */
+export function inspectAnchor(annotation: Annotation): { x: number; y: number } {
+  if (annotation.tool === "box") {
+    return { x: annotation.x + annotation.width / 2, y: annotation.y + annotation.height / 2 };
+  }
+  return pinAnchor(annotation);
+}
+
+/**
  * Human-readable position of an annotation in image px plus % of page, for
  * the prompt's per-annotation line. Pure so it can be unit tested apart from
  * the builders that call it.

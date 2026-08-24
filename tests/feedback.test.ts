@@ -65,6 +65,13 @@ const environment = {
 
 const image = { width: 1000, height: 500 };
 
+const elementContext = {
+  cssPath: "#app > section.hero > button.cta",
+  tag: "button",
+  classes: ["cta"],
+  rect: { x: 200, y: 184, width: 200, height: 120 }
+};
+
 const environmentBlock = [
   "Environment:",
   "- Page title: Acme Dashboard",
@@ -195,6 +202,46 @@ describe("buildExternalLlmPrompt", () => {
     expect(prompt).toContain("2. [box] second");
   });
 
+  it("names the element under each annotation when a context was captured", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [
+        { ...box("fix padding"), context: elementContext },
+        {
+          ...arrow("point here"),
+          context: { ...elementContext, component: ["PricingCard", "Page"] }
+        },
+        text("Label")
+      ],
+      image
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px -> #app > section.hero > button.cta in <PricingCard > Page>",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("names the element even when no image size is given", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [{ ...box("fix padding"), context: elementContext }]
+    });
+
+    expect(prompt).toContain("1. [box] fix padding -> #app > section.hero > button.cta");
+  });
+
   it("appends per-annotation geometry when an image size is given", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test/page",
@@ -254,6 +301,22 @@ describe("buildClaudeCodePrompt", () => {
     expect(prompt).toContain("Page URL: https://example.test/page");
     expect(prompt).toContain("General feedback context: looks off");
     expect(prompt).toContain("1. [box] fix padding");
+  });
+
+  it("names the element under each annotation when a context was captured", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [
+        { ...box("fix padding"), context: { ...elementContext, component: ["PricingCard"] } }
+      ],
+      image
+    });
+
+    expect(prompt).toContain(
+      "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page] -> #app > section.hero > button.cta in <PricingCard>"
+    );
   });
 
   it("renders the environment block after the page URL when one is captured", () => {

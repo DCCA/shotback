@@ -7,6 +7,8 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Locator,
+  type Page,
   type Worker as ServiceWorker
 } from "@playwright/test";
 
@@ -34,12 +36,23 @@ const BLOCKS = Array.from(
   (_, i) => `<div style="height:300px;background:hsl(${(i * 37) % 360},70%,60%)"></div>`
 ).join("");
 
+// A real, identifiable control to annotate: absolutely positioned so it sits
+// over a colour block without changing the page height the capture assertions
+// depend on, and clear of the sampled columns (x=20 and the right edge). The
+// inline script hangs a React-shaped fiber off it exactly the way React does
+// (a page expando), so the main-world component pass has something to find.
+const CTA =
+  `<div id="app" style="position:absolute;top:120px;left:200px"><section class="hero"><button class="cta" data-testid="buy" style="width:200px;height:120px;font-size:20px">Buy now</button></section></div>` +
+  `<script>document.querySelector("button.cta")["__reactFiber$e2e"] = ` +
+  `{ type: "button", return: { type: { name: "PricingCard" }, return: ` +
+  `{ type: "div", return: { type: { displayName: "Page" }, return: null } } } };</script>`;
+
 const CAPTURE_PAGES: Record<string, string> = {
   // The document itself scrolls, but with `scroll-behavior: smooth` - an
   // animated scroll must not be captured mid-flight.
-  smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0">${BLOCKS}</body></html>`,
+  smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0;position:relative">${BLOCKS}${CTA}</body></html>`,
   // SPA shell: the document does not scroll at all, an inner element does.
-  inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto">${BLOCKS}</div></body></html>`
+  inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto;position:relative">${BLOCKS}${CTA}</div></body></html>`
 };
 
 let ctx: BrowserContext;
@@ -106,6 +119,67 @@ async function send(message: Record<string, unknown>): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`content script never received ${JSON.stringify(message)}`);
+}
+
+/**
+ * Copy the cloud-LLM prompt. Only the clipboard read is worth polling
+ * (`readClipboard` below) - each click of this button also downloads a PNG.
+ */
+async function copyCloudPrompt(editor: Page): Promise<void> {
+  await editor.getByRole("button", { name: "Prepare for Cloud LLM" }).click();
+  // The copy runs async after the click; wait for the success status before
+  // reading the clipboard, or the read can race the write.
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText("Prompt copied");
+}
+
+const readClipboard = (editor: Page): Promise<string> =>
+  editor.evaluate(async () => navigator.clipboard.readText());
+
+/**
+ * The editor stamps `data-sb-inspect-gen` on its body every time an inspection
+ * writes contexts back (a test hook, set in `refreshContexts`). Waiting for it
+ * to move past the value read before a gesture is what makes "the prompt names
+ * the element" deterministic instead of a race with the round trip.
+ */
+const inspectGen = (editor: Page): Promise<number> =>
+  editor.evaluate(() => Number(document.body.dataset.sbInspectGen ?? 0));
+
+async function waitForInspection(editor: Page, previous: number): Promise<void> {
+  await expect.poll(() => inspectGen(editor), { timeout: 10_000 }).toBeGreaterThan(previous);
+}
+
+/**
+ * Draw a box over the fixture's CTA button. `top` is the header band above the
+ * scroller on the stitched image, so the same call works for the document
+ * scroller (0) and the inner one (64). Returns the button centre on screen.
+ */
+async function boxOverCta(
+  editor: Page,
+  img: Locator,
+  top: number
+): Promise<{ x: number; y: number }> {
+  const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+  const shown = (await img.boundingBox())!;
+  // Stitched image px -> editor screen px (the image is fit to the pane).
+  const k = shown.width / natural;
+  const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
+
+  // Creating an annotation switches the editor into move mode, so either
+  // caller can arrive here in either mode.
+  await editor.getByRole("combobox", { name: "Interaction" }).click();
+  await editor.getByRole("option", { name: "Draw New" }).click();
+  await editor.getByRole("combobox", { name: "Tool" }).click();
+  await editor.getByRole("option", { name: "Box" }).click();
+
+  const from = onScreen(250, top + 150);
+  const to = onScreen(350, top + 215);
+  await editor.mouse.move(from.x, from.y);
+  await editor.mouse.down();
+  await editor.mouse.move(to.x, to.y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.keyboard.press("Escape");
+
+  return onScreen(300, top + 182);
 }
 
 test("extension loads with no popup and the downloads permission", async () => {
@@ -230,12 +304,16 @@ for (const [name, headerHeight] of [
       );
       expect(type).toBe("image/png");
 
+      // A second box, over the CTA: with the document scrolling, the element
+      // under an annotation must be named just as it is for an inner scroller.
+      const inspectedBefore = await inspectGen(editor);
+      await boxOverCta(editor, img, headerHeight);
+      await expect(editor.locator("ol li")).toHaveCount(2);
+      await waitForInspection(editor, inspectedBefore);
+
       // The cloud-LLM prompt carries the captured tab's environment.
-      await editor.getByRole("button", { name: "Prepare for Cloud LLM" }).click();
-      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
-        "Prompt copied"
-      );
-      const prompt = await editor.evaluate(async () => navigator.clipboard.readText());
+      await copyCloudPrompt(editor);
+      const prompt = await readClipboard(editor);
       expect(prompt).toContain(`Viewport: ${viewport.width}x${viewport.height}`);
       expect(prompt).toContain("Scroller: document");
       // The drawn box's line carries its geometry (px + % of page) so an
@@ -243,6 +321,7 @@ for (const [name, headerHeight] of [
       expect(prompt).toMatch(
         /1\. \[box\] Chart - at \(\d+, \d+\) size \d+x\d+ px \[\d+%, \d+% of page\]/
       );
+      expect(prompt).toContain("-> #app > section.hero > button.cta");
     }
 
     if (name === "inner") {
@@ -383,6 +462,31 @@ for (const [name, headerHeight] of [
       await expect(rect).toHaveAttribute("x", originalX);
       await editor.keyboard.press("Control+Shift+z");
       await expect(rows).toHaveCount(2);
+
+      // Per-annotation DOM context: a box drawn over the CTA is mapped back to
+      // the live tab, so the copied prompt names the element it covers - and
+      // the component chain comes from the page's own JavaScript world.
+      const inspectedBefore = await inspectGen(editor);
+      const centre = await boxOverCta(editor, img, headerHeight);
+      await expect(rows).toHaveCount(3);
+      await waitForInspection(editor, inspectedBefore);
+
+      await copyCloudPrompt(editor);
+      expect(await readClipboard(editor)).toContain(
+        "-> #app > section.hero > button.cta in <PricingCard > Page>"
+      );
+
+      // The context is derived data re-read on every commit, so it must still
+      // be there after the box is moved (while it still covers the button).
+      // Drawing an annotation already switched the editor into move mode.
+      const inspectedBeforeMove = await inspectGen(editor);
+      await editor.mouse.move(centre.x, centre.y);
+      await editor.mouse.down();
+      await editor.mouse.move(centre.x + 20, centre.y, { steps: 5 });
+      await editor.mouse.up();
+      await waitForInspection(editor, inspectedBeforeMove);
+      await copyCloudPrompt(editor);
+      expect(await readClipboard(editor)).toContain("button.cta");
     }
 
     await editor.close();

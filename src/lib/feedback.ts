@@ -1,6 +1,6 @@
 import type { CaptureEnvironment } from "@/lib/capture";
 import { describeGeometry, numberAnnotations } from "@/lib/numbering";
-import type { Annotation } from "@/types/annotation";
+import type { Annotation, ElementContext } from "@/types/annotation";
 
 /** Short, human-readable summary of a single annotation for timeline rows. */
 export function annotationSummary(annotation: Annotation): string {
@@ -17,12 +17,19 @@ export function noteText(annotation: Annotation): string {
   return annotation.comment?.trim() || "(no comment)";
 }
 
+/** The element an annotation sits on: ` -> css.path in <Component > Chain>`. */
+function describeContext(context: ElementContext): string {
+  const component = context.component?.length ? ` in <${context.component.join(" > ")}>` : "";
+  return ` -> ${context.cssPath}${component}`;
+}
+
 /**
  * Numbered, tool-tagged list of area comments shared by the prompt builders.
  * The numbers come from `numberAnnotations`, so they match the pins drawn on
  * the image and the numbers shown in the comment timeline. When an image size
  * is given, each line also carries the annotation's geometry (px and % of
- * page) so an agent can locate it without opening the picture.
+ * page) so an agent can locate it without opening the picture, and when the
+ * annotation was mapped back to a live element, the element that names it.
  */
 function formatAreaComments(
   annotations: Annotation[],
@@ -30,8 +37,9 @@ function formatAreaComments(
 ): string {
   const comments = numberAnnotations(annotations)
     .map(({ n, annotation }) => {
-      const line = `${n}. [${annotation.tool}] ${noteText(annotation)}`;
-      return image ? `${line} - ${describeGeometry(annotation, image)}` : line;
+      const note = `${n}. [${annotation.tool}] ${noteText(annotation)}`;
+      const line = image ? `${note} - ${describeGeometry(annotation, image)}` : note;
+      return annotation.context ? `${line}${describeContext(annotation.context)}` : line;
     })
     .join("\n");
 

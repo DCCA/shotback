@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCrop, clampCrop, MIN_CROP_SIZE, type Rect } from "../src/lib/crop";
+import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "../src/lib/crop";
 import type {
   ArrowAnnotation,
   BoxAnnotation,
@@ -249,6 +249,43 @@ describe("clampCrop", () => {
       y: 0,
       width: 800,
       height: 600
+    });
+  });
+});
+
+describe("cropViewMetrics", () => {
+  const image = { width: 1000, height: 2000 };
+
+  it("is a no-op window when the view is the whole image", () => {
+    expect(cropViewMetrics({ x: 0, y: 0, ...image }, image)).toEqual({
+      offsetXPercent: -0,
+      offsetYPercent: -0,
+      widthPercent: 100,
+      aspectRatio: 0.5
+    });
+  });
+
+  /**
+   * The inner wrapper is absolutely positioned, so its `top` percentage
+   * resolves against the window's HEIGHT and its `left` against the window's
+   * WIDTH. Both therefore divide by their own axis of the view, never by the
+   * width alone - the bug this test exists to pin down.
+   */
+  it("offsets the image by the crop origin on each axis independently", () => {
+    expect(cropViewMetrics({ x: 250, y: 800, width: 500, height: 400 }, image)).toEqual({
+      offsetXPercent: -50,
+      offsetYPercent: -200,
+      widthPercent: 200,
+      aspectRatio: 1.25
+    });
+  });
+
+  it("treats a degenerate view as the whole image rather than dividing by zero", () => {
+    expect(cropViewMetrics({ x: 10, y: 10, width: 0, height: 0 }, image)).toEqual({
+      offsetXPercent: -0,
+      offsetYPercent: -0,
+      widthPercent: 100,
+      aspectRatio: 0.5
     });
   });
 });

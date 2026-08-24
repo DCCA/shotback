@@ -100,3 +100,50 @@ export function applyCrop(annotations: Annotation[], crop: Rect): Annotation[] {
 
   return cropped;
 }
+
+/** How the canvas lays a window over the full-size image to show one region. */
+export interface CropViewMetrics {
+  /** Left offset of the image wrapper, as a percentage of the window's width. */
+  offsetXPercent: number;
+  /** Top offset of the image wrapper, as a percentage of the window's height. */
+  offsetYPercent: number;
+  /** Width of the image wrapper, as a percentage of the window's width. */
+  widthPercent: number;
+  /** The window's own shape, so it can size itself off a fluid width. */
+  aspectRatio: number;
+}
+
+/**
+ * The geometry that turns "show only this region" into CSS, with nothing
+ * measured: a window box of the view's aspect ratio clipping an image wrapper
+ * that is scaled and shifted purely in percentages of that box.
+ *
+ * The wrapper is absolutely positioned, so its `left` percentage resolves
+ * against the window's width and its `top` percentage against the window's
+ * height - which is why each offset divides by its own axis of the view rather
+ * than by the width for both. Because every number is a ratio, the same values
+ * hold whether the window's width is fluid (fit-width) or fixed to the crop
+ * (1:1), so one mapping serves both zoom modes.
+ */
+export function cropViewMetrics(
+  view: Rect,
+  image: { width: number; height: number }
+): CropViewMetrics {
+  // A zero-sided view has no scale to map to, so show the whole image rather
+  // than divide by zero. Reachable before a capture has reported its size.
+  if (view.width <= 0 || view.height <= 0) {
+    return {
+      offsetXPercent: -0,
+      offsetYPercent: -0,
+      widthPercent: 100,
+      aspectRatio: image.height > 0 ? image.width / image.height : 1
+    };
+  }
+
+  return {
+    offsetXPercent: -(view.x / view.width) * 100,
+    offsetYPercent: -(view.y / view.height) * 100,
+    widthPercent: (image.width / view.width) * 100,
+    aspectRatio: view.width / view.height
+  };
+}

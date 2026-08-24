@@ -1,8 +1,10 @@
 import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { moveAnnotation, uid } from "@/editor/annotation-geometry";
+import { StatusToast } from "@/editor/status-toast";
 import type { EditorState } from "@/editor/use-editor-state";
 import { arrowHeadPoints } from "@/lib/annotate";
 import {
@@ -12,7 +14,7 @@ import {
   getBoxResizeCursor,
   type BoxResizeHandle
 } from "@/lib/boxResize";
-import { clampCrop, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
+import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
 import { placeInlineEditor } from "@/lib/editor-placement";
 import {
   annotationBounds,
@@ -55,6 +57,14 @@ interface ResizeState {
   box: Pick<BoxAnnotation, "x" | "y" | "width" | "height">;
 }
 
+/** The same gesture for the crop marquee, which is a rect but not an annotation. */
+interface CropResizeState {
+  handle: BoxResizeHandle;
+  pointerX: number;
+  pointerY: number;
+  rect: Rect;
+}
+
 // Base sizes at canvasScale(1200) === 1; scaled by the image width the same
 // way pinRadius is, so they stay a readable on-screen size in fit mode
 // instead of shrinking along with a wide capture.
@@ -90,8 +100,12 @@ export function AnnotationCanvas({
     setSelectedId,
     tool,
     crop,
+    setCrop,
     cropDraft,
     setCropDraft,
+    status,
+    setStatus,
+    progress,
     interactionMode,
     setInteractionMode,
     color,
@@ -108,6 +122,7 @@ export function AnnotationCanvas({
   const [draft, setDraft] = useState<DraftShape | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
+  const [cropResize, setCropResize] = useState<CropResizeState | null>(null);
   // A pointer-down on an annotation or a resize handle starts a gesture but is
   // also just a selection click; only an actual move/resize is worth committing.
   const gestureMovedRef = useRef(false);
@@ -138,9 +153,11 @@ export function AnnotationCanvas({
   // surface, so annotations must not swallow a pointer-down that starts a
   // region on top of one - a secret has to be coverable wherever it sits.
   const drawingRegion = interactionMode === "draw" && (tool === "crop" || tool === "redact");
-  // The region the canvas dims around: a marquee being dragged, one waiting for
-  // Apply, or the crop already in force (so what the exports will show stays visible).
-  const cropRegion: Rect | null = draft && tool === "crop" ? draftRect(draft) : (cropDraft ?? crop);
+  // The region the canvas dims around: a marquee being dragged, or one waiting
+  // for Apply. An *applied* crop is not dimmed - the canvas simply shows the
+  // crop and nothing else (see `view` below), which is the whole point: what
+  // is on screen is what the exports will contain.
+  const cropRegion: Rect | null = draft && tool === "crop" ? draftRect(draft) : cropDraft;
   const shade = cropRegion
     ? {
         left: Math.min(Math.max(cropRegion.x, 0), imageSize.width),
@@ -169,6 +186,51 @@ export function AnnotationCanvas({
   const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
   const hatchSize = BASE_REDACT_HATCH_SIZE * scale;
 
+  // The region of the capture the canvas actually shows. With no crop that is
+  // the whole image, so the uncropped canvas is byte-for-byte the layout it
+  // always was; with one, the window below clips to exactly what every export
+  // will contain. The image and the SVG overlay are never resized by this -
+  // annotations keep their capture coordinates, and the overlay keeps covering
+  // the image exactly, which is what pointer hit-testing depends on.
+  const view: Rect = crop ?? { x: 0, y: 0, width: imageSize.width, height: imageSize.height };
+  const viewMetrics = cropViewMetrics(view, imageSize);
+  const cropWindowStyle: React.CSSProperties =
+    zoom === "fit"
+      ? // "Shrink to fit, never upscale": the window is fluid up to the view's
+        // own pixel width, and its aspect ratio gives it a height with nothing
+        // measured in JavaScript.
+        { width: "100%", maxWidth: view.width, aspectRatio: viewMetrics.aspectRatio }
+      : { width: view.width, height: view.height };
+  const imageWrapperStyle: React.CSSProperties =
+    zoom === "fit"
+      ? {
+          left: `${viewMetrics.offsetXPercent}%`,
+          top: `${viewMetrics.offsetYPercent}%`,
+          width: `${viewMetrics.widthPercent}%`
+        }
+      : { left: -view.x, top: -view.y };
+
+  // The marquee's bottom-left corner as a fraction of the window, which is
+  // where the floating Apply/Cancel bar anchors. Deliberately HTML over the
+  // window rather than a `foreignObject` inside the SVG: content in the SVG is
+  // sized in *image* px, so at fit-width the bar shrank along with the capture
+  // and landed well under a readable (and tappable) size.
+  const cropControlsAnchor =
+    cropDraft && !draft
+      ? {
+          left: `${((cropDraft.x - view.x) / view.width) * 100}%`,
+          top: `${((cropDraft.y + cropDraft.height - view.y) / view.height) * 100}%`
+        }
+      : null;
+
+  // What an applied crop leaves out. The exports renumber the survivors, so
+  // saying this plainly is also the answer to "why is pin 3 numbered 2 in the
+  // PNG". Counted over numbered annotations only: a redaction the crop drops
+  // hides nothing, because the crop already removed those pixels.
+  const excludedByCrop = crop
+    ? numberAnnotations(annotations).length - numberAnnotations(applyCrop(annotations, crop)).length
+    : 0;
+
   /**
    * The diagonal hatch a redaction is previewed with. In user space so the
    * tiles line up with the region whatever the zoom, and coloured from the
@@ -186,11 +248,21 @@ export function AnnotationCanvas({
     </defs>
   );
 
-  const renderResizeHandles = (item: RectAnnotation): JSX.Element[] =>
+  /**
+   * The eight drag handles around a rect. Shared by a selected box/redaction
+   * and by the crop marquee, so a region is resized the same way whichever it
+   * is - and `applyBoxResizeDelta` stays the one place that geometry lives.
+   */
+  const renderHandles = (
+    rect: Rect,
+    strokeColor: string,
+    keyPrefix: string,
+    onDown: (handle: BoxResizeHandle) => (event: React.PointerEvent<SVGElement>) => void
+  ): JSX.Element[] =>
     BOX_RESIZE_HANDLES.map((handle) => {
-      const position = getBoxHandlePosition(item, handle);
+      const position = getBoxHandlePosition(rect, handle);
       return (
-        <g key={`${item.id}-${handle}`}>
+        <g key={`${keyPrefix}-${handle}`}>
           <rect
             x={position.x - resizeHandleHitSize / 2}
             y={position.y - resizeHandleHitSize / 2}
@@ -198,7 +270,7 @@ export function AnnotationCanvas({
             height={resizeHandleHitSize}
             fill="transparent"
             style={{ cursor: getBoxResizeCursor(handle) }}
-            onPointerDown={onResizeHandlePointerDown(item, handle)}
+            onPointerDown={onDown(handle)}
           />
           <rect
             x={position.x - resizeHandleSize / 2}
@@ -206,13 +278,16 @@ export function AnnotationCanvas({
             width={resizeHandleSize}
             height={resizeHandleSize}
             fill="white"
-            stroke={item.color}
+            stroke={strokeColor}
             strokeWidth="1.5"
             pointerEvents="none"
           />
         </g>
       );
     });
+
+  const renderResizeHandles = (item: RectAnnotation): JSX.Element[] =>
+    renderHandles(item, item.color, item.id, (handle) => onResizeHandlePointerDown(item, handle));
 
   const renderPin = (item: Annotation): JSX.Element => {
     const center = pinCenter(item, pinR, imageSize);
@@ -301,6 +376,7 @@ export function AnnotationCanvas({
         setDraft(null);
         setDrag(null);
         setResize(null);
+        setCropResize(null);
         return;
       }
 
@@ -430,7 +506,50 @@ export function AnnotationCanvas({
       });
     };
 
+  /**
+   * Drag one of the marquee's own handles. Same helper as an annotation box,
+   * clamped by `clampCrop` on the way into state so an edge drag can never
+   * leave a region the exports could not draw.
+   */
+  const onCropHandlePointerDown =
+    (handle: BoxResizeHandle) =>
+    (event: React.PointerEvent<SVGElement>): void => {
+      if (!cropDraft) return;
+      event.stopPropagation();
+      event.preventDefault();
+
+      const { x, y } = pointerPos(event);
+      setCropResize({ handle, pointerX: x, pointerY: y, rect: cropDraft });
+    };
+
   const onCanvasPointerMove = (event: React.PointerEvent<SVGSVGElement>): void => {
+    if (cropResize) {
+      const { x, y } = pointerPos(event);
+      const deltaX = x - cropResize.pointerX;
+      const deltaY = y - cropResize.pointerY;
+
+      if (deltaX === 0 && deltaY === 0) return;
+
+      const result = applyBoxResizeDelta({
+        box: cropResize.rect,
+        handle: cropResize.handle,
+        deltaX,
+        deltaY,
+        boundsWidth: imageSize.width,
+        boundsHeight: imageSize.height,
+        minSize: MIN_CROP_SIZE
+      });
+
+      setCropDraft(clampCrop(result.box, imageSize));
+      setCropResize({
+        handle: result.handle,
+        pointerX: x,
+        pointerY: y,
+        rect: result.box
+      });
+      return;
+    }
+
     if (resize) {
       const { x, y } = pointerPos(event);
       const deltaX = x - resize.pointerX;
@@ -485,6 +604,12 @@ export function AnnotationCanvas({
   };
 
   const onCanvasPointerUp = (): void => {
+    // A marquee resize is not an edit: no commit, no history entry.
+    if (cropResize) {
+      setCropResize(null);
+      return;
+    }
+
     if (resize) {
       setResize(null);
       if (gestureMovedRef.current) onCommit();
@@ -596,272 +721,354 @@ export function AnnotationCanvas({
   };
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-4">
+    // `relative` so the status toast and the crop chip float over the capture
+    // rather than pushing it around; the flex column is what lets the
+    // scrollport below take the pane's leftover height in the fixed shell.
+    <Card className="relative order-1 flex flex-col overflow-hidden lg:order-2 lg:min-h-0">
+      <StatusToast status={status} setStatus={setStatus} progress={progress} />
+
+      {/* An applied crop is stated where it is visible - over the canvas that
+          is now showing only that region - not in the sidebar's scroll flow. */}
+      {crop ? (
+        <div className="absolute left-4 top-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]">
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              Cropped to {crop.width}x{crop.height}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setCrop(null)}>
+              Clear
+            </Button>
+          </div>
+          {excludedByCrop > 0 ? (
+            <p className="m-0">
+              {excludedByCrop} annotation{excludedByCrop === 1 ? "" : "s"} outside the crop{" "}
+              {excludedByCrop === 1 ? "is" : "are"} excluded from exports
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <CardContent className="flex min-h-0 flex-1 flex-col p-4">
         {baseDataUrl ? (
-          // Outer div is the scrollport: fit mode never overflows it, actual
-          // mode (image wider than the pane) scrolls inside it, never the
-          // page body. Inner div sizes to the image's real rendered box -
-          // block/w-full in fit mode so the image's own w-full resolves
-          // against it, inline-block in actual mode so it shrink-wraps to
-          // the image's natural (possibly wider-than-pane) size. The SVG
-          // overlay's h-full/w-full is percentage-based against *this* box,
-          // so it must always match the image exactly or pointer math and
-          // hit-testing silently miss the part of the image past the pane.
+          // Three nested boxes, each with one job.
+          //
+          // `#capture-viewport` is the scrollport, and the only scroller for
+          // the capture: fit mode never overflows it, actual mode (image or
+          // crop wider than the pane) scrolls inside it, never the page body.
+          //
+          // The crop window clips to the region every export will contain -
+          // the whole image when nothing is cropped, so the uncropped canvas
+          // lays out exactly as it always did.
+          //
+          // The image wrapper is positioned inside that window by
+          // `cropViewMetrics`, in percentages only, and is the box the SVG
+          // overlay stretches to. The overlay must keep covering the image
+          // exactly - not the window - or pointer math and hit-testing
+          // silently miss whatever the window is currently clipping.
           <div
             id="capture-viewport"
-            className="w-full overflow-auto rounded-lg border border-border bg-card"
+            className="min-h-0 w-full flex-1 overflow-auto rounded-lg border border-border bg-card"
           >
             <div
-              className={`relative ${zoom === "fit" ? "block w-full" : "inline-block align-bottom"}`}
+              id="capture-window"
+              // The applied crop, in image px, for the e2e - the canvas no
+              // longer draws a marquee once a crop is in force.
+              data-crop={crop ? `${crop.x},${crop.y},${crop.width},${crop.height}` : undefined}
+              // `mx-auto` only bites once the window is narrower than the pane
+              // (a crop, or a capture narrower than the editor): it centres the
+              // region instead of pinning it to the left with dead space beside
+              // it. Auto margins collapse to 0 when the content overflows, so
+              // the 1:1 scroll path is untouched.
+              className="relative mx-auto overflow-hidden"
+              style={cropWindowStyle}
             >
-              <img
-                id="capture-image"
-                src={baseDataUrl}
-                alt="Captured page"
-                decoding="async"
-                className={
-                  zoom === "fit" ? "block h-auto w-full max-w-full" : "block h-auto max-w-none"
-                }
-                // Fit mode is "shrink to fit, never upscale": a capture
-                // narrower than the pane should render at its real size, not
-                // stretch to fill it.
-                style={zoom === "fit" ? { maxWidth: imageSize.width } : undefined}
-                onLoad={(event) => {
-                  const img = event.currentTarget;
-                  setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-                }}
-              />
-              <svg
-                ref={svgRef}
-                role="group"
-                aria-label="Annotation canvas. Drawing requires a pointer; annotations can be managed from the comment timeline."
-                className={`absolute inset-0 h-full w-full ${
-                  interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
-                }`}
-                viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-                onPointerDown={onCanvasPointerDown}
-                onPointerMove={onCanvasPointerMove}
-                onPointerUp={onCanvasPointerUp}
-                // Ending the gesture on pointer-leave too is what guarantees no
-                // draft/drag/resize survives the pointer moving to the sidebar.
-                onPointerLeave={onCanvasPointerUp}
-              >
-                {annotations.map((item) => {
-                  const isSelected = selectedId === item.id;
+              <div className="absolute" style={imageWrapperStyle}>
+                <img
+                  id="capture-image"
+                  src={baseDataUrl}
+                  alt="Captured page"
+                  decoding="async"
+                  // The "shrink to fit, never upscale" cap now lives on the
+                  // window's own `maxWidth` (the view's pixel width), so the
+                  // image simply fills whatever the wrapper resolved to.
+                  className={zoom === "fit" ? "block h-auto w-full" : "block h-auto max-w-none"}
+                  onLoad={(event) => {
+                    const img = event.currentTarget;
+                    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+                  }}
+                />
+                <svg
+                  ref={svgRef}
+                  role="group"
+                  aria-label="Annotation canvas. Drawing requires a pointer; annotations can be managed from the comment timeline."
+                  className={`absolute inset-0 h-full w-full ${
+                    interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
+                  }`}
+                  viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                  onPointerDown={onCanvasPointerDown}
+                  onPointerMove={onCanvasPointerMove}
+                  onPointerUp={onCanvasPointerUp}
+                  // Ending the gesture on pointer-leave too is what guarantees no
+                  // draft/drag/resize survives the pointer moving to the sidebar.
+                  onPointerLeave={onCanvasPointerUp}
+                >
+                  {annotations.map((item) => {
+                    const isSelected = selectedId === item.id;
 
-                  if (item.tool === "box") {
+                    if (item.tool === "box") {
+                      return (
+                        <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                          <rect
+                            x={item.x}
+                            y={item.y}
+                            width={item.width}
+                            height={item.height}
+                            fill="transparent"
+                            stroke={item.color}
+                            strokeWidth={isSelected ? "4" : "3"}
+                            strokeDasharray={isSelected ? "8 5" : undefined}
+                            pointerEvents="all"
+                          />
+                          {renderPin(item)}
+                          {isSelected && interactionMode === "move"
+                            ? renderResizeHandles(item)
+                            : null}
+                        </g>
+                      );
+                    }
+
+                    // A redaction: hatched so it reads as "covered" without
+                    // hiding what it covers from the person who drew it (the
+                    // pixels only go for good in the export). No pin, no
+                    // comment editor - it carries no note by design.
+                    if (item.tool === "redact") {
+                      const patternId = `redact-hatch-${item.id}`;
+                      return (
+                        <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                          {hatchPattern(patternId, item.color)}
+                          <rect
+                            x={item.x}
+                            y={item.y}
+                            width={item.width}
+                            height={item.height}
+                            fill={`url(#${patternId})`}
+                            fillOpacity="0.35"
+                            stroke={item.color}
+                            strokeWidth={isSelected ? "4" : "3"}
+                            strokeDasharray={isSelected ? "8 5" : undefined}
+                            pointerEvents="all"
+                          />
+                          {isSelected && interactionMode === "move"
+                            ? renderResizeHandles(item)
+                            : null}
+                        </g>
+                      );
+                    }
+
+                    if (item.tool === "arrow") {
+                      return (
+                        <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                          <line
+                            x1={item.x1}
+                            y1={item.y1}
+                            x2={item.x2}
+                            y2={item.y2}
+                            stroke="transparent"
+                            strokeWidth="14"
+                          />
+                          <line
+                            x1={item.x1}
+                            y1={item.y1}
+                            x2={item.x2}
+                            y2={item.y2}
+                            stroke={item.color}
+                            strokeWidth={isSelected ? "4" : "3"}
+                            strokeDasharray={isSelected ? "8 5" : undefined}
+                            pointerEvents="none"
+                          />
+                          <polygon
+                            points={arrowHeadPoints(item.x1, item.y1, item.x2, item.y2)
+                              .map((point) => `${point.x},${point.y}`)
+                              .join(" ")}
+                            fill={item.color}
+                            pointerEvents="none"
+                          />
+                          {renderPin(item)}
+                        </g>
+                      );
+                    }
+
                     return (
                       <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                        <rect
-                          x={item.x}
-                          y={item.y}
-                          width={item.width}
-                          height={item.height}
-                          fill="transparent"
-                          stroke={item.color}
-                          strokeWidth={isSelected ? "4" : "3"}
-                          strokeDasharray={isSelected ? "8 5" : undefined}
-                          pointerEvents="all"
-                        />
-                        {renderPin(item)}
-                        {isSelected && interactionMode === "move"
-                          ? renderResizeHandles(item)
-                          : null}
-                      </g>
-                    );
-                  }
-
-                  // A redaction: hatched so it reads as "covered" without
-                  // hiding what it covers from the person who drew it (the
-                  // pixels only go for good in the export). No pin, no
-                  // comment editor - it carries no note by design.
-                  if (item.tool === "redact") {
-                    const patternId = `redact-hatch-${item.id}`;
-                    return (
-                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                        {hatchPattern(patternId, item.color)}
-                        <rect
-                          x={item.x}
-                          y={item.y}
-                          width={item.width}
-                          height={item.height}
-                          fill={`url(#${patternId})`}
-                          fillOpacity="0.35"
-                          stroke={item.color}
-                          strokeWidth={isSelected ? "4" : "3"}
-                          strokeDasharray={isSelected ? "8 5" : undefined}
-                          pointerEvents="all"
-                        />
-                        {isSelected && interactionMode === "move"
-                          ? renderResizeHandles(item)
-                          : null}
-                      </g>
-                    );
-                  }
-
-                  if (item.tool === "arrow") {
-                    return (
-                      <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                        <line
-                          x1={item.x1}
-                          y1={item.y1}
-                          x2={item.x2}
-                          y2={item.y2}
-                          stroke="transparent"
-                          strokeWidth="14"
-                        />
-                        <line
-                          x1={item.x1}
-                          y1={item.y1}
-                          x2={item.x2}
-                          y2={item.y2}
-                          stroke={item.color}
-                          strokeWidth={isSelected ? "4" : "3"}
-                          strokeDasharray={isSelected ? "8 5" : undefined}
-                          pointerEvents="none"
-                        />
-                        <polygon
-                          points={arrowHeadPoints(item.x1, item.y1, item.x2, item.y2)
-                            .map((point) => `${point.x},${point.y}`)
-                            .join(" ")}
-                          fill={item.color}
-                          pointerEvents="none"
-                        />
-                        {renderPin(item)}
-                      </g>
-                    );
-                  }
-
-                  return (
-                    <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                      {/* The pin itself is not clickable, so an empty text
+                        {/* The pin itself is not clickable, so an empty text
                         annotation still has a hit area to select and drag - on
                         the pin's own (clamped) centre, not the raw anchor. */}
-                      <circle
-                        cx={pinCenter(item, pinR, imageSize).x}
-                        cy={pinCenter(item, pinR, imageSize).y}
-                        r={pinR}
-                        fill="transparent"
-                        pointerEvents="all"
-                      />
-                      <text
-                        // Offset past the pin so the number never covers the text.
-                        x={item.x + pinR * 1.4}
-                        y={item.y}
-                        fill={item.color}
-                        fontSize={pinR * 0.9}
-                        fontWeight={isSelected ? "700" : "500"}
-                      >
-                        {item.text}
-                      </text>
-                      {renderPin(item)}
-                    </g>
-                  );
-                })}
+                        <circle
+                          cx={pinCenter(item, pinR, imageSize).x}
+                          cy={pinCenter(item, pinR, imageSize).y}
+                          r={pinR}
+                          fill="transparent"
+                          pointerEvents="all"
+                        />
+                        <text
+                          // Offset past the pin so the number never covers the text.
+                          x={item.x + pinR * 1.4}
+                          y={item.y}
+                          fill={item.color}
+                          fontSize={pinR * 0.9}
+                          fontWeight={isSelected ? "700" : "500"}
+                        >
+                          {item.text}
+                        </text>
+                        {renderPin(item)}
+                      </g>
+                    );
+                  })}
 
-                {selectedAnnotation &&
-                selectedAnnotation.tool !== "redact" &&
-                inlineEditorPosition ? (
-                  <foreignObject
-                    x={inlineEditorPosition.x}
-                    y={inlineEditorPosition.y}
-                    width={inlineEditorSize.width}
-                    height={inlineEditorSize.height}
-                    onPointerDown={(event) => event.stopPropagation()}
-                  >
-                    <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
-                      <textarea
-                        ref={inlineCommentRef}
-                        className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-                        style={{ fontSize: `${inlineEditorFontSize}px` }}
-                        value={selectedNote}
-                        onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                        onBlur={commitNoteIfDirty}
-                        placeholder="Add comment for selected area"
-                        rows={3}
-                      />
-                    </div>
-                  </foreignObject>
-                ) : null}
+                  {selectedAnnotation &&
+                  selectedAnnotation.tool !== "redact" &&
+                  inlineEditorPosition ? (
+                    <foreignObject
+                      x={inlineEditorPosition.x}
+                      y={inlineEditorPosition.y}
+                      width={inlineEditorSize.width}
+                      height={inlineEditorSize.height}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">
+                        <textarea
+                          ref={inlineCommentRef}
+                          className="h-full w-full resize-none rounded-md border border-input bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                          style={{ fontSize: `${inlineEditorFontSize}px` }}
+                          value={selectedNote}
+                          onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
+                          onBlur={commitNoteIfDirty}
+                          placeholder="Add comment for selected area"
+                          rows={3}
+                        />
+                      </div>
+                    </foreignObject>
+                  ) : null}
 
-                {draft && tool === "box" ? (
-                  <rect
-                    x={Math.min(draft.xStart, draft.xCurrent)}
-                    y={Math.min(draft.yStart, draft.yCurrent)}
-                    width={Math.abs(draft.xCurrent - draft.xStart)}
-                    height={Math.abs(draft.yCurrent - draft.yStart)}
-                    fill="transparent"
-                    stroke={color}
-                    strokeWidth="2"
-                    strokeDasharray="6 4"
-                  />
-                ) : null}
-
-                {draft && tool === "redact" ? (
-                  <g pointerEvents="none">
-                    {hatchPattern("redact-hatch-draft", color)}
+                  {draft && tool === "box" ? (
                     <rect
-                      {...draftRect(draft)}
-                      fill="url(#redact-hatch-draft)"
-                      fillOpacity="0.35"
+                      x={Math.min(draft.xStart, draft.xCurrent)}
+                      y={Math.min(draft.yStart, draft.yCurrent)}
+                      width={Math.abs(draft.xCurrent - draft.xStart)}
+                      height={Math.abs(draft.yCurrent - draft.yStart)}
+                      fill="transparent"
                       stroke={color}
                       strokeWidth="2"
                       strokeDasharray="6 4"
                     />
-                  </g>
-                ) : null}
+                  ) : null}
 
-                {draft && tool === "arrow" ? (
-                  <line
-                    x1={draft.xStart}
-                    y1={draft.yStart}
-                    x2={draft.xCurrent}
-                    y2={draft.yCurrent}
-                    stroke={color}
-                    strokeWidth="2"
-                    strokeDasharray="6 4"
-                  />
-                ) : null}
+                  {draft && tool === "redact" ? (
+                    <g pointerEvents="none">
+                      {hatchPattern("redact-hatch-draft", color)}
+                      <rect
+                        {...draftRect(draft)}
+                        fill="url(#redact-hatch-draft)"
+                        fillOpacity="0.35"
+                        stroke={color}
+                        strokeWidth="2"
+                        strokeDasharray="6 4"
+                      />
+                    </g>
+                  ) : null}
 
-                {/* The crop region: everything outside it dimmed, the region
+                  {draft && tool === "arrow" ? (
+                    <line
+                      x1={draft.xStart}
+                      y1={draft.yStart}
+                      x2={draft.xCurrent}
+                      y2={draft.yCurrent}
+                      stroke={color}
+                      strokeWidth="2"
+                      strokeDasharray="6 4"
+                    />
+                  ) : null}
+
+                  {/* The crop region: everything outside it dimmed, the region
                     itself outlined in dark-under-dashed-white so the edge reads
                     on a light and a dark capture alike. Not an annotation - no
                     pin, no timeline row, no history entry. Purely decorative,
                     so it never takes a pointer event. */}
-                {shade && outline ? (
-                  <g pointerEvents="none" fill="rgba(15,23,42,0.55)">
-                    <rect x={0} y={0} width={imageSize.width} height={shade.top} />
-                    <rect
-                      x={0}
-                      y={shade.bottom}
-                      width={imageSize.width}
-                      height={Math.max(0, imageSize.height - shade.bottom)}
-                    />
-                    <rect x={0} y={shade.top} width={shade.left} height={outline.height} />
-                    <rect
-                      x={shade.right}
-                      y={shade.top}
-                      width={Math.max(0, imageSize.width - shade.right)}
-                      height={outline.height}
-                    />
-                    <rect
-                      id="crop-region"
-                      {...outline}
-                      fill="none"
-                      stroke="rgba(15,23,42,0.9)"
-                      strokeWidth="3"
-                    />
-                    <rect
-                      {...outline}
-                      fill="none"
-                      stroke="#ffffff"
-                      strokeWidth="2"
-                      strokeDasharray="8 6"
-                    />
-                  </g>
-                ) : null}
-              </svg>
+                  {shade && outline ? (
+                    <g pointerEvents="none" fill="rgba(15,23,42,0.55)">
+                      <rect x={0} y={0} width={imageSize.width} height={shade.top} />
+                      <rect
+                        x={0}
+                        y={shade.bottom}
+                        width={imageSize.width}
+                        height={Math.max(0, imageSize.height - shade.bottom)}
+                      />
+                      <rect x={0} y={shade.top} width={shade.left} height={outline.height} />
+                      <rect
+                        x={shade.right}
+                        y={shade.top}
+                        width={Math.max(0, imageSize.width - shade.right)}
+                        height={outline.height}
+                      />
+                      <rect
+                        id="crop-region"
+                        {...outline}
+                        fill="none"
+                        stroke="rgba(15,23,42,0.9)"
+                        strokeWidth="3"
+                      />
+                      <rect
+                        {...outline}
+                        fill="none"
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                        strokeDasharray="8 6"
+                      />
+                    </g>
+                  ) : null}
+
+                  {/* A marquee waiting for Apply is adjustable: the same eight
+                    handles a box gets, so a crop is nudged into place instead
+                    of redrawn from scratch. Outside the dimming group above,
+                    which takes no pointer events. */}
+                  {cropDraft && !draft ? (
+                    <g data-crop-handles>
+                      {renderHandles(
+                        cropDraft,
+                        "rgba(15,23,42,0.9)",
+                        "crop",
+                        onCropHandlePointerDown
+                      )}
+                    </g>
+                  ) : null}
+                </svg>
+              </div>
+
+              {/* Apply/Cancel float just inside the marquee's bottom-left
+                  corner rather than appearing as sidebar rows - two rows that
+                  pushed every control below them down by ~52px the moment a
+                  crop was drawn, and back up again the moment it was applied.
+                  Anchored inside the marquee (not below it) so it can never be
+                  clipped by the window it is drawn in. */}
+              {cropControlsAnchor ? (
+                <div
+                  className="absolute z-10 flex -translate-y-full items-stretch gap-1.5 pb-2 pl-2 text-[13px]"
+                  style={cropControlsAnchor}
+                >
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setCrop(cropDraft);
+                      setCropDraft(null);
+                    }}
+                  >
+                    Apply crop
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setCropDraft(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

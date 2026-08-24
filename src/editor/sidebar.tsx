@@ -7,7 +7,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { EditorState, EditorTool } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
-import { applyCrop } from "@/lib/crop";
 import type { Verbosity } from "@/lib/feedback";
 import { numberAnnotations, redactions } from "@/lib/numbering";
 
@@ -30,10 +29,6 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     selectedId,
     tool,
     setTool,
-    crop,
-    setCrop,
-    cropDraft,
-    setCropDraft,
     interactionMode,
     setInteractionMode,
     color,
@@ -42,10 +37,8 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     setZoom,
     generalFeedback,
     setGeneralFeedback,
-    status,
     isBusy,
     baseDataUrl,
-    progress,
     promptVerbosity,
     setPromptVerbosity,
     exportFormat,
@@ -58,21 +51,17 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
   // own count instead, because "how much of this is hidden" is worth saying.
   const noteCount = numberAnnotations(annotations).length;
   const redactedCount = redactions(annotations).length;
-  // What the crop leaves out. The exports renumber the survivors, so saying
-  // this plainly is also the answer to "why is pin 3 numbered 2 in the PNG".
-  // Counted over the numbered annotations only, to match `noteCount` above: a
-  // redaction the crop drops hides nothing, because the crop already removed
-  // those pixels from the export.
-  const excludedByCrop = crop
-    ? noteCount - numberAnnotations(applyCrop(annotations, crop)).length
-    : 0;
 
   const removeSelected = (): void => {
     if (selectedId) removeAnnotation(selectedId);
   };
 
   return (
-    <Card className="lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto">
+    // In the fixed shell the sidebar column is exactly the pane's height, so
+    // `min-h-0` is what lets it scroll its own contents instead of stretching
+    // the grid row. Below `lg` it has no height of its own and the window
+    // scrolls, which is why both classes are breakpoint-scoped.
+    <Card className="order-2 lg:order-1 lg:min-h-0 lg:overflow-y-auto">
       <CardHeader className="space-y-3">
         <div className="flex items-center justify-between">
           <CardTitle as="h1">Shotback Editor</CardTitle>
@@ -122,41 +111,10 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           />
         </div>
 
-        {/* A drawn marquee waits for Apply; an applied crop can be cleared. The
-            crop is a view onto the capture, so neither is an undo step. */}
-        {cropDraft ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              disabled={isBusy}
-              onClick={() => {
-                setCrop(cropDraft);
-                setCropDraft(null);
-              }}
-            >
-              Apply crop
-            </Button>
-            <Button variant="secondary" disabled={isBusy} onClick={() => setCropDraft(null)}>
-              Cancel
-            </Button>
-          </div>
-        ) : crop ? (
-          <div className="space-y-1 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between gap-2">
-              <span>
-                Cropped to {crop.width}x{crop.height}
-              </span>
-              <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => setCrop(null)}>
-                Clear
-              </Button>
-            </div>
-            {excludedByCrop > 0 ? (
-              <p className="m-0">
-                {excludedByCrop} annotation{excludedByCrop === 1 ? "" : "s"} outside the crop{" "}
-                {excludedByCrop === 1 ? "is" : "are"} excluded from exports
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Crop has no rows here on purpose: Apply/Cancel float at the marquee
+            and the applied-crop chip sits over the canvas (see
+            `annotation-canvas.tsx`), so drawing a crop no longer shoves every
+            control below it down and back up again. */}
 
         <div className="space-y-1.5">
           <span
@@ -299,17 +257,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           </Button>
         </div>
 
-        <div className="space-y-1 text-sm" aria-live="polite">
-          {progress ? <p className="m-0 text-muted-foreground">{progress}</p> : null}
-          {status ? (
-            <p
-              className={`m-0 font-medium ${
-                status.kind === "success" ? "text-primary" : "text-destructive"
-              }`}
-            >
-              {status.message}
-            </p>
-          ) : null}
+        {/* Counts only. What just happened is announced by the canvas toast
+            (`status-toast.tsx`), which is the page's one aria-live region -
+            a status buried at the bottom of a scrolling sidebar was routinely
+            off screen when it mattered. */}
+        <div className="space-y-1 text-sm">
           <p className="m-0 text-muted-foreground">Annotations: {noteCount}</p>
           {redactedCount > 0 ? (
             <p className="m-0 text-muted-foreground">

@@ -13,7 +13,9 @@ import {
 // Loads the unpacked `dist/` extension in real Chromium and verifies the parts
 // of one-click capture that are automatable without the browser's toolbar UI:
 // the extension loads, the on-page capture notice shows/hides/removes cleanly
-// (driven through the real content script), and the editor page renders.
+// (driven through the real content script), the editor page renders, and a
+// real full-page capture (editor opened with `autocapture=1`, so it runs the
+// actual `captureVisibleTab` scroll-and-stitch loop) is complete and in order.
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const EXT = path.resolve(dir, "..", "..", "dist");
@@ -25,6 +27,21 @@ const PAGE_HTML = `<!doctype html><html><head><meta charset="utf8"><title>Acme D
 <div style="height:160px;background:#e5e7eb;border-radius:12px;margin:24px 0"></div>
 <div style="height:800px"></div></main></body></html>`;
 
+// Eight 300px colour blocks whose hue encodes their index, so a stitched
+// capture can be checked for completeness *and* order by sampling pixels.
+const BLOCKS = Array.from(
+  { length: 8 },
+  (_, i) => `<div style="height:300px;background:hsl(${(i * 37) % 360},70%,60%)"></div>`
+).join("");
+
+const CAPTURE_PAGES: Record<string, string> = {
+  // The document itself scrolls, but with `scroll-behavior: smooth` - an
+  // animated scroll must not be captured mid-flight.
+  smooth: `<!doctype html><html style="scroll-behavior:smooth"><body style="margin:0">${BLOCKS}</body></html>`,
+  // SPA shell: the document does not scroll at all, an inner element does.
+  inner: `<!doctype html><html style="height:100%;overflow:hidden"><body style="margin:0;height:100%;overflow:hidden;display:flex;flex-direction:column"><div style="height:64px;background:#111;flex:none"></div><div style="flex:1;overflow:auto">${BLOCKS}</div></body></html>`
+};
+
 let ctx: BrowserContext;
 let sw: ServiceWorker;
 let extId: string;
@@ -34,15 +51,18 @@ let base: string;
 test.beforeAll(async () => {
   expect(existsSync(EXT), "dist/ must be built first (run: npm run build)").toBe(true);
 
-  server = http.createServer((_req, res) => {
+  server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(PAGE_HTML);
+    res.end(CAPTURE_PAGES[(req.url ?? "/").slice(1)] ?? PAGE_HTML);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 
   ctx = await chromium.launchPersistentContext("", {
     headless: false,
+    // No emulated viewport: captureVisibleTab grabs the real window, and an
+    // emulated `innerHeight` would disagree with it.
+    viewport: null,
     args: [
       "--headless=new",
       `--disable-extensions-except=${EXT}`,
@@ -123,6 +143,59 @@ test("capture notice shows, hides for the frame, and is removed", async () => {
 
   await page.close();
 });
+
+for (const [name, headerHeight] of [
+  ["smooth", 0],
+  ["inner", 64]
+] as const) {
+  test(`full-page capture stitches every viewport in order (${name})`, async () => {
+    const page = await ctx.newPage();
+    await page.goto(base + name, { waitUntil: "load" });
+    const { tabId, windowId } = await sw.evaluate(async (url) => {
+      const [tab] = await chrome.tabs.query({ url });
+      return { tabId: tab.id, windowId: tab.windowId };
+    }, base + name);
+
+    const editor = await ctx.newPage();
+    await editor.goto(
+      `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+    );
+    const img = editor.locator("img[src^='data:image/png']");
+    await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+
+    // Sample the middle of each block (x=20, away from any text) and compare
+    // its hue with the index it encodes.
+    const result = await img.evaluate((el, top) => {
+      const image = el as HTMLImageElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const c = canvas.getContext("2d")!;
+      c.drawImage(image, 0, 0);
+      const hueAt = (y: number) => {
+        const [r, g, b] = c.getImageData(20, y, 1, 1).data;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const d = max - min || 1;
+        const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        return (Math.round(h * 60) + 360) % 360;
+      };
+      const mismatched: number[] = [];
+      for (let i = 0; i < 8; i += 1) {
+        for (const y of [top + i * 300 + 20, top + i * 300 + 150, top + i * 300 + 280]) {
+          if (Math.abs(hueAt(y) - ((i * 37) % 360)) > 3) mismatched.push(y);
+        }
+      }
+      return { height: image.naturalHeight, mismatched };
+    }, headerHeight);
+
+    expect(result.height).toBe(headerHeight + 8 * 300);
+    expect(result.mismatched).toEqual([]);
+
+    await editor.close();
+    await page.close();
+  });
+}
 
 test("editor page renders the capture UI", async () => {
   const editor = await ctx.newPage();

@@ -4,6 +4,7 @@ import {
   buildScrollSteps,
   isNoReceiverError,
   isTabsBusyError,
+  segmentPlacement,
   sendToContentScript
 } from "../src/lib/capture";
 
@@ -18,6 +19,20 @@ describe("buildScrollSteps", () => {
 
   it("does not duplicate last step", () => {
     expect(buildScrollSteps(3000, 1000)).toEqual([0, 1000, 2000]);
+  });
+});
+
+describe("segmentPlacement", () => {
+  it("draws whole frames at their scroll offset when the document scrolls", () => {
+    const metrics = { viewportHeight: 700, scrollerTop: 0 };
+    expect(segmentPlacement(0, 0, metrics)).toEqual({ sy: 0, sh: 700, dy: 0 });
+    expect(segmentPlacement(2, 1400, metrics)).toEqual({ sy: 0, sh: 700, dy: 1400 });
+  });
+
+  it("keeps the first frame whole and crops later frames to the scroller rows", () => {
+    const metrics = { viewportHeight: 436, scrollerTop: 64 };
+    expect(segmentPlacement(0, 0, metrics)).toEqual({ sy: 0, sh: 500, dy: 0 });
+    expect(segmentPlacement(1, 436, metrics)).toEqual({ sy: 64, sh: 436, dy: 500 });
   });
 });
 

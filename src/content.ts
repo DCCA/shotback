@@ -4,9 +4,45 @@ interface PageMetrics {
   viewportWidth: number;
   devicePixelRatio: number;
   pageUrl: string;
+  scrollerTop: number;
 }
 
 let originalScrollY = 0;
+/** The element being scrolled for capture, or null when the document scrolls. */
+let scroller: Element | null = null;
+
+/**
+ * Find what actually scrolls. Most pages scroll the document; SPA shells set
+ * `html,body{overflow:hidden}` and scroll an inner element instead, which is
+ * why `documentElement.scrollHeight` alone captures a single viewport there.
+ * ponytail: largest element with overflow auto/scroll and at least half the
+ * viewport tall - no nested-scroller support until a real page needs it.
+ */
+function findScroller(): Element | null {
+  const root = document.scrollingElement ?? document.documentElement;
+  if (root.scrollHeight > window.innerHeight + 1) return null;
+
+  let best: Element | null = null;
+  let bestArea = 0;
+  for (const el of document.querySelectorAll("*")) {
+    if (el.scrollHeight <= el.clientHeight + 1 || el.clientHeight < window.innerHeight / 2)
+      continue;
+    const overflowY = getComputedStyle(el).overflowY;
+    if (overflowY !== "auto" && overflowY !== "scroll") continue;
+    const area = el.clientWidth * el.clientHeight;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+function scrollCaptureTargetTo(top: number): void {
+  // "instant" overrides `scroll-behavior: smooth`, which would otherwise
+  // animate past the frame capture and stitch the previous viewport again.
+  (scroller ?? window).scrollTo({ top, behavior: "instant" });
+}
 let captureOverlay: HTMLDivElement | null = null;
 
 /**
@@ -125,15 +161,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_GET_PAGE_METRICS") {
-    originalScrollY = window.scrollY;
+    scroller = findScroller();
+    originalScrollY = scroller ? scroller.scrollTop : window.scrollY;
 
-    const metrics: PageMetrics = {
-      fullHeight: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
-      viewportHeight: window.innerHeight,
-      viewportWidth: window.innerWidth,
-      devicePixelRatio: window.devicePixelRatio,
-      pageUrl: window.location.href
-    };
+    const metrics: PageMetrics = scroller
+      ? {
+          fullHeight: scroller.scrollHeight,
+          viewportHeight: scroller.clientHeight,
+          viewportWidth: window.innerWidth,
+          devicePixelRatio: window.devicePixelRatio,
+          pageUrl: window.location.href,
+          scrollerTop: Math.max(0, Math.round(scroller.getBoundingClientRect().top))
+        }
+      : {
+          fullHeight: Math.max(
+            document.documentElement.scrollHeight,
+            document.body?.scrollHeight ?? 0
+          ),
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
+          devicePixelRatio: window.devicePixelRatio,
+          pageUrl: window.location.href,
+          scrollerTop: 0
+        };
 
     sendResponse(metrics);
     return true;
@@ -141,18 +191,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SB_SCROLL_TO") {
     const y = Number(message.y ?? 0);
-    window.scrollTo(0, y);
+    scrollCaptureTargetTo(y);
     // Re-show the notice between capture frames (it was hidden for the shot).
     setCaptureOverlayDisplay(true);
 
     window.requestAnimationFrame(() => {
-      sendResponse({ ok: true, y: window.scrollY });
+      sendResponse({ ok: true, y: scroller ? scroller.scrollTop : window.scrollY });
     });
     return true;
   }
 
   if (message?.type === "SB_RESTORE_SCROLL") {
-    window.scrollTo(0, originalScrollY);
+    scrollCaptureTargetTo(originalScrollY);
+    scroller = null;
     removeCaptureOverlay();
     sendResponse({ ok: true });
     return true;

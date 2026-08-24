@@ -31,6 +31,7 @@ export async function resolveDownloadPath(downloadId: number): Promise<string> {
 
 export interface EditorExports {
   download: () => Promise<void>;
+  copyImage: () => Promise<void>;
   prepareExternalLlmPackage: () => Promise<void>;
   copyForClaudeCode: () => Promise<void>;
   createShareUrl: () => Promise<void>;
@@ -126,6 +127,31 @@ export function useExports(state: EditorState): EditorExports {
       state.setStatus({
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to download image"
+      });
+    }
+  };
+
+  // Copy the annotated PNG to the clipboard so it can be pasted straight into
+  // an agent chat (Claude Code, Cursor, ...) without saving a file first.
+  const copyImage = async (): Promise<void> => {
+    if (!state.baseDataUrl) {
+      state.setStatus({ kind: "error", message: "Capture a screenshot before copying." });
+      return;
+    }
+    try {
+      const merged = await exportAnnotatedImage(state.baseDataUrl, state.annotations, {
+        generalFeedback: state.generalFeedback
+      });
+      const blob = await (await fetch(merged)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      state.setStatus({
+        kind: "success",
+        message: "Annotated image copied. Paste it into your agent chat."
+      });
+    } catch (error) {
+      state.setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to copy image"
       });
     }
   };
@@ -234,6 +260,7 @@ export function useExports(state: EditorState): EditorExports {
 
   return {
     download,
+    copyImage,
     prepareExternalLlmPackage,
     copyForClaudeCode,
     createShareUrl,

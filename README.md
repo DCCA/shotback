@@ -44,6 +44,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
   - downloads annotated image
   - copies a structured prompt to clipboard
 - 🧑‍💻 **Copy for Claude Code** - saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
+- 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 
 ## 🚀 Quick Start
 
@@ -75,6 +76,7 @@ npm run build
    - **Copy Local Share Link** for local profile review
    - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
    - **Copy for Claude Code** saves the PNG to `Downloads/shotback/` and copies a prompt that points to the file by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read it directly
+   - **Copy Image** puts the annotated PNG on the clipboard - paste it straight into an agent chat
 
 ## 📁 Project Structure
 

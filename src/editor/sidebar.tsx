@@ -172,6 +172,13 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <Button
             variant="secondary"
             disabled={!baseDataUrl || isBusy}
+            onClick={() => void exports.copyImage()}
+          >
+            Copy Image
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!baseDataUrl || isBusy}
             onClick={() => void exports.prepareExternalLlmPackage()}
           >
             Prepare for Cloud LLM

@@ -111,6 +111,7 @@ test("extension loads with no popup and the downloads permission", async () => {
   const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
   expect(manifest.action?.default_popup).toBeUndefined();
   expect(manifest.permissions).toContain("downloads");
+  expect(manifest.commands?._execute_action?.suggested_key?.default).toBe("Alt+Shift+S");
 });
 
 test("capture notice shows, hides for the frame, and is removed", async () => {

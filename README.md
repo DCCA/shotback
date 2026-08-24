@@ -31,7 +31,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 
 ## ✨ Features
 
-- ⚡ **One-click capture** — clicking the toolbar icon opens the editor and captures immediately (no popup, no second click)
+- ⚡ **One-click capture** - clicking the toolbar icon or pressing `Alt+Shift+S` opens the editor and captures immediately (no popup, no second click)
 - 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
 - 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
 - ✏️ **Area annotations**: box, arrow, text
@@ -43,7 +43,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🤖 **External LLM fallback**:
   - downloads annotated image
   - copies a structured prompt to clipboard
-- 🧑‍💻 **Copy for Claude Code** — saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
+- 🧑‍💻 **Copy for Claude Code** - saves the PNG to `Downloads/shotback/` and copies a prompt referencing it by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read it directly
 
 ## 🚀 Quick Start
 
@@ -69,7 +69,7 @@ npm run build
 ## 📖 Usage
 
 1. **Open** a target webpage.
-2. **Click** the Shotback extension icon — the editor opens and captures the page automatically.
+2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
 3. **Draw** annotations and add comments. Undo or redo any step with the sidebar buttons or `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z`.
 4. **Use** one of the outputs:
    - **Copy Local Share Link** for local profile review
@@ -121,7 +121,7 @@ images, annotations, and feedback stay in your browser profile. Data leaves the
 device only when you explicitly use **Prepare for Cloud LLM**, which downloads
 the annotated image and copies a prompt for you to paste manually.
 
-It requests only the permissions full-page capture needs — `activeTab`, `tabs`,
+It requests only the permissions full-page capture needs - `activeTab`, `tabs`,
 `scripting`, `storage`/`unlimitedStorage`, and `<all_urls>` host access so it can
 capture whatever page you are viewing. Page access is used **only when you start
 a capture**. See [`SECURITY.md`](SECURITY.md) for the full per-permission

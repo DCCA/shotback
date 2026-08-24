@@ -25,7 +25,7 @@ A Manifest V3 Chrome extension (TypeScript + React 18 + Vite + Tailwind). Two HT
 
 **Three surfaces:**
 
-- The toolbar icon has **no popup**: `src/background.ts`'s `chrome.action.onClicked` handler opens the editor in a new tab with `?tabId=&windowId=&autocapture=1` of the active tab, and the editor auto-captures once on load (one-click capture).
+- The toolbar icon has **no popup**: `src/background.ts`'s `chrome.action.onClicked` handler opens the editor in a new tab with `?tabId=&windowId=&autocapture=1` of the active tab, and the editor auto-captures once on load (one-click capture). The manifest's `commands` entry (`_execute_action` for `Alt+Shift+S`) binds a keyboard shortcut to the same handler.
 - `src/editor/main.tsx` — the heart of the app (~1000 lines). Drives capture, hosts the annotation canvas, the comment timeline, general feedback, and the three output actions.
 - `src/viewer/` — renders a saved share from `?share=<id>` (local-only page).
 - `src/background.ts` — service worker; logs on install and hosts the `chrome.action.onClicked` handler (one-click capture). `src/content.ts` — injected on `<all_urls>`; responds to `SB_GET_PAGE_METRICS` / `SB_SCROLL_TO` / `SB_RESTORE_SCROLL`, and to the capture-notice messages `SB_CAPTURE_BEGIN` / `SB_SET_OVERLAY` / `SB_CAPTURE_END`.

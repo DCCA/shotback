@@ -50,7 +50,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 📦 **Batch handoff** - tick any saved shares and **Copy batch for Claude Code** writes every capture plus one `batch.json` into a single `Downloads/shotback/batch-<ts>/` folder, then copies a prompt that leads with that JSON
 - 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
 - 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
-- 🩺 **Diagnostics** - both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
+- 🩺 **Diagnostics** - at **Detailed** prompt detail (only), both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
 - 🎚️ **Prompt detail** - a sidebar setting picks how much of the above actually renders: **Compact** (just the numbered comments and general feedback), **Standard** (the default - environment, geometry and element context) or **Detailed** (standard plus Diagnostics and per-annotation element text/classes/rect)
 - 🖼️ **JPEG export** - a sidebar setting switches Download, Prepare for Cloud LLM and Copy for Claude Code to a smaller JPEG (fixed quality 0.9); Copy Image and shared links always stay PNG. A **Last export: N KB** readout shows what the most recent export actually weighed
 
@@ -204,6 +204,8 @@ src/
   viewer/      # local share viewer page
   lib/         # capture, rendering, storage helpers
   types/       # shared TS types
+skills/
+  shotback/    # the companion agent skill to copy into your own project
 public/
   manifest.json
 tests/
@@ -238,12 +240,17 @@ Local share links are **intentionally local**. They only work where:
 
 Shotback is local-first and makes **no network requests of its own**. Captured
 images, annotations, and feedback stay in your browser profile. Data leaves the
-device only when you explicitly use **Prepare for Cloud LLM**, which downloads
-the annotated image and copies a prompt for you to paste manually.
+device only through an export you trigger yourself, and every one of them is a
+local file write or a clipboard copy that you then paste somewhere manually:
+**Prepare for Cloud LLM** (downloads the image, copies the prompt), **Copy for
+Claude Code** (writes the image and its JSON sidecar to `Downloads/shotback/`),
+**Copy Image** (clipboard only), **Copy batch for Claude Code** (writes every
+ticked capture plus one `batch.json` into `Downloads/shotback/batch-<ts>/`) and
+the plain **Download Image** button. Shotback itself uploads nothing.
 
 It requests only the permissions full-page capture needs - `activeTab`, `tabs`,
-`scripting`, `storage`/`unlimitedStorage`, and `<all_urls>` host access so it can
-capture whatever page you are viewing. Page access is used **only when you start
+`scripting`, `storage`/`unlimitedStorage`, `downloads` (for the exports above),
+and `<all_urls>` host access so it can capture whatever page you are viewing. Page access is used **only when you start
 a capture**. See [`SECURITY.md`](SECURITY.md) for the full per-permission
 rationale, and [`PRIVACY.md`](PRIVACY.md) for the plain-language privacy policy.
 

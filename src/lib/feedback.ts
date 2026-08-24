@@ -91,6 +91,15 @@ function redactionLines(annotations: Annotation[]): string[] {
 /** The diagnostics list is clamped to what the type promises to carry. */
 const MAX_DIAGNOSTICS = 20;
 
+/**
+ * A device pixel ratio as a reader wants it: Chrome reports 1.100000023841858
+ * on a 110% zoom, and the raw float in a prompt line is noise. Two decimals is
+ * every ratio anyone ships; the sidecar keeps the exact value.
+ */
+function displayDpr(dpr: number): number {
+  return Math.round(dpr * 100) / 100;
+}
+
 /** The captured tab's context. Empty when no environment was captured. */
 function environmentBlock(environment?: CaptureEnvironment): string[] {
   if (!environment) return [];
@@ -98,7 +107,7 @@ function environmentBlock(environment?: CaptureEnvironment): string[] {
   return [
     "Environment:",
     `- Page title: ${environment.pageTitle.trim() || "(untitled)"}`,
-    `- Viewport: ${environment.viewport.width}x${environment.viewport.height} @${environment.devicePixelRatio}x`,
+    `- Viewport: ${environment.viewport.width}x${environment.viewport.height} @${displayDpr(environment.devicePixelRatio)}x`,
     `- Color scheme: ${environment.colorScheme}`,
     `- Scroller: ${environment.scroller}`,
     `- User agent: ${environment.userAgent}`,
@@ -172,12 +181,6 @@ export function buildExternalLlmPrompt(params: {
 }
 
 /**
- * Build the prompt copied to the clipboard for a Claude Code session. Leads with
- * the saved file's path so Claude can read the image directly from disk (e.g. a
- * Windows Downloads path translated to its WSL `/mnt/...` equivalent), followed
- * by the JSON sidecar written beside it when one was saved.
- */
-/**
  * The Claude Code prompt for a batch of saved shares. It leads with the one
  * JSON path, because that file holds every capture's annotations, selectors
  * and environment - the prompt itself stays a numbered index (page, how many
@@ -203,6 +206,12 @@ export function buildBatchPrompt(
   ].join("\n");
 }
 
+/**
+ * Build the prompt copied to the clipboard for a Claude Code session. Leads with
+ * the saved file's path so Claude can read the image directly from disk (e.g. a
+ * Windows Downloads path translated to its WSL `/mnt/...` equivalent), followed
+ * by the JSON sidecar written beside it when one was saved.
+ */
 export function buildClaudeCodePrompt(params: {
   filePath: string;
   /** Absolute path of the JSON sidecar; omitted when it could not be written. */
@@ -228,9 +237,7 @@ export function buildClaudeCodePrompt(params: {
       ? [`Machine-readable annotations (selectors, rects, diagnostics): ${params.sidecarPath}`]
       : []),
     ...(params.followsPrevious
-      ? [
-          "Before/after: this capture follows an earlier one - verify the fix against the previous state."
-        ]
+      ? ["Before/after: this capture is a re-capture of a page reviewed earlier."]
       : []),
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,

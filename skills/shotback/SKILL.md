@@ -7,8 +7,9 @@ description: Turn a Shotback screenshot review into code changes. Use when a pro
 
 A Shotback handoff is two files written together in `Downloads/shotback/`:
 `cap-<ts>.png` (the annotated capture) and `cap-<ts>.json` (the same review as
-data). The prompt names both. **Read the JSON first** - it says what the pins in
-the image mean, and it is where the selectors are.
+data). The prompt names both, and the JSON's `imagePath` is relative to the
+folder the JSON sits in. **Read the JSON first** - it says what the pins in the
+image mean, and it is where the selectors are.
 
 ## Read the sidecar
 
@@ -43,7 +44,7 @@ the image mean, and it is where the selectors are.
     }
   ],
   "diagnostics": { "failedRequests": [{ "status": 404, "url": "..." }] },
-  "imagePath": "shotback/cap-1756052403118.png"
+  "imagePath": "cap-1756052403118.png"
 }
 ```
 

@@ -51,7 +51,7 @@ export interface Sidecar {
   diagnostics?: PageDiagnostics;
   /** Omitted when the caller does not say - present whenever `imagePath` is. */
   imageFormat?: "png" | "jpeg";
-  /** Relative to the downloads folder: `shotback/cap-<ts>.png` (or `.jpg`). */
+  /** File name of the exported image, relative to the folder the JSON sits in: `cap-<ts>.png` (or `.jpg`). */
   imagePath: string;
 }
 

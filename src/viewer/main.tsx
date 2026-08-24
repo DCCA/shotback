@@ -98,7 +98,8 @@ function ViewerApp(): JSX.Element {
                 <p className="m-0">
                   <span className="font-semibold text-muted-foreground">Viewport:</span>{" "}
                   {share.environment.viewport.width}x{share.environment.viewport.height} @
-                  {share.environment.devicePixelRatio}x - {share.environment.colorScheme}
+                  {Math.round(share.environment.devicePixelRatio * 100) / 100}x -{" "}
+                  {share.environment.colorScheme}
                 </p>
               ) : null}
               <p className="m-0">

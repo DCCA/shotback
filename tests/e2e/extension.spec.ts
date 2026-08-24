@@ -158,8 +158,9 @@ const readClipboard = (editor: Page): Promise<string> =>
  * reports a path once Chrome has finished writing the file. Matching on the
  * MIME type rather than the name is deliberate: Playwright intercepts every
  * download and renames it to a GUID artifact, so the `shotback/cap-<ts>.json`
- * name the extension asks for is not what lands on disk here. That name is
- * asserted through the sidecar's own `imagePath` instead.
+ * name the extension asks for is not what lands on disk here. The name is
+ * asserted through the sidecar's own `imagePath` (a bare `cap-<ts>.<ext>`,
+ * relative to the JSON beside it) instead.
  */
 async function downloadedFile(mime: string): Promise<string> {
   let filename = "";
@@ -383,29 +384,39 @@ for (const [name, headerHeight] of [
       expect(prompt).toContain("-> #app > section.hero > button.cta");
       expect(prompt).not.toContain("Diagnostics:");
 
-      // Compact drops the Environment block (and geometry/context) entirely.
-      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
-      await editor.getByRole("option", { name: "Compact" }).click();
-      await copyCloudPrompt(editor);
-      expect(await readClipboard(editor)).not.toContain("Environment:");
+      // The verbosity switches are wrapped so a failed expectation cannot
+      // leave the stored preference on Compact/Detailed for the tests after
+      // this one - the pref outlives the editor page.
+      try {
+        // Compact drops the Environment block (and geometry/context) entirely.
+        await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+        await editor.getByRole("option", { name: "Compact" }).click();
+        await copyCloudPrompt(editor);
+        expect(await readClipboard(editor)).not.toContain("Environment:");
 
-      // Detailed adds the Diagnostics block: what the page reported going
-      // wrong, read back from resource timing (the fixture's 404'd image).
-      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
-      await editor.getByRole("option", { name: "Detailed" }).click();
-      await copyCloudPrompt(editor);
-      const detailedPrompt = await readClipboard(editor);
-      expect(detailedPrompt).toContain("Diagnostics:");
-      expect(detailedPrompt).toContain("- Failed requests:");
-      expect(detailedPrompt).toContain("404 ");
-      expect(detailedPrompt).toContain("/missing.png");
-
-      // Reset to Standard so the rest of the suite sees today's default.
-      await editor.getByRole("combobox", { name: "Prompt detail" }).click();
-      await editor.getByRole("option", { name: "Standard" }).click();
+        // Detailed adds the Diagnostics block: what the page reported going
+        // wrong, read back from resource timing (the fixture's 404'd image).
+        await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+        await editor.getByRole("option", { name: "Detailed" }).click();
+        await copyCloudPrompt(editor);
+        const detailedPrompt = await readClipboard(editor);
+        expect(detailedPrompt).toContain("Diagnostics:");
+        expect(detailedPrompt).toContain("- Failed requests:");
+        expect(detailedPrompt).toContain("404 ");
+        expect(detailedPrompt).toContain("/missing.png");
+      } finally {
+        // Reset to Standard so the rest of the suite sees today's default.
+        await editor.getByRole("combobox", { name: "Prompt detail" }).click();
+        await editor.getByRole("option", { name: "Standard" }).click();
+      }
     }
 
     if (name === "inner") {
+      // This branch is the suite's mega-block: capture, annotate, share,
+      // sidecar, JPEG, crop and the batch handoff, all against one editor.
+      // It needs more than the default per-test budget.
+      test.setTimeout(120_000);
+
       // Fit-to-width default: a capture wider than the editor pane must not
       // be silently clipped by the canvas Card's `overflow-hidden` (nor
       // scroll the page itself sideways). Pick a viewport narrower than the
@@ -590,7 +601,7 @@ for (const [name, headerHeight] of [
 
       const sidecar = JSON.parse(await readFile(sidecarFile, "utf8"));
       expect(sidecar.version).toBe(1);
-      expect(sidecar.imagePath).toMatch(/^shotback\/cap-\d+\.png$/);
+      expect(sidecar.imagePath).toMatch(/^cap-\d+\.png$/);
       expect(sidecar.pageUrl).toBe(base + name);
       expect(sidecar.annotations[0].n).toBe(1);
       expect(sidecar.annotations[0].rect.width).toBeGreaterThan(0);
@@ -606,50 +617,55 @@ for (const [name, headerHeight] of [
       // image path's extension, the sidecar's `imageFormat` field and the
       // Download button's label - the PNG-only clipboard copy and share link
       // (tested elsewhere) must stay untouched by it.
-      await editor.getByRole("combobox", { name: "Export format" }).click();
-      await editor.getByRole("option", { name: "JPEG" }).click();
-      await expect(editor.getByRole("button", { name: "Download Image (JPEG)" })).toBeVisible();
+      // Wrapped so a failed expectation below cannot leave the stored
+      // export format on JPEG for the rest of the suite (the crop
+      // section's saved share must stay PNG) - the pref outlives the page.
+      try {
+        await editor.getByRole("combobox", { name: "Export format" }).click();
+        await editor.getByRole("option", { name: "JPEG" }).click();
+        await expect(editor.getByRole("button", { name: "Download Image (JPEG)" })).toBeVisible();
 
-      await editor.getByRole("button", { name: "Copy for Claude Code" }).click();
-      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
-        "Copied a Claude Code prompt"
-      );
-      // Matched by MIME, not name, for the same reason as `downloadedFile`'s
-      // own comment: Playwright renames every intercepted download to a GUID
-      // artifact, so the `.jpg` extension is asserted through the sidecar's
-      // own `imagePath` below instead.
-      const jpegImageFile = await downloadedFile("image/jpeg");
-      const jpegPrompt = await readClipboard(editor);
-      expect(jpegPrompt.split("\n")[0]).toBe(`Review this screenshot: ${jpegImageFile}`);
+        await editor.getByRole("button", { name: "Copy for Claude Code" }).click();
+        await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+          "Copied a Claude Code prompt"
+        );
+        // Matched by MIME, not name, for the same reason as `downloadedFile`'s
+        // own comment: Playwright renames every intercepted download to a GUID
+        // artifact, so the `.jpg` extension is asserted through the sidecar's
+        // own `imagePath` below instead.
+        const jpegImageFile = await downloadedFile("image/jpeg");
+        const jpegPrompt = await readClipboard(editor);
+        expect(jpegPrompt.split("\n")[0]).toBe(`Review this screenshot: ${jpegImageFile}`);
 
-      const jpegSidecarFile = await downloadedFile("application/json");
-      const jpegSidecar = JSON.parse(await readFile(jpegSidecarFile, "utf8"));
-      expect(jpegSidecar.imageFormat).toBe("jpeg");
-      expect(jpegSidecar.imagePath).toMatch(/^shotback\/cap-\d+\.jpg$/);
+        const jpegSidecarFile = await downloadedFile("application/json");
+        const jpegSidecar = JSON.parse(await readFile(jpegSidecarFile, "utf8"));
+        expect(jpegSidecar.imageFormat).toBe("jpeg");
+        expect(jpegSidecar.imagePath).toMatch(/^cap-\d+\.jpg$/);
 
-      // The size readout appears once any export has run.
-      await expect(editor.getByText(/^Last export: \d+ KB$/)).toBeVisible();
+        // The size readout appears once any export has run.
+        await expect(editor.getByText(/^Last export: \d+ KB$/)).toBeVisible();
 
-      // Visual proof the JPEG the canvas produced is a real, paintable
-      // picture - not a corrupt or blank export - by decoding the downloaded
-      // file's own bytes back into a data URL and loading it as an <img>.
-      const jpegBase64 = (await readFile(jpegImageFile)).toString("base64");
-      const jpegNaturalWidth = await editor.evaluate(
-        (base64) =>
-          new Promise<number>((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img.naturalWidth);
-            img.onerror = () => reject(new Error("failed to decode JPEG export"));
-            img.src = `data:image/jpeg;base64,${base64}`;
-          }),
-        jpegBase64
-      );
-      expect(jpegNaturalWidth).toBeGreaterThan(0);
-
-      // Reset to PNG so the rest of the suite (the crop section's saved share,
-      // which must stay PNG) sees today's default.
-      await editor.getByRole("combobox", { name: "Export format" }).click();
-      await editor.getByRole("option", { name: "PNG" }).click();
+        // Visual proof the JPEG the canvas produced is a real, paintable
+        // picture - not a corrupt or blank export - by decoding the downloaded
+        // file's own bytes back into a data URL and loading it as an <img>.
+        const jpegBase64 = (await readFile(jpegImageFile)).toString("base64");
+        const jpegNaturalWidth = await editor.evaluate(
+          (base64) =>
+            new Promise<number>((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img.naturalWidth);
+              img.onerror = () => reject(new Error("failed to decode JPEG export"));
+              img.src = `data:image/jpeg;base64,${base64}`;
+            }),
+          jpegBase64
+        );
+        expect(jpegNaturalWidth).toBeGreaterThan(0);
+      } finally {
+        // Reset to PNG so the rest of the suite (the crop section's saved share,
+        // which must stay PNG) sees today's default.
+        await editor.getByRole("combobox", { name: "Export format" }).click();
+        await editor.getByRole("option", { name: "PNG" }).click();
+      }
 
       // Crop: every output describes the crop region instead of the whole
       // capture. Annotations are stored uncropped and shifted only on the way
@@ -734,49 +750,55 @@ for (const [name, headerHeight] of [
       await editor.getByRole("button", { name: "Show" }).click();
       const checkboxes = editor.getByRole("checkbox");
       await expect(checkboxes).toHaveCount(2);
-      await checkboxes.nth(0).check();
-      await checkboxes.nth(1).check();
+      // Wrapped so a mid-batch failure cannot leave the saved-shares
+      // selection ticked for whatever runs next.
+      try {
+        await checkboxes.nth(0).check();
+        await checkboxes.nth(1).check();
 
-      await editor.getByRole("button", { name: "Copy batch for Claude Code (2)" }).click();
-      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
-        "Copied a Claude Code prompt for 2 saved captures"
-      );
+        await editor.getByRole("button", { name: "Copy batch for Claude Code (2)" }).click();
+        await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+          "Copied a Claude Code prompt for 2 saved captures"
+        );
 
-      const batchPrompt = await readClipboard(editor);
-      const batchLines = batchPrompt.split("\n");
-      const batchFile = await downloadedFile("application/json");
-      expect(batchLines[0]).toBe("Review these 2 screenshots together.");
-      // The JSON leads, before any capture is listed.
-      expect(batchLines[1]).toBe(
-        `Machine-readable annotations for every capture (selectors, rects, environment): ${batchFile}`
-      );
+        const batchPrompt = await readClipboard(editor);
+        const batchLines = batchPrompt.split("\n");
+        const batchFile = await downloadedFile("application/json");
+        expect(batchLines[0]).toBe("Review these 2 screenshots together.");
+        // The JSON leads, before any capture is listed.
+        expect(batchLines[1]).toBe(
+          `Machine-readable annotations for every capture (selectors, rects, environment): ${batchFile}`
+        );
 
-      // One numbered line per capture, each naming a PNG that is really there.
-      const batchImages = batchLines
-        .filter((line) => /^\d+\. /.test(line))
-        .map((line) => line.split(" - ").pop()!);
-      expect(batchImages).toHaveLength(2);
-      expect(new Set(batchImages).size).toBe(2);
-      for (const file of batchImages) expect(existsSync(file)).toBe(true);
+        // One numbered line per capture, each naming a PNG that is really there.
+        const batchImages = batchLines
+          .filter((line) => /^\d+\. /.test(line))
+          .map((line) => line.split(" - ").pop()!);
+        expect(batchImages).toHaveLength(2);
+        expect(new Set(batchImages).size).toBe(2);
+        for (const file of batchImages) expect(existsSync(file)).toBe(true);
 
-      const batchSidecar = JSON.parse(await readFile(batchFile, "utf8"));
-      expect(batchSidecar.version).toBe(1);
-      expect(batchSidecar.captures).toHaveLength(2);
-      expect(batchSidecar.captures.map((c: { imagePath: string }) => c.imagePath)).toEqual([
-        "cap-0.png",
-        "cap-1.png"
-      ]);
-      for (const capture of batchSidecar.captures) {
-        expect(capture.version).toBe(1);
-        expect(capture.pageUrl).toBe(base + name);
+        const batchSidecar = JSON.parse(await readFile(batchFile, "utf8"));
+        expect(batchSidecar.version).toBe(1);
+        expect(batchSidecar.captures).toHaveLength(2);
+        expect(batchSidecar.captures.map((c: { imagePath: string }) => c.imagePath)).toEqual([
+          "cap-0.png",
+          "cap-1.png"
+        ]);
+        for (const capture of batchSidecar.captures) {
+          expect(capture.version).toBe(1);
+          expect(capture.pageUrl).toBe(base + name);
+        }
+        // The prompt's counts come from the same sidecars, so they cannot drift.
+        expect(batchLines[3]).toContain(
+          `${batchSidecar.captures[0].annotations.length} annotation`
+        );
+      } finally {
+        // Untick both so no later test inherits a selection.
+        await checkboxes.nth(0).uncheck();
+        await checkboxes.nth(1).uncheck();
+        await editor.getByRole("button", { name: "Hide" }).click();
       }
-      // The prompt's counts come from the same sidecars, so they cannot drift.
-      expect(batchLines[3]).toContain(`${batchSidecar.captures[0].annotations.length} annotation`);
-
-      // Untick both so no later test inherits a selection.
-      await checkboxes.nth(0).uncheck();
-      await checkboxes.nth(1).uncheck();
-      await editor.getByRole("button", { name: "Hide" }).click();
     }
 
     await editor.close();

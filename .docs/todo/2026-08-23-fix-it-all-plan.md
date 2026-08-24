@@ -17,7 +17,7 @@
 - No new runtime dependencies without a line in the task explaining why stdlib/React cannot do it.
 - No hardcoded `slate-*`/`emerald-*`/`white` colour classes in `src/`: use the semantic tokens (`bg-card`, `text-muted-foreground`, `border-border`, ...). Add a token if one is missing.
 - Permissions changes require a `SECURITY.md` update in the same PR.
-- Pure logic in `src/lib/*` (no `chrome.*`), unit-tested in `tests/*.test.ts`.
+- Pure logic in `src/lib/*`, unit-tested in `tests/*.test.ts`: no `chrome.*` in the pure helpers. The thin storage/tabs wrappers that already live there (`localStore.ts`, `prefs.ts`, `capture.ts`) are the documented exception - they exist so the `chrome.*` surface is wrapped in one tested place, not scattered through the UI.
 - UI redesign items (marked **DESIGN GATE**) start by rendering 2-3 options with the `prototype`/`visual-verify` skills and waiting for the owner's pick. Bug fixes are not gated.
 - Commit messages: conventional (`fix:`, `feat:`, `refactor:`, `docs:`), no co-author lines, no em dashes.
 - All prose, commit messages and docs use a plain dash "-", never an em dash.

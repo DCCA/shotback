@@ -95,17 +95,18 @@ async function downloadBlob(blob: Blob, relativeName: string): Promise<string> {
 }
 
 /**
- * Write the JSON sidecar next to the PNG (same timestamp) and return the path
- * the prompt should point at, "" when it could not be written. Best effort by
+ * Write the JSON sidecar next to the PNG (same timestamp). Best effort by
  * design: the sidecar is an aid, so failing to save it costs the prompt its
- * machine-readable line and nothing else.
+ * machine-readable line and nothing else - but the two ways that can happen
+ * are told apart, because "could not be saved" is a lie when the file is
+ * sitting in Downloads and only its absolute path never came back.
  */
 async function saveSidecar(
   state: EditorState,
   view: ExportView,
   stamp: number,
   imagePath: string
-): Promise<string> {
+): Promise<{ saved: boolean; path: string }> {
   try {
     const sidecar = buildSidecar({
       capturedAt: state.environment?.capturedAt ?? new Date(stamp).toISOString(),
@@ -120,9 +121,9 @@ async function saveSidecar(
     });
     const blob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
     const absolutePath = await downloadBlob(blob, `shotback/cap-${stamp}.json`);
-    return absolutePath ? toClaudePath(absolutePath) : "";
+    return { saved: true, path: absolutePath ? toClaudePath(absolutePath) : "" };
   } catch {
-    return "";
+    return { saved: false, path: "" };
   }
 }
 
@@ -374,15 +375,19 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       });
       state.setLastExportSize(dataUrlByteLength(merged));
       const stamp = Date.now();
-      const imageName = `shotback/cap-${stamp}.${extFor(state.exportFormat)}`;
+      // The sidecar records the image as a bare filename, because both files
+      // land in the same folder - so `imagePath` means "beside this JSON" in
+      // the single-capture sidecar exactly as it does in the batch one.
+      const imageBase = `cap-${stamp}.${extFor(state.exportFormat)}`;
+      const imageName = `shotback/${imageBase}`;
 
       const absolutePath = await downloadBlob(await (await fetch(merged)).blob(), imageName);
       const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${imageName}`;
-      const sidecarPath = await saveSidecar(state, view, stamp, imageName);
+      const sidecar = await saveSidecar(state, view, stamp, imageBase);
 
       const prompt = buildClaudeCodePrompt({
         filePath,
-        sidecarPath: sidecarPath || undefined,
+        sidecarPath: sidecar.path || undefined,
         followsPrevious: Boolean(previousShareId),
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
@@ -398,7 +403,11 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
         absolutePath
           ? ""
           : "the image's full path could not be resolved, so the prompt carries a relative one",
-        sidecarPath ? "" : "the JSON sidecar could not be saved, so the prompt does not link one"
+        sidecar.saved
+          ? sidecar.path
+            ? ""
+            : "the JSON sidecar was saved but could not be linked, because its full path could not be resolved"
+          : "the JSON sidecar could not be saved, so the prompt does not link one"
       ].filter(Boolean);
 
       state.setStatus(

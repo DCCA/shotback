@@ -62,6 +62,10 @@ export interface CaptureResult {
   diagnostics: PageDiagnostics;
 }
 
+/** Chars of page-controlled title / URL text carried into an environment. */
+const MAX_TITLE_TEXT = 200;
+const MAX_URL_TEXT = 500;
+
 /** Pure; `now` is injected so the mapping stays testable. */
 export function buildEnvironment(
   metrics: PageMetrics,
@@ -69,8 +73,11 @@ export function buildEnvironment(
   now: Date
 ): CaptureEnvironment {
   return {
-    pageTitle: metrics.title,
-    pageUrl: metrics.pageUrl,
+    // Both come off a page-controlled message on their way into a prompt, so
+    // they are clamped here, at the boundary, the way `diagnosticText` clamps
+    // a failed request's URL: one line, bounded length.
+    pageTitle: (metrics.title ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_TITLE_TEXT),
+    pageUrl: (metrics.pageUrl ?? "").slice(0, MAX_URL_TEXT),
     capturedAt: now.toISOString(),
     viewport: { width: metrics.viewportWidth, height: metrics.viewportHeight },
     devicePixelRatio: metrics.devicePixelRatio,

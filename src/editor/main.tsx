@@ -36,11 +36,6 @@ function EditorApp(): JSX.Element {
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
-  // Redactions are dropped here rather than inside the timeline: they carry no
-  // note, so a row for one would be an empty row with no number to match a pin.
-  const timelineItems = state.annotations
-    .filter((annotation) => annotation.tool !== "redact")
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const takeScreenshot = async (): Promise<void> => {
     if (!canCapture) {
@@ -155,7 +150,7 @@ function EditorApp(): JSX.Element {
       <Sidebar state={state} exports={exports} onCapture={() => void takeScreenshot()}>
         <Separator />
         <CommentTimeline
-          items={timelineItems}
+          items={state.annotations}
           selectedId={state.selectedId}
           onSelect={selectTimelineItem}
           onRemove={state.removeAnnotation}

@@ -10,13 +10,16 @@ interface SavedSharesProps {
   onDelete: (id: string) => void;
   /** Hands the ticked shares, newest first, to the batch Claude Code export. */
   onBatchExport: (ids: string[]) => void;
+  /** Same guard the sidebar's actions use: no second export while one runs. */
+  isBusy: boolean;
 }
 
 export function SavedShares({
   shares,
   onOpen,
   onDelete,
-  onBatchExport
+  onBatchExport,
+  isBusy
 }: SavedSharesProps): JSX.Element {
   const [showSavedShares, setShowSavedShares] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -107,6 +110,7 @@ export function SavedShares({
               variant="secondary"
               size="sm"
               className="w-full"
+              disabled={isBusy}
               onClick={() => onBatchExport(selectedIds)}
             >
               Copy batch for Claude Code ({selectedIds.length})

@@ -33,7 +33,9 @@
   **"Copy batch for Claude Code (N)"** button under the list once at least one
   is ticked. The ids handed to the callback are derived by filtering the live
   `shares` list, so a share deleted while ticked cannot linger in a batch; the
-  grid gains a leading `auto` column.
+  grid gains a leading `auto` column. The button takes the same `isBusy` guard
+  every sidebar action already uses, so a second click cannot start a second
+  batch folder while one is being written.
 - `src/editor/main.tsx` - `onBatchExport` wired to `copyBatchForClaudeCode`.
 - `README.md` - a Features bullet and a "Several captures at once" section
   under Use with Claude Code, with the real folder layout and prompt.

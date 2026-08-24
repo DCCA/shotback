@@ -6,6 +6,8 @@ import type { Verbosity } from "@/lib/feedback";
  */
 export interface Prefs {
   promptVerbosity?: Verbosity;
+  /** The image format `download` and the two package exports write. Fixed at 0.9 JPEG quality. */
+  exportFormat?: "png" | "jpeg";
 }
 
 const STORAGE_KEY = "prefs";

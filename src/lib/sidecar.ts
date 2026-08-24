@@ -49,7 +49,9 @@ export interface Sidecar {
   /** Omitted when nothing was redacted, so an untouched capture's JSON is unchanged. */
   redactions?: SidecarRedaction[];
   diagnostics?: PageDiagnostics;
-  /** Relative to the downloads folder: `shotback/cap-<ts>.png`. */
+  /** Omitted when the caller does not say - present whenever `imagePath` is. */
+  imageFormat?: "png" | "jpeg";
+  /** Relative to the downloads folder: `shotback/cap-<ts>.png` (or `.jpg`). */
   imagePath: string;
 }
 
@@ -97,6 +99,7 @@ export function buildSidecar(params: {
   imagePath: string;
   environment?: CaptureEnvironment;
   diagnostics?: PageDiagnostics;
+  imageFormat?: "png" | "jpeg";
 }): Sidecar {
   return {
     version: 1,
@@ -117,6 +120,7 @@ export function buildSidecar(params: {
     }),
     ...redactionsField(params.annotations, params.image),
     ...(params.diagnostics ? { diagnostics: params.diagnostics } : {}),
+    ...(params.imageFormat ? { imageFormat: params.imageFormat } : {}),
     imagePath: params.imagePath
   };
 }

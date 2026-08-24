@@ -602,6 +602,55 @@ for (const [name, headerHeight] of [
       );
       expect(onCta).toBeTruthy();
 
+      // Export format: switching to JPEG changes the download's MIME, the
+      // image path's extension, the sidecar's `imageFormat` field and the
+      // Download button's label - the PNG-only clipboard copy and share link
+      // (tested elsewhere) must stay untouched by it.
+      await editor.getByRole("combobox", { name: "Export format" }).click();
+      await editor.getByRole("option", { name: "JPEG" }).click();
+      await expect(editor.getByRole("button", { name: "Download Image (JPEG)" })).toBeVisible();
+
+      await editor.getByRole("button", { name: "Copy for Claude Code" }).click();
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+        "Copied a Claude Code prompt"
+      );
+      // Matched by MIME, not name, for the same reason as `downloadedFile`'s
+      // own comment: Playwright renames every intercepted download to a GUID
+      // artifact, so the `.jpg` extension is asserted through the sidecar's
+      // own `imagePath` below instead.
+      const jpegImageFile = await downloadedFile("image/jpeg");
+      const jpegPrompt = await readClipboard(editor);
+      expect(jpegPrompt.split("\n")[0]).toBe(`Review this screenshot: ${jpegImageFile}`);
+
+      const jpegSidecarFile = await downloadedFile("application/json");
+      const jpegSidecar = JSON.parse(await readFile(jpegSidecarFile, "utf8"));
+      expect(jpegSidecar.imageFormat).toBe("jpeg");
+      expect(jpegSidecar.imagePath).toMatch(/^shotback\/cap-\d+\.jpg$/);
+
+      // The size readout appears once any export has run.
+      await expect(editor.getByText(/^Last export: \d+ KB$/)).toBeVisible();
+
+      // Visual proof the JPEG the canvas produced is a real, paintable
+      // picture - not a corrupt or blank export - by decoding the downloaded
+      // file's own bytes back into a data URL and loading it as an <img>.
+      const jpegBase64 = (await readFile(jpegImageFile)).toString("base64");
+      const jpegNaturalWidth = await editor.evaluate(
+        (base64) =>
+          new Promise<number>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img.naturalWidth);
+            img.onerror = () => reject(new Error("failed to decode JPEG export"));
+            img.src = `data:image/jpeg;base64,${base64}`;
+          }),
+        jpegBase64
+      );
+      expect(jpegNaturalWidth).toBeGreaterThan(0);
+
+      // Reset to PNG so the rest of the suite (the crop section's saved share,
+      // which must stay PNG) sees today's default.
+      await editor.getByRole("combobox", { name: "Export format" }).click();
+      await editor.getByRole("option", { name: "PNG" }).click();
+
       // Crop: every output describes the crop region instead of the whole
       // capture. Annotations are stored uncropped and shifted only on the way
       // out, so the element context read from the live tab is untouched.

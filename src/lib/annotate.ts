@@ -8,6 +8,24 @@ export const MAX_EXPORT_CANVAS_AREA = 268000000;
 
 export type FeedbackRenderMode = "footer" | "overlay";
 
+export type ExportFormat = "png" | "jpeg";
+
+/** Fixed: there is no quality UI, so every JPEG export uses this one value. */
+export const DEFAULT_JPEG_QUALITY = 0.9;
+
+/**
+ * The byte size a data URL decodes to, read off its base64 payload's own
+ * length rather than by decoding it - exact for the size readout, and it
+ * works in Node (the unit tests) as well as the browser, unlike routing
+ * through `fetch(...).blob()`.
+ */
+export function dataUrlByteLength(dataUrl: string): number {
+  const commaIndex = dataUrl.indexOf(",");
+  const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 /**
  * Edge of one pixelation block, in image px. Big enough that a block spans
  * several glyph strokes at normal capture scale, so what it replaces cannot be
@@ -358,11 +376,21 @@ function drawNotesOverlay(params: {
  * to it. The annotations are drawn exactly as given: shifting them into crop
  * space is `applyCrop`'s job, done once by the caller so the image, the
  * prompts and the sidecar all describe the same list.
+ *
+ * `format` defaults to PNG. JPEG has no alpha channel, so anything the canvas
+ * never painted over (a small overlay card leaves the rest of the image
+ * untouched around the notes) would otherwise composite to black on encode;
+ * the canvas is filled white first so it reads as white instead.
  */
 export async function exportAnnotatedImage(
   baseDataUrl: string,
   annotations: Annotation[],
-  options?: { generalFeedback?: string; crop?: Rect }
+  options?: {
+    generalFeedback?: string;
+    crop?: Rect;
+    format?: ExportFormat;
+    quality?: number;
+  }
 ): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image();
@@ -421,6 +449,15 @@ export async function exportAnnotatedImage(
       maxTextWidth: Math.max(120, overlayCardWidth - layout.padding * 2 - layout.gutter),
       fontSize: layout.fontSize
     });
+  }
+
+  const format = options?.format ?? "png";
+
+  if (format === "jpeg") {
+    // JPEG has no alpha: without this, any pixel the drawing below never
+    // touches encodes as black instead of the canvas's transparent default.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   ctx.drawImage(
@@ -499,5 +536,7 @@ export async function exportAnnotatedImage(
     }
   }
 
-  return canvas.toDataURL("image/png");
+  return format === "jpeg"
+    ? canvas.toDataURL("image/jpeg", options?.quality ?? DEFAULT_JPEG_QUALITY)
+    : canvas.toDataURL("image/png");
 }

@@ -82,7 +82,12 @@ function stubCanvasAndImage(
     width: 0,
     height: 0,
     getContext: () => ctx,
-    toDataURL: () => "data:x"
+    // Recorded like every other draw call, so a test can assert the exact
+    // MIME type and quality argument `exportAnnotatedImage` finishes with.
+    toDataURL: (...args: unknown[]) => {
+      calls.push({ name: "toDataURL", args });
+      return "data:x";
+    }
   });
   const canvas = newCanvas();
   let first = true;
@@ -308,6 +313,76 @@ describe("exportAnnotatedImage crop", () => {
     const draws = calls.filter((call) => call.name === "drawImage");
     expect(draws[1].args.slice(1)).toEqual([50, 50, 60, 40, 0, 0, 5, 4]);
     expect(draws[2].args.slice(1)).toEqual([0, 0, 5, 4, 50, 50, 60, 40]);
+  });
+});
+
+describe("exportAnnotatedImage format", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to a PNG data URL", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", []);
+
+    const toDataURL = calls.find((call) => call.name === "toDataURL");
+    expect(toDataURL?.args).toEqual(["image/png"]);
+  });
+
+  it("exports a JPEG at quality 0.9 by default when asked", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [], { format: "jpeg" });
+
+    const toDataURL = calls.find((call) => call.name === "toDataURL");
+    expect(toDataURL?.args).toEqual(["image/jpeg", 0.9]);
+  });
+
+  it("honours an explicit JPEG quality", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [], { format: "jpeg", quality: 0.5 });
+
+    const toDataURL = calls.find((call) => call.name === "toDataURL");
+    expect(toDataURL?.args).toEqual(["image/jpeg", 0.5]);
+  });
+
+  it("fills the canvas white before drawing the base image, only for JPEG", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [], { format: "jpeg" });
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    const whiteFillColor = calls.findIndex(
+      (call) => call.name === "set:fillStyle" && call.args[0] === "#ffffff"
+    );
+    const whiteFill = calls.findIndex(
+      (call) => call.name === "fillRect" && call.args[2] === 1200 && call.args[3] === 800
+    );
+    expect(whiteFillColor).toBeGreaterThan(-1);
+    expect(whiteFill).toBeGreaterThan(-1);
+    // The colour must be set before the fill, and the fill must happen before
+    // the base image is drawn, or a transparent source pixel would composite
+    // onto whatever the canvas already held rather than onto white.
+    expect(whiteFillColor).toBeLessThan(whiteFill);
+    expect(whiteFill).toBeLessThan(calls.indexOf(draws[0]));
+  });
+
+  it("does not fill white for a PNG export", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", []);
+
+    const whiteFill = calls.findIndex(
+      (call) => call.name === "fillRect" && call.args[2] === 1200 && call.args[3] === 800
+    );
+    expect(whiteFill).toBe(-1);
   });
 });
 

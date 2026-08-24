@@ -238,6 +238,11 @@ for (const [name, headerHeight] of [
       const prompt = await editor.evaluate(async () => navigator.clipboard.readText());
       expect(prompt).toContain(`Viewport: ${viewport.width}x${viewport.height}`);
       expect(prompt).toContain("Scroller: document");
+      // The drawn box's line carries its geometry (px + % of page) so an
+      // agent can locate it without opening the image.
+      expect(prompt).toMatch(
+        /1\. \[box\] Chart - at \(\d+, \d+\) size \d+x\d+ px \[\d+%, \d+% of page\]/
+      );
     }
 
     if (name === "inner") {

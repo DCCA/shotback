@@ -33,6 +33,24 @@ export function pinAnchor(annotation: Annotation): { x: number; y: number } {
   return { x: annotation.x, y: annotation.y };
 }
 
+/**
+ * Human-readable position of an annotation in image px plus % of page, for
+ * the prompt's per-annotation line. Pure so it can be unit tested apart from
+ * the builders that call it.
+ */
+export function describeGeometry(a: Annotation, image: { width: number; height: number }): string {
+  const pct = (x: number, y: number) =>
+    `[${Math.round((100 * x) / image.width)}%, ${Math.round((100 * y) / image.height)}% of page]`;
+
+  if (a.tool === "box") {
+    return `at (${Math.round(a.x)}, ${Math.round(a.y)}) size ${Math.round(a.width)}x${Math.round(a.height)} px ${pct(a.x, a.y)}`;
+  }
+  if (a.tool === "arrow") {
+    return `from (${Math.round(a.x1)}, ${Math.round(a.y1)}) to (${Math.round(a.x2)}, ${Math.round(a.y2)}) px`;
+  }
+  return `at (${Math.round(a.x)}, ${Math.round(a.y)}) px`;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canvasScale,
+  describeGeometry,
   numberAnnotations,
   pinAnchor,
   pinCenter,
@@ -57,6 +58,53 @@ describe("pinAnchor", () => {
       y2: 0
     };
     expect(pinAnchor(arrow)).toEqual({ x: 30, y: 40 });
+  });
+});
+
+describe("describeGeometry", () => {
+  const image = { width: 1000, height: 800 };
+
+  it("describes a box in px and % of page", () => {
+    const box = mk("b", "2026-08-23T00:00:00Z", 10, 20);
+    box.width = 30;
+    box.height = 40;
+    expect(describeGeometry(box, image)).toBe("at (10, 20) size 30x40 px [1%, 3% of page]");
+  });
+
+  it("describes an arrow as tail-to-head px", () => {
+    const arrow = {
+      id: "a",
+      tool: "arrow" as const,
+      color: "#f00",
+      createdAt: "2026-08-23T00:00:00Z",
+      x1: 5,
+      y1: 6,
+      x2: 50,
+      y2: 60
+    };
+    expect(describeGeometry(arrow, image)).toBe("from (5, 6) to (50, 60) px");
+  });
+
+  it("describes text as a single point in px", () => {
+    const text = {
+      id: "t",
+      tool: "text" as const,
+      color: "#f00",
+      createdAt: "2026-08-23T00:00:00Z",
+      x: 12,
+      y: 34,
+      text: "Hi"
+    };
+    expect(describeGeometry(text, image)).toBe("at (12, 34) px");
+  });
+
+  it("rounds fractional px and percentages", () => {
+    const box = mk("b", "2026-08-23T00:00:00Z", 10.4, 20.6);
+    box.width = 30.5;
+    box.height = 40.5;
+    // px: Math.round(10.4)=10, Math.round(20.6)=21, Math.round(30.5)=31 (round half up), Math.round(40.5)=41 (round half up)
+    // %: 100*10.4/1000 = 1.04 -> 1; 100*20.6/800 = 2.575 -> 3
+    expect(describeGeometry(box, image)).toBe("at (10, 21) size 31x41 px [1%, 3% of page]");
   });
 });
 

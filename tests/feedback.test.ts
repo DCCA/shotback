@@ -63,6 +63,8 @@ const environment = {
   scroller: "document" as const
 };
 
+const image = { width: 1000, height: 500 };
+
 const environmentBlock = [
   "Environment:",
   "- Page title: Acme Dashboard",
@@ -192,6 +194,49 @@ describe("buildExternalLlmPrompt", () => {
     expect(prompt).toContain("1. [box] first");
     expect(prompt).toContain("2. [box] second");
   });
+
+  it("appends per-annotation geometry when an image size is given", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding"), arrow("point here"), text("Label")],
+      image
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page]",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("omits geometry entirely when no image size is given (byte-identical to Task 13)", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")]
+    });
+
+    expect(prompt).toBe(
+      [
+        "Please review this screenshot and provide feedback.",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding"
+      ].join("\n")
+    );
+  });
 });
 
 describe("buildClaudeCodePrompt", () => {
@@ -269,5 +314,50 @@ describe("buildClaudeCodePrompt", () => {
     expect(prompt).toContain("Page URL: (unknown)");
     expect(prompt).toContain("General feedback context: (none)");
     expect(prompt).toContain("Area comments:\n(none)");
+  });
+
+  it("appends per-annotation geometry when an image size is given", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding"), arrow("point here"), text("Label")],
+      image
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding - at (0, 0) size 10x10 px [0%, 0% of page]",
+        "2. [arrow] point here - from (0, 0) to (5, 5) px",
+        "3. [text] Label - at (1, 2) px"
+      ].join("\n")
+    );
+  });
+
+  it("omits geometry entirely when no image size is given (byte-identical to Task 13)", () => {
+    const prompt = buildClaudeCodePrompt({
+      filePath: "/mnt/c/Downloads/shotback/cap.png",
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      annotations: [box("fix padding")]
+    });
+
+    expect(prompt).toBe(
+      [
+        "Review this screenshot: /mnt/c/Downloads/shotback/cap.png",
+        "",
+        "Page URL: https://example.test/page",
+        "General feedback context: (none)",
+        "",
+        "Area comments:",
+        "1. [box] fix padding"
+      ].join("\n")
+    );
   });
 });

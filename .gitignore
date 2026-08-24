@@ -26,6 +26,10 @@ playwright-report/
 # Local docs scratch space
 .docs/tmp/
 
+# Generated store listing screenshots
+store/*
+!store/README.md
+
 # Local tooling artifacts
 .agents/
 skills-lock.json

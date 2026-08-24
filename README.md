@@ -54,19 +54,26 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 
 ## 🚀 Quick Start
 
-### 1️⃣ Install dependencies
+### Option A: Install from the Chrome Web Store
+
+> Not yet published - the listing link will go here once Shotback is live on
+> the Chrome Web Store. Until then, use the from-source steps below.
+
+### Option B: Build from source
+
+#### 1️⃣ Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2️⃣ Build extension
+#### 2️⃣ Build extension
 
 ```bash
 npm run build
 ```
 
-### 3️⃣ Load in Chrome
+#### 3️⃣ Load in Chrome
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
@@ -209,7 +216,7 @@ It requests only the permissions full-page capture needs - `activeTab`, `tabs`,
 `scripting`, `storage`/`unlimitedStorage`, and `<all_urls>` host access so it can
 capture whatever page you are viewing. Page access is used **only when you start
 a capture**. See [`SECURITY.md`](SECURITY.md) for the full per-permission
-rationale.
+rationale, and [`PRIVACY.md`](PRIVACY.md) for the plain-language privacy policy.
 
 ## 🤝 Contributing
 

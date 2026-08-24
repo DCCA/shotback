@@ -196,6 +196,21 @@ for (const [name, headerHeight] of [
     expect(result.height).toBe(headerHeight + 8 * 300);
     expect(result.mismatched).toEqual([]);
 
+    if (name === "inner") {
+      // The share link anchor renders the full chrome-extension:// URL as one
+      // unbreakable string; it must wrap instead of pushing the sidebar wide.
+      // Widen past the lg breakpoint so the sidebar sits in its fixed-width
+      // column (the capture itself already ran against the real window size).
+      await editor.setViewportSize({ width: 1280, height: 900 });
+      await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+      await editor.waitForSelector("a[href*='viewer.html']");
+      const overflow = await editor.evaluate(() => {
+        const card = document.querySelector("main > div")!; // first Card = sidebar
+        return card.scrollWidth - card.clientWidth;
+      });
+      expect(overflow).toBe(0);
+    }
+
     await editor.close();
     await page.close();
   });

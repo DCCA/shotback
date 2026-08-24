@@ -73,6 +73,7 @@ test.beforeAll(async () => {
 
   sw = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent("serviceworker"));
   extId = new URL(sw.url()).host;
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
 });
 
 test.afterAll(async () => {
@@ -213,6 +214,15 @@ for (const [name, headerHeight] of [
 
       const row = editor.locator("ol li button").first();
       await expect(row.locator("div").last()).toHaveText("Chart");
+
+      await editor.getByRole("button", { name: "Copy Image" }).click();
+      // The copy runs async after the click; wait for the success status
+      // before reading the clipboard, or the read can race the write.
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText("copied");
+      const type = await editor.evaluate(
+        async () => (await navigator.clipboard.read())[0].types[0]
+      );
+      expect(type).toBe("image/png");
     }
 
     if (name === "inner") {

@@ -26,6 +26,32 @@ export function selectFeedbackRenderMode(params: {
   return "footer";
 }
 
+/**
+ * The three corners of an arrow's head, tip first. Shared with the canvas, which
+ * draws the same head as an SVG polygon, so on-screen and exported arrows match.
+ */
+export function arrowHeadPoints(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): { x: number; y: number }[] {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const size = 10;
+
+  return [
+    { x: x2, y: y2 },
+    {
+      x: x2 - size * Math.cos(angle - Math.PI / 6),
+      y: y2 - size * Math.sin(angle - Math.PI / 6)
+    },
+    {
+      x: x2 - size * Math.cos(angle + Math.PI / 6),
+      y: y2 - size * Math.sin(angle + Math.PI / 6)
+    }
+  ];
+}
+
 function drawArrowHead(
   ctx: CanvasRenderingContext2D,
   x1: number,
@@ -34,14 +60,13 @@ function drawArrowHead(
   y2: number,
   color: string
 ): void {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const size = 10;
+  const [tip, left, right] = arrowHeadPoints(x1, y1, x2, y2);
 
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - size * Math.cos(angle - Math.PI / 6), y2 - size * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(x2 - size * Math.cos(angle + Math.PI / 6), y2 - size * Math.sin(angle + Math.PI / 6));
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(left.x, left.y);
+  ctx.lineTo(right.x, right.y);
   ctx.closePath();
   ctx.fill();
 }

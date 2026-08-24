@@ -8,6 +8,8 @@ interface SavedSharesProps {
   shares: LocalShareMeta[];
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Re-opens the share's page and starts a fresh capture linked back to it. */
+  onRecapture: (share: LocalShareMeta) => void;
   /** Hands the ticked shares, newest first, to the batch Claude Code export. */
   onBatchExport: (ids: string[]) => void;
   /** Same guard the sidebar's actions use: no second export while one runs. */
@@ -18,6 +20,7 @@ export function SavedShares({
   shares,
   onOpen,
   onDelete,
+  onRecapture,
   onBatchExport,
   isBusy
 }: SavedSharesProps): JSX.Element {
@@ -63,7 +66,7 @@ export function SavedShares({
           <ul className="m-0 grid list-none gap-2 p-0">
             {shares.map((share) => (
               <li key={share.id}>
-                <div className="grid grid-cols-[auto_1fr_auto] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                <div className="grid grid-cols-[auto_1fr] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
                   <input
                     type="checkbox"
                     className="mt-1 h-4 w-4 accent-primary"
@@ -80,7 +83,7 @@ export function SavedShares({
                       {formatBytes(share.imageByteSize)}
                     </div>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="col-start-2 flex flex-wrap gap-1.5">
                     <Button
                       type="button"
                       variant="secondary"
@@ -88,6 +91,15 @@ export function SavedShares({
                       onClick={() => onOpen(share.id)}
                     >
                       Open
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Re-capture ${shareLabel(share.pageUrl)}`}
+                      onClick={() => onRecapture(share)}
+                    >
+                      Re-capture
                     </Button>
                     <Button
                       type="button"

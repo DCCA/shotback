@@ -152,7 +152,12 @@ export interface EditorExports {
   removeSavedShare: (id: string) => Promise<void>;
 }
 
-export function useExports(state: EditorState): EditorExports {
+/**
+ * `previousShareId` is the share this editor session re-captures, carried in
+ * the editor URL by `recaptureShare`. It is passthrough only: the share saved
+ * here records it, and the Claude Code prompt says the capture follows one.
+ */
+export function useExports(state: EditorState, previousShareId?: string): EditorExports {
   const [savedShares, setSavedShares] = useState<LocalShareMeta[]>([]);
 
   const refreshSavedShares = useCallback(async (): Promise<void> => {
@@ -193,7 +198,8 @@ export function useExports(state: EditorState): EditorExports {
         annotations: view.annotations,
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
-        environment: state.environment
+        environment: state.environment,
+        previousShareId
       });
       const localUrl = buildLocalShareUrl(share.id);
       state.setShareUrl(localUrl);
@@ -377,6 +383,7 @@ export function useExports(state: EditorState): EditorExports {
       const prompt = buildClaudeCodePrompt({
         filePath,
         sidecarPath: sidecarPath || undefined,
+        followsPrevious: Boolean(previousShareId),
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
         annotations: view.annotations,

@@ -75,7 +75,8 @@ export function useExports(state: EditorState): EditorExports {
         imageDataUrl: merged,
         annotations: state.annotations,
         pageUrl: state.pageUrl,
-        generalFeedback: state.generalFeedback
+        generalFeedback: state.generalFeedback,
+        environment: state.environment
       });
       const localUrl = buildLocalShareUrl(share.id);
       state.setShareUrl(localUrl);
@@ -172,7 +173,8 @@ export function useExports(state: EditorState): EditorExports {
       const prompt = buildExternalLlmPrompt({
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
-        annotations: state.annotations
+        annotations: state.annotations,
+        environment: state.environment
       });
 
       const a = document.createElement("a");
@@ -230,7 +232,8 @@ export function useExports(state: EditorState): EditorExports {
         filePath,
         pageUrl: state.pageUrl,
         generalFeedback: state.generalFeedback,
-        annotations: state.annotations
+        annotations: state.annotations,
+        environment: state.environment
       });
       await navigator.clipboard.writeText(prompt);
 

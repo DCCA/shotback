@@ -153,6 +153,12 @@ for (const [name, headerHeight] of [
   test(`full-page capture stitches every viewport in order (${name})`, async () => {
     const page = await ctx.newPage();
     await page.goto(base + name, { waitUntil: "load" });
+    // The prompt's Environment block must describe the *captured* tab, so read
+    // its real viewport here (the editor page is resized later in this test).
+    const viewport = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight
+    }));
     const { tabId, windowId } = await sw.evaluate(async (url) => {
       const [tab] = await chrome.tabs.query({ url });
       return { tabId: tab.id, windowId: tab.windowId };
@@ -223,6 +229,15 @@ for (const [name, headerHeight] of [
         async () => (await navigator.clipboard.read())[0].types[0]
       );
       expect(type).toBe("image/png");
+
+      // The cloud-LLM prompt carries the captured tab's environment.
+      await editor.getByRole("button", { name: "Prepare for Cloud LLM" }).click();
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+        "Prompt copied"
+      );
+      const prompt = await editor.evaluate(async () => navigator.clipboard.readText());
+      expect(prompt).toContain(`Viewport: ${viewport.width}x${viewport.height}`);
+      expect(prompt).toContain("Scroller: document");
     }
 
     if (name === "inner") {

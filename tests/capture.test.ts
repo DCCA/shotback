@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   activateTab,
+  buildEnvironment,
   buildScrollSteps,
   isNoReceiverError,
   isTabsBusyError,
@@ -19,6 +20,45 @@ describe("buildScrollSteps", () => {
 
   it("does not duplicate last step", () => {
     expect(buildScrollSteps(3000, 1000)).toEqual([0, 1000, 2000]);
+  });
+});
+
+describe("buildEnvironment", () => {
+  const metrics = {
+    fullHeight: 2400,
+    viewportHeight: 800,
+    viewportWidth: 1280,
+    devicePixelRatio: 2,
+    pageUrl: "https://example.test/page",
+    scrollerTop: 0,
+    title: "Acme Dashboard",
+    colorScheme: "dark" as const,
+    scroller: "document" as const
+  };
+
+  it("maps page metrics onto the capture environment", () => {
+    expect(buildEnvironment(metrics, "UA/1.0", new Date("2026-08-24T10:11:12.000Z"))).toEqual({
+      pageTitle: "Acme Dashboard",
+      pageUrl: "https://example.test/page",
+      capturedAt: "2026-08-24T10:11:12.000Z",
+      viewport: { width: 1280, height: 800 },
+      devicePixelRatio: 2,
+      userAgent: "UA/1.0",
+      colorScheme: "dark",
+      scroller: "document"
+    });
+  });
+
+  it("carries an inner scroller and a light scheme through unchanged", () => {
+    const env = buildEnvironment(
+      { ...metrics, scroller: "element", colorScheme: "light", scrollerTop: 64 },
+      "UA/2.0",
+      new Date("2026-01-02T03:04:05.678Z")
+    );
+
+    expect(env.scroller).toBe("element");
+    expect(env.colorScheme).toBe("light");
+    expect(env.capturedAt).toBe("2026-01-02T03:04:05.678Z");
   });
 });
 

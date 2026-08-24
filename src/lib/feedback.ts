@@ -1,3 +1,4 @@
+import type { CaptureEnvironment } from "@/lib/capture";
 import { numberAnnotations } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
@@ -30,6 +31,27 @@ function formatAreaComments(annotations: Annotation[]): string {
 }
 
 /**
+ * The captured tab's context, as prompt lines. Empty when no environment was
+ * captured (a share restored from before this existed), so those prompts keep
+ * exactly the shape they had.
+ */
+function environmentLines(environment?: CaptureEnvironment): string[] {
+  if (!environment) return [];
+
+  return [
+    "",
+    "Environment:",
+    `- Page title: ${environment.pageTitle.trim() || "(untitled)"}`,
+    `- Viewport: ${environment.viewport.width}x${environment.viewport.height} @${environment.devicePixelRatio}x`,
+    `- Color scheme: ${environment.colorScheme}`,
+    `- Scroller: ${environment.scroller}`,
+    `- User agent: ${environment.userAgent}`,
+    `- Captured at: ${environment.capturedAt}`,
+    ""
+  ];
+}
+
+/**
  * Build the structured prompt handed to an external/cloud LLM alongside the
  * downloaded annotated image. Kept pure so it can be unit tested.
  */
@@ -37,11 +59,13 @@ export function buildExternalLlmPrompt(params: {
   pageUrl: string;
   generalFeedback: string;
   annotations: Annotation[];
+  environment?: CaptureEnvironment;
 }): string {
   return [
     "Please review this screenshot and provide feedback.",
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,
+    ...environmentLines(params.environment),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",
@@ -59,11 +83,13 @@ export function buildClaudeCodePrompt(params: {
   pageUrl: string;
   generalFeedback: string;
   annotations: Annotation[];
+  environment?: CaptureEnvironment;
 }): string {
   return [
     `Review this screenshot: ${params.filePath}`,
     "",
     `Page URL: ${params.pageUrl || "(unknown)"}`,
+    ...environmentLines(params.environment),
     `General feedback context: ${params.generalFeedback.trim() || "(none)"}`,
     "",
     "Area comments:",

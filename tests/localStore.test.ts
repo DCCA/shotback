@@ -132,6 +132,51 @@ describe("localStore", () => {
     expect(getImageBlob).toHaveBeenCalledTimes(1);
   });
 
+  it("round-trips the capture environment and leaves it undefined when absent", async () => {
+    const environment = {
+      pageTitle: "Acme Dashboard",
+      pageUrl: "https://example.test/page",
+      capturedAt: "2026-08-24T10:11:12.000Z",
+      viewport: { width: 1280, height: 800 },
+      devicePixelRatio: 2,
+      userAgent: "UA/1.0",
+      colorScheme: "dark" as const,
+      scroller: "document" as const
+    };
+
+    const withEnv = await saveLocalShare({
+      pageUrl: "https://example.test/page",
+      imageDataUrl: createDataUrl("env"),
+      annotations: [],
+      generalFeedback: "",
+      environment
+    });
+
+    expect(withEnv.schemaVersion).toBe(2);
+    expect((await getLocalShare(withEnv.id))?.environment).toEqual(environment);
+
+    const withoutEnv = await saveLocalShare({
+      pageUrl: "https://example.test/page",
+      imageDataUrl: createDataUrl("no-env"),
+      annotations: [],
+      generalFeedback: ""
+    });
+
+    expect((await getLocalShare(withoutEnv.id))?.environment).toBeUndefined();
+
+    // A record saved before the environment existed must still read back.
+    const legacyId = "legacy-env";
+    storageState[`share:${legacyId}`] = {
+      id: legacyId,
+      pageUrl: "https://legacy.test",
+      imageDataUrl: createDataUrl("legacy"),
+      annotations: [],
+      generalFeedback: "",
+      createdAt: "2026-02-20T00:00:00.000Z"
+    };
+    expect((await getLocalShare(legacyId))?.environment).toBeUndefined();
+  });
+
   it("preserves arbitrary binary bytes through the base64 round-trip", async () => {
     const bytes = new Uint8Array([0, 1, 2, 127, 128, 200, 254, 255]);
     const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;

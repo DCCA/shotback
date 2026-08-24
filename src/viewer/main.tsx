@@ -82,6 +82,13 @@ function ViewerApp(): JSX.Element {
                 <span className="font-semibold text-muted-foreground">Saved at:</span>{" "}
                 {new Date(share.createdAt).toLocaleString()}
               </p>
+              {share.environment ? (
+                <p className="m-0">
+                  <span className="font-semibold text-muted-foreground">Viewport:</span>{" "}
+                  {share.environment.viewport.width}x{share.environment.viewport.height} @
+                  {share.environment.devicePixelRatio}x - {share.environment.colorScheme}
+                </p>
+              ) : null}
               <p className="m-0">
                 <span className="font-semibold text-muted-foreground">General feedback:</span>{" "}
                 {share.generalFeedback?.trim() || "No general feedback provided."}

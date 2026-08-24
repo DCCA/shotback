@@ -1,0 +1,28 @@
+# Tasks: Environment block in prompts, shares and viewer
+
+- [x] **1. Unit tests RED**
+  - [x] 1.1 `tests/capture.test.ts`: `buildEnvironment` maps metrics -> environment (viewport from `viewportWidth`/`viewportHeight`, ISO string from `now`, scroller and colour scheme carried through).
+  - [x] 1.2 `tests/feedback.test.ts`: with an environment both builders emit the exact block; the `(untitled)` fallback; without one the full output is byte-identical to today (asserted with `toBe` on the whole prompt).
+  - [x] 1.3 RED: 5 failures - 2 in `capture.test.ts` (no such export), 3 in `feedback.test.ts` (block missing); the two "omits the environment block" tests passed from the start, pinning today's bytes.
+- [x] **2. Implement capture + content; GREEN**
+  - [x] 2.1 `PageMetrics` gains `title`, `colorScheme`, `scroller`; `CaptureEnvironment`, `buildEnvironment`, `CaptureResult.environment`.
+  - [x] 2.2 `src/content.ts` reports `document.title`, `matchMedia("(prefers-color-scheme: dark)")` and `scroller: "document" | "element"` (it knows which branch it took).
+  - [x] 2.3 Prompt builders take optional `environment`; `environmentLines` returns `[]` when absent.
+  - [x] 2.4 GREEN: 33 tests in the two files.
+- [x] **3. localStore round-trip**
+  - [x] 3.1 RED: save with environment -> `getLocalShare` returned `undefined`.
+  - [x] 3.2 Optional `environment` on `LocalShare`/`LocalShareMeta`/`saveLocalShare` input, passed through `toLocalShareMeta` and back out of `getLocalShare`. No `schemaVersion` bump, no migration.
+  - [x] 3.3 GREEN, including the legacy-record case (no environment -> `undefined`).
+- [x] **4. Editor + viewer wiring**
+  - [x] 4.1 `environment` state in `use-editor-state.ts`, cleared at capture start in `main.tsx`, set from the capture result.
+  - [x] 4.2 `use-exports.ts`: passed to `buildExternalLlmPrompt`, `buildClaudeCodePrompt` and `saveLocalShare`.
+  - [x] 4.3 Viewer metadata card: `Viewport: WxH @Nx - <colorScheme>` under "Saved at", only when the share has an environment.
+- [x] **5. e2e**
+  - [x] 5.1 RED against pre-change source (`git stash push -- src/`): `Expected substring: "Viewport: 780x493"` not in the copied prompt.
+  - [x] 5.2 The `smooth` test reads the target tab's `innerWidth`/`innerHeight`, clicks `Prepare for Cloud LLM`, waits for "Prompt copied", and asserts the clipboard prompt contains that viewport and `Scroller: document`.
+- [x] **6. Gate + docs**
+  - [x] 6.1 `npm run check` - typecheck, lint, 90 unit tests, build: green.
+  - [x] 6.2 `npm run format:check` - green. `npm run test:e2e` - 6/6.
+  - [x] 6.3 Colour-literal grep - zero hits.
+  - [x] 6.4 CLAUDE.md capture-flow + helper bullets; README features bullet + usage note.
+- [x] **7. Commit and PR**

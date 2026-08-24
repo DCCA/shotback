@@ -40,8 +40,12 @@ When you capture a page, Shotback records:
   you attach to them;
 - for each non-redaction annotation, a description of the page element under
   it: its CSS selector (tag, id, classes, `role`, `data-testid`), its
-  position, and up to 80 characters of its visible text - read from the page
-  only at the moment you draw or move an annotation;
+  position, up to 80 characters of its visible text, and - on React sites -
+  the names of the React components that render it. The component names are
+  read by briefly running a small script inside the page's own JavaScript
+  world (not Shotback's isolated one); only short, sanitised names come
+  back, one line each, capped at 50 characters. All of this is read from the
+  page only at the moment you draw or move an annotation;
 - the requests the page itself made and did not get a good answer to (HTTP
   status 400 or higher, up to 20 of them, each URL capped at 200 characters).
   This is a partial view: it only sees same-origin failures and cross-origin

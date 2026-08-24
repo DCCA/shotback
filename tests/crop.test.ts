@@ -190,6 +190,15 @@ describe("clampCrop", () => {
     });
   });
 
+  it("yields the minimum to an image smaller than it", () => {
+    expect(clampCrop({ x: 3, y: 3, width: 2, height: 2 }, { width: 10, height: 16 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 16
+    });
+  });
+
   it("never returns a crop larger than the image", () => {
     expect(clampCrop({ x: 0, y: 0, width: 5000, height: 5000 }, image)).toEqual({
       x: 0,

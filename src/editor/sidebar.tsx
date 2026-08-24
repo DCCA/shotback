@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { EditorState, EditorTool } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
+import { applyCrop } from "@/lib/crop";
 import type { Verbosity } from "@/lib/feedback";
 
 interface SidebarProps {
@@ -47,6 +48,10 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     promptVerbosity,
     setPromptVerbosity
   } = state;
+
+  // What the crop leaves out. The exports renumber the survivors, so saying
+  // this plainly is also the answer to "why is pin 3 numbered 2 in the PNG".
+  const excludedByCrop = crop ? annotations.length - applyCrop(annotations, crop).length : 0;
 
   const removeSelected = (): void => {
     if (selectedId) removeAnnotation(selectedId);
@@ -120,13 +125,21 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             </Button>
           </div>
         ) : crop ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-            <span>
-              Cropped to {crop.width}x{crop.height}
-            </span>
-            <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => setCrop(null)}>
-              Clear
-            </Button>
+          <div className="space-y-1 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <span>
+                Cropped to {crop.width}x{crop.height}
+              </span>
+              <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => setCrop(null)}>
+                Clear
+              </Button>
+            </div>
+            {excludedByCrop > 0 ? (
+              <p className="m-0">
+                {excludedByCrop} annotation{excludedByCrop === 1 ? "" : "s"} outside the crop{" "}
+                {excludedByCrop === 1 ? "is" : "are"} excluded from exports
+              </p>
+            ) : null}
           </div>
         ) : null}
 

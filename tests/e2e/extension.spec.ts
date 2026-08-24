@@ -616,8 +616,9 @@ for (const [name, headerHeight] of [
         y: shownBox.y + py * scale
       });
 
-      await editor.getByRole("combobox", { name: "Interaction" }).click();
-      await editor.getByRole("option", { name: "Draw New" }).click();
+      // The documented path: annotate, then pick Crop and drag. No Interaction
+      // switch here on purpose - the editor is in move mode after the last
+      // commit, and picking Crop must put it back into draw mode by itself.
       await editor.getByRole("combobox", { name: "Tool" }).click();
       await editor.getByRole("option", { name: "Crop" }).click();
 
@@ -636,6 +637,10 @@ for (const [name, headerHeight] of [
       await expect(rows).toHaveCount(3);
       await editor.getByRole("button", { name: "Apply crop" }).click();
       const cropRect = await rectOf(editor.locator("#crop-region"));
+      // Only the CTA box is inside the crop; the sidebar says what it costs.
+      await expect(editor.getByText("outside the crop")).toContainText(
+        "2 annotations outside the crop are excluded from exports"
+      );
 
       await copyCloudPrompt(editor);
       const croppedPrompt = await readClipboard(editor);

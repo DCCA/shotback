@@ -12,7 +12,7 @@ export interface Rect {
 export const MIN_CROP_SIZE = 24;
 
 function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), Math.max(min, max));
+  return Math.min(Math.max(value, min), max);
 }
 
 /**
@@ -23,8 +23,14 @@ function clamp(value: number, min: number, max: number): number {
  * `drawImage` for pixels the capture does not have.
  */
 export function clampCrop(crop: Rect, image: { width: number; height: number }): Rect {
-  const width = clamp(Math.round(crop.width), MIN_CROP_SIZE, image.width);
-  const height = clamp(Math.round(crop.height), MIN_CROP_SIZE, image.height);
+  // The minimum yields to the image on a capture narrower or shorter than it,
+  // so the result is never bigger than the pixels there are to draw.
+  const width = clamp(Math.round(crop.width), Math.min(MIN_CROP_SIZE, image.width), image.width);
+  const height = clamp(
+    Math.round(crop.height),
+    Math.min(MIN_CROP_SIZE, image.height),
+    image.height
+  );
   return {
     x: clamp(Math.round(crop.x), 0, image.width - width),
     y: clamp(Math.round(crop.y), 0, image.height - height),

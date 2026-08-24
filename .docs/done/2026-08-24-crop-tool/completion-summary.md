@@ -179,3 +179,35 @@ Both read correctly in both themes; the crop controls are plain `Button`s and a
   impossible to redraw a crop that is too small.
 - An applied crop cannot be nudged or resized - it is redrawn. Worth revisiting
   only if it turns out to be a real annoyance.
+
+## Review fixes
+
+1. **Crop tool was inert once any annotation existed.** Committing an annotation
+   (or picking a timeline row) switches `interactionMode` to `move`; the crop
+   marquee is a draw gesture, so the README path - annotate, pick Crop, drag -
+   did nothing. `setTool` in `use-editor-state.ts` is now a wrapper that forces
+   draw mode when `crop` is picked, so every caller is covered rather than the
+   sidebar alone. The e2e dropped its explicit "Draw New" step before Crop and
+   is now the guard: with the wrapper reverted it fails on
+   `waiting for getByRole('button', { name: 'Apply crop' })`, because the drag
+   never produced a marquee.
+2. **Two stale invariant claims** amended with the crop caveat - CLAUDE.md's
+   `numberAnnotations` bullet and `buildSidecar`'s doc comment. `numberAnnotations`
+   numbers whatever list it is handed: the editor surfaces hand it the full list,
+   the exports hand it the list `applyCrop` kept.
+3. **Excluded-count signal.** The applied-crop row now carries
+   `N annotation(s) outside the crop are excluded from exports` when N > 0
+   (`annotations.length - applyCrop(annotations, crop).length`, muted text,
+   singular and plural). It is the honest answer to the renumbering point in the
+   original follow-ups. The e2e asserts it reads
+   `2 annotations outside the crop are excluded from exports` for its crop.
+4. **`clampCrop` doc-vs-code drift on sub-24px images.** The doc promised the
+   minimum would yield to a smaller image; the code returned 24 anyway. The
+   per-side minimum is now `Math.min(MIN_CROP_SIZE, image.width|height)`, with a
+   unit case (`2x2` crop on a `10x16` image -> the whole image) and a simplified
+   local `clamp`.
+
+Gate after the fixes: `npx vitest run tests/crop.test.ts tests/annotate.test.ts`
+36 passed; `npm run check` 179 unit tests + typecheck/lint/build green;
+`npm run format:check` green; `npm run test:e2e` 6/6; colour-literal grep and
+em-dash check both zero.

@@ -49,3 +49,23 @@
   - [x] 5.6 CLAUDE.md (helper list, outputs paragraph) and README (Features,
         Usage) updated.
 - [x] **6. Commit and PR**
+
+## Review fixes (task review of c28f43e..8cedc9e)
+
+- [x] **7.1 Crop tool inert after any annotation existed (Important).** Committing
+      an annotation (and picking a timeline row) flips `interactionMode` to
+      `move`, and the crop marquee is a draw gesture, so the documented path
+      (annotate, pick Crop, drag) did nothing. `setTool` in `use-editor-state.ts`
+      is now a wrapper that forces draw mode when the crop tool is picked -
+      central, so every caller is covered. The e2e no longer re-selects
+      "Draw New" before Crop, which makes it the regression guard.
+- [x] **7.2 Stale invariant claims** amended with the crop caveat: CLAUDE.md's
+      `numberAnnotations` bullet and `buildSidecar`'s "cannot disagree" comment
+      (exports number the surviving list; editor surfaces number the full one).
+- [x] **7.3 Excluded-count signal:** under `Cropped to WxH - Clear`, the sidebar
+      now shows `N annotation(s) outside the crop are excluded from exports`
+      when N > 0 (muted text, singular/plural handled), asserted in the e2e.
+- [x] **7.4 `clampCrop` doc-vs-code drift:** the per-side minimum now yields to a
+      sub-24px image (`Math.min(MIN_CROP_SIZE, image.width|height)`) so the
+      result is never larger than the capture; new unit case covers it, and the
+      local `clamp` helper lost its now-dead `Math.max(min, max)` guard.

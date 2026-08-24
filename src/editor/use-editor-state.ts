@@ -99,10 +99,19 @@ export function useEditorState(): EditorState {
   const [history, setHistory] = useState<History<Annotation[]>>(() =>
     createHistory<Annotation[]>([])
   );
-  const [tool, setTool] = useState<EditorTool>("box");
+  const [tool, setToolState] = useState<EditorTool>("box");
   const [crop, setCrop] = useState<Rect | null>(null);
   const [cropDraft, setCropDraft] = useState<Rect | null>(null);
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
+
+  // Committing an annotation (and picking one in the timeline) switches to move
+  // mode, so a crop chosen afterwards would be inert: its marquee is a draw
+  // gesture. Picking Crop therefore always puts the canvas back in draw mode.
+  const setTool = (next: EditorTool): void => {
+    setToolState(next);
+    if (next === "crop") setInteractionMode("draw");
+  };
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [color, setColor] = useState("#ff3333");
   const [generalFeedback, setGeneralFeedback] = useState("");

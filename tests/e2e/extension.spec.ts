@@ -196,6 +196,24 @@ for (const [name, headerHeight] of [
     expect(result.height).toBe(headerHeight + 8 * 300);
     expect(result.mismatched).toEqual([]);
 
+    if (name === "smooth") {
+      // Draw a box and type straight away, with no wait: the comment textarea
+      // must already be focused when the first keystroke arrives, or the "C"
+      // of "Chart" is lost to the window.
+      await editor.setViewportSize({ width: 1280, height: 900 });
+      const canvas = (await img.boundingBox())!;
+      const x = canvas.x + 60;
+      const y = canvas.y + 60;
+      await editor.mouse.move(x, y);
+      await editor.mouse.down();
+      await editor.mouse.move(x + 160, y + 120, { steps: 5 });
+      await editor.mouse.up();
+      await editor.keyboard.type("Chart");
+
+      const row = editor.locator("ol li button").first();
+      await expect(row.locator("div").last()).toHaveText("Chart");
+    }
+
     if (name === "inner") {
       // The share link anchor renders the full chrome-extension:// URL as one
       // unbreakable string; it must wrap instead of pushing the sidebar wide.

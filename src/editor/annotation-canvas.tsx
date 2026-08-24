@@ -1,8 +1,10 @@
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Card, CardContent } from "@/components/ui/card";
-import { annotationCommentAnchor, moveAnnotation, uid } from "@/editor/annotation-geometry";
+import { annotationBounds, moveAnnotation, uid } from "@/editor/annotation-geometry";
 import type { EditorState } from "@/editor/use-editor-state";
+import { arrowHeadPoints } from "@/lib/annotate";
 import {
   applyBoxResizeDelta,
   BOX_RESIZE_HANDLES,
@@ -10,6 +12,7 @@ import {
   getBoxResizeCursor,
   type BoxResizeHandle
 } from "@/lib/boxResize";
+import { placeInlineEditor } from "@/lib/editor-placement";
 import { numberAnnotations, pinCenter, pinRadius } from "@/lib/numbering";
 import type { Annotation, BoxAnnotation } from "@/types/annotation";
 
@@ -38,6 +41,8 @@ interface ResizeState {
 const RESIZE_HANDLE_SIZE = 9;
 const RESIZE_HANDLE_HIT_SIZE = 16;
 const MIN_RESIZE_BOX_SIZE = 8;
+/** Image-space size of the inline comment editor; also what its placement is solved for. */
+const INLINE_EDITOR_SIZE = { width: 240, height: 84 };
 
 interface AnnotationCanvasProps {
   state: EditorState;
@@ -117,15 +122,14 @@ export function AnnotationCanvas({
     );
   };
 
-  const selectedAnchor = selectedAnnotation ? annotationCommentAnchor(selectedAnnotation) : null;
-  const inlineEditorPosition = selectedAnchor
-    ? {
-        x: Math.max(10, Math.min(selectedAnchor.x + 14, imageSize.width - 250)),
-        y: Math.max(10, Math.min(selectedAnchor.y + 14, imageSize.height - 90))
-      }
+  const inlineEditorPosition = selectedAnnotation
+    ? placeInlineEditor(annotationBounds(selectedAnnotation), imageSize, INLINE_EDITOR_SIZE)
     : null;
 
-  useEffect(() => {
+  // Layout effect, not a plain effect: the first keystroke after the shape is
+  // created must land in the textarea, so it has to be focused before the
+  // browser hands control back after the pointer-up.
+  useLayoutEffect(() => {
     if (!shouldFocusSelectedComment) return;
     if (!selectedAnnotation) return;
 
@@ -185,6 +189,21 @@ export function AnnotationCanvas({
     return { x: transformed.x, y: transformed.y };
   };
 
+  /**
+   * Add a freshly drawn annotation, select it and ask for focus - synchronously,
+   * so the comment textarea is mounted and focused before the pointer event
+   * that created the shape returns. Anything typed straight after the release
+   * then lands in the comment instead of on the window.
+   */
+  const commitNewAnnotation = (item: Annotation): void => {
+    flushSync(() => {
+      setAnnotations((prev) => [...prev, item]);
+      setSelectedId(item.id);
+      setInteractionMode("move");
+      setShouldFocusSelectedComment(true);
+    });
+  };
+
   const onCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
     if (!baseDataUrl) return;
 
@@ -198,7 +217,7 @@ export function AnnotationCanvas({
     const { x, y } = pointerPos(event);
 
     if (tool === "text") {
-      const item: Annotation = {
+      commitNewAnnotation({
         id: uid(),
         tool: "text",
         x,
@@ -206,12 +225,7 @@ export function AnnotationCanvas({
         text: "",
         color,
         createdAt: new Date().toISOString()
-      };
-
-      setAnnotations((prev) => [...prev, item]);
-      setSelectedId(item.id);
-      setInteractionMode("move");
-      setShouldFocusSelectedComment(true);
+      });
       return;
     }
 
@@ -352,10 +366,7 @@ export function AnnotationCanvas({
           comment: "",
           createdAt: new Date().toISOString()
         };
-        setAnnotations((prev) => [...prev, item]);
-        setSelectedId(item.id);
-        setInteractionMode("move");
-        setShouldFocusSelectedComment(true);
+        commitNewAnnotation(item);
         added = true;
       }
     }
@@ -372,10 +383,7 @@ export function AnnotationCanvas({
         comment: "",
         createdAt: new Date().toISOString()
       };
-      setAnnotations((prev) => [...prev, item]);
-      setSelectedId(item.id);
-      setInteractionMode("move");
-      setShouldFocusSelectedComment(true);
+      commitNewAnnotation(item);
       added = true;
     }
 
@@ -422,19 +430,6 @@ export function AnnotationCanvas({
               // draft/drag/resize survives the pointer moving to the sidebar.
               onPointerLeave={onCanvasPointerUp}
             >
-              <defs>
-                <marker
-                  id="arrow-head"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="7"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 8 3, 0 6" fill="currentColor" />
-                </marker>
-              </defs>
-
               {annotations.map((item) => {
                 const isSelected = selectedId === item.id;
 
@@ -503,12 +498,15 @@ export function AnnotationCanvas({
                         y2={item.y2}
                         stroke={item.color}
                         strokeWidth={isSelected ? "4" : "3"}
-                        markerEnd="url(#arrow-head)"
                         strokeDasharray={isSelected ? "8 5" : undefined}
                         pointerEvents="none"
-                        // The arrow-head marker fills with currentColor; set it so the
-                        // head matches the arrow stroke instead of inheriting page text color.
-                        style={{ color: item.color }}
+                      />
+                      <polygon
+                        points={arrowHeadPoints(item.x1, item.y1, item.x2, item.y2)
+                          .map((point) => `${point.x},${point.y}`)
+                          .join(" ")}
+                        fill={item.color}
+                        pointerEvents="none"
                       />
                       {renderPin(item)}
                     </g>
@@ -546,8 +544,8 @@ export function AnnotationCanvas({
                 <foreignObject
                   x={inlineEditorPosition.x}
                   y={inlineEditorPosition.y}
-                  width={240}
-                  height={84}
+                  width={INLINE_EDITOR_SIZE.width}
+                  height={INLINE_EDITOR_SIZE.height}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
                   <div className="h-full w-full rounded-lg border-2 border-primary bg-card/95 p-1.5 shadow-lg">

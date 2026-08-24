@@ -229,3 +229,33 @@ em dashes on added lines
   reads it yet; it is the hook for a testid-anchored path in Task 17/18.
 - A context is only as fresh as the last commit; a page that re-renders on its
   own is not re-inspected until the next annotation edit.
+
+## Review fixes (second pass)
+
+- **SECURITY.md** updated: the `scripting` row now covers the page-world
+  (`world: "MAIN"`) component read (no extension state crosses, only sanitised
+  strings return); the page-content sentence says annotating also reads element
+  selectors and up to 80 chars of element text into the share; the temporary
+  `data-shotback-hit` marker is called out as page-observable and removed after
+  each inspection.
+- **Component names are sanitised on the extension side**
+  (`sanitizeComponentName` in `capture.ts`, applied in `readComponentChains`):
+  whitespace collapsed, trimmed, 50 chars. A hostile page cannot push an
+  unbounded or multi-line string into a prompt by naming a component after it.
+- **Concurrent inspections**: `main.tsx` bumps `inspectGenRef` per inspection
+  and bails before `setAnnotations` if a newer one started.
+- **Navigation guard**: `SB_INSPECT_POINTS` answers with its own
+  `window.location.href`; `inspectPoints(tabId, points, pageUrl)` answers every
+  point with `null` (and clears the hit marks) when it differs. `null` clears an
+  annotation's stored context rather than keeping it: those names describe a
+  page that is gone. A failed inspection still returns `[]`, which leaves the
+  stored contexts alone.
+- **Document-scroller coverage**: the `smooth` e2e fixture gained the same CTA
+  and asserts the same `-> #app > section.hero > button.cta` line, so both
+  scroller kinds are covered. Shared `boxOverCta` / `copyCloudPrompt` /
+  `readClipboard` helpers; the prompt is copied once per assertion point and
+  only the clipboard is read back (each copy also downloads a PNG).
+- Minors: `data-shotback-hit` marks are cleared by a best-effort cleanup
+  injection when the main-world pass fails; `visibleText` slices to 500 chars
+  before collapsing whitespace; the CLAUDE.md lines this change touched use
+  " - " instead of an em dash.

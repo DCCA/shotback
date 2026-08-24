@@ -197,8 +197,10 @@ function toElementLike(el: Element, depth = MAX_ANCESTORS): ElementLike {
 }
 
 function visibleText(el: Element): string {
+  // Slice before collapsing: a hit on <body> would otherwise build a
+  // page-sized string just to throw all but 80 chars of it away.
   const raw = el instanceof HTMLElement ? el.innerText : (el.textContent ?? "");
-  return raw.replace(/\s+/g, " ").trim().slice(0, MAX_CONTEXT_TEXT);
+  return raw.slice(0, 500).replace(/\s+/g, " ").trim().slice(0, MAX_CONTEXT_TEXT);
 }
 
 /**
@@ -311,7 +313,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SB_INSPECT_POINTS") {
     const points = Array.isArray(message.points) ? message.points : [];
-    sendResponse({ contexts: inspectPoints(points) });
+    // The URL is read here, after the hit test, so the editor can tell that the
+    // contexts describe the page it captured and not one navigated to since.
+    sendResponse({ contexts: inspectPoints(points), pageUrl: window.location.href });
     return true;
   }
 

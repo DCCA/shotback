@@ -201,17 +201,21 @@ describe("readFiberComponents", () => {
 });
 
 describe("inspectPoints", () => {
+  const pageUrl = "https://example.test/page";
+  let executeScript: ReturnType<typeof vi.fn>;
+
   function stubChrome(sendMessage: ReturnType<typeof vi.fn>, chains: unknown = {}): void {
+    executeScript = vi.fn().mockResolvedValue([{ result: chains }]);
     (globalThis as unknown as { chrome: unknown }).chrome = {
       tabs: { sendMessage },
-      scripting: { executeScript: vi.fn().mockResolvedValue([{ result: chains }]) }
+      scripting: { executeScript }
     };
   }
 
   it("sends nothing when there is nothing to inspect", async () => {
     const sendMessage = vi.fn();
     stubChrome(sendMessage);
-    await expect(inspectPoints(1, [])).resolves.toEqual([]);
+    await expect(inspectPoints(1, [], pageUrl)).resolves.toEqual([]);
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
@@ -224,9 +228,9 @@ describe("inspectPoints", () => {
         rect: { x: 10, y: 20, width: 30, height: 40 }
       }
     ];
-    const sendMessage = vi.fn().mockResolvedValue({ contexts });
+    const sendMessage = vi.fn().mockResolvedValue({ contexts, pageUrl });
     stubChrome(sendMessage);
-    await expect(inspectPoints(7, [{ x: 1, y: 2 }])).resolves.toEqual(contexts);
+    await expect(inspectPoints(7, [{ x: 1, y: 2 }], pageUrl)).resolves.toEqual(contexts);
     expect(sendMessage).toHaveBeenCalledWith(7, {
       type: "SB_INSPECT_POINTS",
       points: [{ x: 1, y: 2 }]
@@ -235,6 +239,7 @@ describe("inspectPoints", () => {
 
   it("merges the component chain the main-world pass found", async () => {
     const sendMessage = vi.fn().mockResolvedValue({
+      pageUrl,
       contexts: [
         {
           cssPath: "button.cta",
@@ -247,17 +252,61 @@ describe("inspectPoints", () => {
     });
     stubChrome(sendMessage, { "0": ["PricingCard"] });
 
-    const [first, second] = await inspectPoints(1, [
-      { x: 1, y: 2 },
-      { x: 3, y: 4 }
-    ]);
+    const [first, second] = await inspectPoints(
+      1,
+      [
+        { x: 1, y: 2 },
+        { x: 3, y: 4 }
+      ],
+      pageUrl
+    );
     expect(first?.component).toEqual(["PricingCard"]);
     expect(second).toBeNull();
   });
 
+  it("clamps a page-controlled component name to one line of 50 chars", async () => {
+    const hostile = "Evil\n".repeat(2000) + "Component";
+    const sendMessage = vi.fn().mockResolvedValue({
+      pageUrl,
+      contexts: [
+        { cssPath: "div", tag: "div", classes: [], rect: { x: 0, y: 0, width: 1, height: 1 } }
+      ]
+    });
+    stubChrome(sendMessage, { "0": [hostile] });
+
+    const [context] = await inspectPoints(1, [{ x: 1, y: 2 }], pageUrl);
+    const [name] = context?.component ?? [];
+    expect(name).toHaveLength(50);
+    expect(name).not.toContain("\n");
+    expect(name?.startsWith("Evil Evil ")).toBe(true);
+  });
+
+  it("answers every point with null when the tab has navigated away", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({
+      pageUrl: "https://example.test/somewhere-else",
+      contexts: [
+        { cssPath: "div", tag: "div", classes: [], rect: { x: 0, y: 0, width: 1, height: 1 } }
+      ]
+    });
+    stubChrome(sendMessage);
+
+    await expect(
+      inspectPoints(
+        1,
+        [
+          { x: 1, y: 2 },
+          { x: 3, y: 4 }
+        ],
+        pageUrl
+      )
+    ).resolves.toEqual([null, null]);
+    // ...and the hit marks it left on that other page are taken back off.
+    expect(executeScript).toHaveBeenCalledTimes(1);
+  });
+
   it("never throws: a failed inspection is simply no context", async () => {
     stubChrome(vi.fn().mockRejectedValue(new Error("Cannot access a chrome:// URL")));
-    await expect(inspectPoints(1, [{ x: 1, y: 2 }])).resolves.toEqual([]);
+    await expect(inspectPoints(1, [{ x: 1, y: 2 }], pageUrl)).resolves.toEqual([]);
   });
 });
 

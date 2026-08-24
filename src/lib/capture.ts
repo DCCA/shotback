@@ -249,6 +249,29 @@ export function readFiberComponents(): Record<string, string[]> {
   return chains;
 }
 
+/** Drop the hit marks if the main-world pass never got to consume them. */
+async function clearHitMarks(tabId: number): Promise<void> {
+  await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => {
+        for (const element of document.querySelectorAll("[data-shotback-hit]")) {
+          element.removeAttribute("data-shotback-hit");
+        }
+      }
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * A component name is page-controlled text, so it is clamped on this side of
+ * the boundary: one line, 50 chars. A hostile page cannot get an unbounded
+ * string into a prompt by naming a component after it.
+ */
+function sanitizeComponentName(name: unknown): string {
+  return String(name).replace(/\s+/g, " ").trim().slice(0, 50);
+}
+
 async function readComponentChains(tabId: number): Promise<Record<string, string[]>> {
   try {
     const [injected] = await chrome.scripting.executeScript({
@@ -256,9 +279,16 @@ async function readComponentChains(tabId: number): Promise<Record<string, string
       world: "MAIN",
       func: readFiberComponents
     });
-    return (injected?.result as Record<string, string[]> | undefined) ?? {};
+    const chains = (injected?.result as Record<string, string[]> | undefined) ?? {};
+    return Object.fromEntries(
+      Object.entries(chains).map(([mark, names]) => [
+        mark,
+        names.map(sanitizeComponentName).filter(Boolean)
+      ])
+    );
   } catch {
     // Non-React pages, restricted pages, a closed tab: no component chain.
+    await clearHitMarks(tabId);
     return {};
   }
 }
@@ -266,20 +296,32 @@ async function readComponentChains(tabId: number): Promise<Record<string, string
 /**
  * Ask the captured tab to describe the element under each point (page CSS px).
  * Best effort by design: it runs after every annotation commit, so a closed
- * tab, a navigation or a missing content script must return "no context" and
- * never surface an error or block the edit.
+ * tab or a missing content script must return "no context" (an empty array,
+ * which leaves the stored contexts alone) and never surface an error or block
+ * the edit.
+ *
+ * `pageUrl` is the page the capture came from. If the tab has navigated since,
+ * every point is answered with `null` rather than kept: the stored contexts
+ * describe a page that is gone, and a stale selector is worse than none.
  */
 export async function inspectPoints(
   tabId: number,
-  points: Array<{ x: number; y: number }>
+  points: Array<{ x: number; y: number }>,
+  pageUrl: string
 ): Promise<Array<ElementContext | null>> {
   if (points.length === 0) return [];
 
   try {
-    const response = await sendToContentScript<{ contexts?: Array<ElementContext | null> }>(tabId, {
-      type: "SB_INSPECT_POINTS",
-      points
-    });
+    const response = await sendToContentScript<{
+      contexts?: Array<ElementContext | null>;
+      pageUrl?: string;
+    }>(tabId, { type: "SB_INSPECT_POINTS", points });
+    if (response?.pageUrl !== pageUrl) {
+      // The marks landed on the page that is there now; take them back off.
+      await clearHitMarks(tabId);
+      return points.map(() => null);
+    }
+
     const contexts = response?.contexts ?? [];
     if (contexts.length === 0) return contexts;
 

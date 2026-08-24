@@ -25,6 +25,9 @@ function EditorApp(): JSX.Element {
   // Stitched image px per page CSS px, set by the last capture. A ref, not
   // state: nothing renders from it, and the commit handler must see it at once.
   const captureScaleRef = useRef<number | null>(null);
+  // Bumped per inspection: only the newest response may write contexts, so a
+  // slow one cannot land on top of a newer commit's result.
+  const inspectGenRef = useRef(0);
   const autoCaptureFiredRef = useRef(false);
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
@@ -88,26 +91,34 @@ function EditorApp(): JSX.Element {
    * inspection would double every undo. An older snapshot may therefore carry
    * an older context, which is harmless. Best effort throughout - `inspectPoints`
    * swallows a closed tab or a missing content script.
+   *
+   * A `null` answer clears the annotation's context instead of keeping the one
+   * it had: the element it named is no longer under it (or the tab navigated),
+   * and a stale name in a prompt is worse than no name.
    */
   const refreshContexts = async (): Promise<void> => {
     const scale = captureScaleRef.current;
     if (!scale || !canCapture) return;
 
+    const generation = (inspectGenRef.current += 1);
     const items = state.getAnnotations();
     const contexts = await inspectPoints(
       tabId,
       items.map((annotation) => {
         const { x, y } = inspectAnchor(annotation);
         return { x: x / scale, y: y / scale };
-      })
+      }),
+      state.pageUrl
     );
+    if (generation !== inspectGenRef.current) return;
     if (contexts.length === 0 || contexts.length !== items.length) return;
 
     const byId = new Map(items.map((annotation, index) => [annotation.id, contexts[index]]));
     state.setAnnotations((current) =>
       current.map((annotation) => {
-        const context = byId.get(annotation.id);
-        return context ? { ...annotation, context } : annotation;
+        if (!byId.has(annotation.id)) return annotation;
+        const context = byId.get(annotation.id) ?? undefined;
+        return context === annotation.context ? annotation : { ...annotation, context };
       })
     );
   };

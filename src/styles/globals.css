@@ -21,7 +21,10 @@
     --secondary-foreground: 222 47% 11%; /* slate-900 */
 
     --muted: 210 40% 96%; /* slate-100 */
-    --muted-foreground: 215 16% 47%; /* slate-500 */
+    /* Darkened from 47% (4.30:1 on --muted) to clear WCAG AA 4.5:1 on every
+     * background it paints text on: 4.79:1 on --muted, 5.02:1 on
+     * --background, 5.25:1 on --card. See tests/contrast-tokens.test.ts. */
+    --muted-foreground: 215 16% 42%;
 
     --accent: 149 80% 90%; /* emerald-100 */
     --accent-foreground: 162 88% 20%; /* emerald-800 */
@@ -189,5 +192,31 @@
     --glow-2-alpha: 0.18;
 
     color-scheme: dark;
+  }
+}
+
+/*
+ * `prefers-reduced-motion: reduce`, targeted rather than a global transition
+ * kill: the two actual animated effects (the button press scale, the select
+ * chevron's rotation) are removed outright, and colour/box-shadow transitions
+ * collapse to 0ms instead of vanishing - a hover, focus or disabled state
+ * still has to change instantly, just without the animation, so hierarchy is
+ * never silently lost for someone who asked for less motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .transition-\[transform\,background-color\,box-shadow\] {
+    transition-duration: 0ms;
+  }
+
+  .active\:scale-\[0\.98\]:active {
+    transform: none;
+  }
+
+  .transition-transform {
+    transition-property: none;
+  }
+
+  .transition-colors {
+    transition-duration: 0ms;
   }
 }

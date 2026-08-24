@@ -619,6 +619,7 @@ export function AnnotationCanvas({
                 id="capture-image"
                 src={baseDataUrl}
                 alt="Captured page"
+                decoding="async"
                 className={
                   zoom === "fit" ? "block h-auto w-full max-w-full" : "block h-auto max-w-none"
                 }
@@ -633,6 +634,8 @@ export function AnnotationCanvas({
               />
               <svg
                 ref={svgRef}
+                role="group"
+                aria-label="Annotation canvas. Drawing requires a pointer; annotations can be managed from the comment timeline."
                 className={`absolute inset-0 h-full w-full ${
                   interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
                 }`}

@@ -719,6 +719,12 @@ for (const [name, headerHeight] of [
         "Copied a Claude Code prompt"
       );
       const claudePrompt = await readClipboard(editor);
+      // ...and leaves a trace inside the extension itself. The files go to
+      // Downloads and the prompt to the clipboard, and until this the tool
+      // that made the capture could not show it to you afterwards: one saved
+      // share existed at this point (the one saved above), and this export
+      // adds its own.
+      await expect(editor.locator("#saved-share-count")).toHaveText("2");
       const sidecarFile = await downloadedFile("application/json");
       expect(claudePrompt.split("\n")[0]).toBe(
         `Review this screenshot: ${await downloadedFile("image/png")}`
@@ -975,12 +981,14 @@ for (const [name, headerHeight] of [
       await editor.getByRole("button", { name: "Clear", exact: true }).click();
       await expect(editor.locator("#capture-window")).not.toHaveAttribute("data-crop");
 
-      // Batch handoff: two shares are saved by now (the sidebar-overflow one
-      // and the cropped one). Ticking both writes every PNG plus a single
-      // batch.json into one folder, and copies a prompt that leads with it.
+      // Batch handoff: four shares are saved by now - the sidebar-overflow
+      // one, the cropped one, and one each from the PNG and JPEG Claude Code
+      // exports, which now record what they handed over. Ticking two of them
+      // writes those PNGs plus a single batch.json into one folder, and copies
+      // a prompt that leads with it.
       await editor.getByRole("button", { name: "Show" }).click();
       const checkboxes = editor.getByRole("checkbox");
-      await expect(checkboxes).toHaveCount(2);
+      await expect(checkboxes).toHaveCount(4);
       // Target size (WCAG 2.5.8): the label wrapping each checkbox is the
       // real tappable area, at least 24x24 - not the ~13px native tick.
       for (const box of await checkboxes.evaluateAll((inputs) =>

@@ -121,7 +121,10 @@ export function SavedShares({
       <div className="flex items-center justify-between">
         <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
         <div className="flex items-center gap-2">
-          <Badge>{shares.length}</Badge>
+          {/* `id` is a test hook, in the style of `#capture-window`'s
+              `data-crop`: how many shares are stored is what the e2e checks
+              after an export claims to have saved one. */}
+          <Badge id="saved-share-count">{shares.length}</Badge>
           {shares.length > 0 ? (
             <Button
               type="button"

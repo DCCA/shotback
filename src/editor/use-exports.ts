@@ -242,6 +242,48 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     }
   };
 
+  /**
+   * Keep a copy of an export inside the extension itself. A Claude Code
+   * handoff writes real files to Downloads and puts a prompt on the clipboard,
+   * and until this existed that was the whole of the record: lose the
+   * clipboard or close the tab and the tool that made the capture could not
+   * show it to you, even though it lists every share with a thumbnail.
+   *
+   * Best effort, like the sidecar: a failure here costs the row and nothing
+   * else, and the status says so rather than claiming a clean copy. The share
+   * URL is deliberately not put on the clipboard - the clipboard holds the
+   * prompt, and a chip labelling it "share link copied" would be a lie.
+   *
+   * A share is always PNG (`createShareUrl` never passes the format pref
+   * either): the viewer renders it, and the batch handoff writes every share
+   * out as `cap-<i>.png`, so a JPEG stored here would put JPEG bytes in a file
+   * named `.png`. With the pref on PNG - the default - `exported` already is
+   * one and is reused rather than rendered a second time.
+   */
+  const saveShareForExport = async (exported: string, view: ExportView): Promise<boolean> => {
+    try {
+      const imageDataUrl =
+        state.exportFormat === "png"
+          ? exported
+          : await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+              generalFeedback: state.generalFeedback,
+              crop: view.crop
+            });
+      await saveLocalShare({
+        imageDataUrl,
+        annotations: view.annotations,
+        pageUrl: state.pageUrl,
+        generalFeedback: state.generalFeedback,
+        environment: state.environment,
+        previousShareId
+      });
+      await refreshSavedShares();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const removeSavedShare = async (id: string): Promise<void> => {
     try {
       await deleteLocalShare(id);
@@ -412,6 +454,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       const absolutePath = await downloadBlob(await (await fetch(merged)).blob(), imageName);
       const filePath = absolutePath ? toClaudePath(absolutePath) : `Downloads/${imageName}`;
       const sidecar = await saveSidecar(state, view, stamp, imageBase);
+      const shared = await saveShareForExport(merged, view);
 
       const prompt = buildClaudeCodePrompt({
         filePath,
@@ -435,7 +478,8 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
           ? sidecar.path
             ? ""
             : "the JSON sidecar was saved but could not be linked, because its full path could not be resolved"
-          : "the JSON sidecar could not be saved, so the prompt does not link one"
+          : "the JSON sidecar could not be saved, so the prompt does not link one",
+        shared ? "" : "the capture could not be added to Saved Shares"
       ].filter(Boolean);
 
       state.setStatus(

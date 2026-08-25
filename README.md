@@ -1,102 +1,104 @@
 <div align="center">
 
-# 📸 Shotback
+# Shotback
 
-### A Chrome extension for AI-assisted screenshot reviews: capture a full page, annotate specific areas, keep a timeline of comments, and prepare feedback for humans or LLMs.
+**Annotated screenshots your coding agent can actually act on.**
+
+Capture a full page, mark what is wrong, redact what is private - then hand an
+agent the image _plus_ a machine-readable sidecar with CSS selectors, React
+component names and the page's failed requests, so it fixes the right element
+instead of guessing at pixels.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://developer.chrome.com/docs/extensions/)
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Manifest%20V3-green.svg)](https://developer.chrome.com/docs/extensions/)
+[![Local first](https://img.shields.io/badge/Network%20requests-zero-blue.svg)](#permissions--privacy)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
+  <img alt="The Shotback editor: a captured pricing page with a numbered box on a button, a highlight on the heading, an arrow, and a live-pixelated redaction over an API key. The sidebar lists the comments and the Copy for Claude Code button." src="docs/media/hero-light.png">
+</picture>
+
+_One capture, three numbered notes, one redacted API key - the editor follows
+your browser theme._
 
 </div>
 
----
+## Why Shotback
 
-## 🎯 Why Shotback
+A plain screenshot tells an agent _where_ something looks wrong. Shotback also
+tells it _what_ that something is: every annotation is mapped back to the live
+page as you draw it, so the prompt says `button#pro-cta`, not "the dark button
+near the middle". The whole flow is local-first - no account, no server, no
+telemetry - and one click ahead of you: the toolbar icon captures immediately.
 
-Shotback is optimized for **local-first review workflows**. You can annotate UI issues quickly, preserve context with area-linked comments, and keep feedback organized before sending to a teammate or an LLM.
+1. **Capture** the real page state - full page, visible area, or after a 3s countdown for menus and hover states.
+2. **Annotate** the exact areas that need attention and attach a note to each.
+3. **Redact** anything private; it is pixelated live, exactly as every export will burn it in.
+4. **Hand off** - a prompt plus PNG and JSON sidecar for Claude Code, a package for any cloud LLM, a clipboard image for any chat, or a local share link.
 
-It is useful when a product/design review needs more context than a plain screenshot but less ceremony than a full ticketing workflow.
+## Features
 
-## 🧠 Product Workflow
+### Capture
 
-Shotback turns visual feedback into a compact review artifact:
+- **One click or `Alt+Shift+S`** - the editor opens and captures immediately; no popup, no second click.
+- **Full page** via scroll-and-stitch, with an on-page notice while it works - inner-scroller SPAs, sticky headers and smooth-scroll pages handled.
+- **Visible area** for a single instant frame, or **Full page after 3s** with an on-page countdown so a menu or hover state survives into the capture.
+- **Fit-to-width or 1:1** viewing; a capture never scrolls the page sideways.
 
-1. capture the real page state;
-2. mark the exact UI areas that need attention;
-3. attach comments to each annotation;
-4. keep a timeline of feedback decisions; and
-5. export a structured prompt + image for cloud LLM review when local links are not accessible.
+### Annotate
 
-This keeps human feedback and AI review grounded in the same visual evidence.
+- **Five tools** - box, arrow, text, marker-style highlight and freehand pen - each with a numbered pin and an inline comment.
+- **A canvas tool palette** with one-key shortcuts (`V B A T H P R C`), six stroke swatches and a custom colour. A drawing tool stays active, so five boxes are five drags.
+- **Works without a pointer** - with a tool armed, `Enter` places a shape at the centre of the view, arrow keys move it, `Shift`+arrows resize it.
+- **Undo / redo everything** (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`), a comment timeline with per-item remove, and general feedback for page-level notes.
+- **Element context, automatically** - each annotation records the CSS selector, visible text and React component chain of the element under it, read from the live tab as you draw.
 
-## ✨ Features
+### Protect
 
-- ⚡ **One-click capture** - clicking the toolbar icon or pressing `Alt+Shift+S` opens the editor and captures immediately (no popup, no second click)
-- 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
-- 🎚️ **Three capture modes** - the chooser beside **Capture Page** picks **Full page**, **Visible area** (just what is on screen: one instant frame, no scrolling, no notice) or **Full page after 3s** (a "Capturing in 3...2...1" countdown on the page first, so you can open a menu, a hover state or a tooltip and have it captured). The toolbar icon and `Alt+Shift+S` always capture the full page
-- 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
-- ✏️ **Area annotations**: box, arrow, text, highlight, pen
-- 🖍️ **Highlight** (`H`) washes a region in the annotation colour the way a marker does - `multiply`, so the text under it stays readable - with a full-opacity edge so it still marks the region over dark page content. ✍️ **Pen** (`P`) is a freehand stroke. Both take a comment and a numbered pin, exactly like a box
-- 🎛️ **Canvas tool palette** - a segmented control above the capture holds every drawing tool plus six stroke swatches (and a custom colour picker) and the zoom toggle. Each tool has a one-key shortcut - `V` select, `B` box, `A` arrow, `T` text, `H` highlight, `P` pen, `R` redact, `C` crop - and a drawing tool **stays active after each shape**, so five boxes are five drags. Shortcuts are ignored while you are typing a comment
-- 🕶️ **Redact before sharing** - drag the Redact tool (`R`) over anything private and the canvas pixelates it **live**, with the same block size every export burns in, so you can see whether enough is covered before a file is written. It is pixelated into every export _and_ into the saved share. Select a region and hold `Alt` to peek at what is under it. With a crop applied the preview is the cropped export, clipping and block grid included. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
-- ✂️ **Crop before export** - draw a region with the Crop tool (`C`) and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
-- 🔗 **Linked comments** tied to selected annotation
-- ⏱️ **Comment timeline** with per-item remove
-- ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) - sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
-- 💬 **General feedback** for screenshot-level notes
-- 🔐 **Local share links** (`chrome-extension://.../viewer.html?share=...`)
-- 🤖 **External LLM fallback**:
-  - downloads annotated image
-  - copies a structured prompt to clipboard
-- 🧑‍💻 **Copy for Claude Code** - saves the PNG **and a JSON sidecar** to `Downloads/shotback/` and copies a prompt referencing both by path (Windows → WSL `/mnt/c/...` translation) so a Claude Code session can read them directly
-- 🔁 **Re-capture (before / after)** - **Re-capture** on a saved share reopens its page, captures it again in a fresh editor, and links the new share back to the old one; the viewer then shows the two captures side by side (**Before** / **After**) and the Claude Code prompt says the capture follows an earlier one. No pixel diffing - just the two pictures next to each other
-- 📦 **Batch handoff** - tick any saved shares and **Copy batch for Claude Code** writes every capture plus one `batch.json` into a single `Downloads/shotback/batch-<ts>/` folder, then copies a prompt that leads with that JSON
-- 📋 **Copy Image** - puts the annotated PNG straight on the clipboard for pasting into any chat
-- 🧭 **Environment context** - both prompts carry the captured tab's title, viewport, pixel ratio, colour scheme, scroller and user agent, so an agent never has to ask
-- 🩺 **Diagnostics** - at **Detailed** prompt detail (only), both prompts list the requests the captured page made and did not get (status + URL), so a broken image or a 500 shows up next to the screenshot
-- 🎚️ **Prompt detail** - a sidebar setting picks how much of the above actually renders: **Compact** (just the numbered comments and general feedback), **Standard** (the default - environment, geometry and element context) or **Detailed** (standard plus Diagnostics and per-annotation element text/classes/rect)
-- 🖼️ **JPEG export** - a sidebar setting switches Download, Prepare for Cloud LLM and Copy for Claude Code to a smaller JPEG (fixed quality 0.9); Copy Image and shared links always stay PNG. A **Last export: N KB** readout shows what the most recent export actually weighed
+- **Redact (`R`)** pixelates a region live with the same block grid every export burns in - select it and hold `Alt` to peek underneath. The unredacted capture never leaves the editor tab's memory. ([What redaction does and does not protect](SECURITY.md).)
+- **Crop (`C`)** narrows every output - image, prompts, sidecar, share - to one region, coordinates re-measured from it. **Clear** restores the full capture; nothing is thrown away.
+- **Nothing edits mid-export** - while an export is writing, the canvas freezes, so the file on disk always matches what you saw.
 
-## 🚀 Quick Start
+### Hand off
 
-### Option A: Install from the Chrome Web Store
+- **Copy for Claude Code** - saves the PNG and a JSON sidecar to `Downloads/shotback/`, keeps a copy in Saved Shares, and puts a prompt on your clipboard that references both by path (Windows paths translated for WSL). [Details below.](#use-with-claude-code)
+- **Prepare for Cloud LLM** - downloads the annotated image and copies a structured prompt for any chat-based model.
+- **Copy Image** - the annotated PNG straight onto the clipboard.
+- **Local share links** - profile-scoped viewer pages (`viewer.html?share=...`), never public URLs.
+- **Re-capture (before / after)** - re-shoot a saved share's page and the viewer shows both captures side by side; the prompt tells the agent this capture follows an earlier one.
+- **Batch handoff** - tick several saved shares and export them as one folder with a single `batch.json` and one prompt.
+- **Prompt detail** (Compact / Standard / Detailed) and **PNG or JPEG** export, both remembered across sessions; Detailed prompts add a Diagnostics block listing the requests the page made and did not get.
 
-> Not yet published - the listing link will go here once Shotback is live on
-> the Chrome Web Store. Until then, use the from-source steps below.
+## Quick start
 
-### Option B: Build from source
+### Install from the Chrome Web Store
 
-#### 1️⃣ Install dependencies
+> Not yet published - the listing link will go here once Shotback is live.
+> Until then, build from source below.
+
+### Build from source
 
 ```bash
 npm install
-```
-
-#### 2️⃣ Build extension
-
-```bash
 npm run build
 ```
 
-#### 3️⃣ Load in Chrome
+Then load it in Chrome:
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `dist/` folder
+3. Click **Load unpacked** and select the `dist/` folder
 
-## 📖 Usage
+## Usage
 
-1. **Open** a target webpage.
-2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the full page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
+1. **Open** the page you want to review and **click the Shotback icon** (or
+   press `Alt+Shift+S`; rebind at `chrome://extensions/shortcuts`). The editor
+   opens and captures the full page automatically. For anything else, the
+   chooser beside **Capture Page** offers **Visible area** and **Full page
+   after 3s** (a countdown on the page, for menus and hover states).
 
-   To capture something else, use the chooser beside **Capture Page** in the
-   editor: **Visible area** grabs just what is on screen, and **Full page after
-   3s** counts down on the page first so you can open a menu or hold a hover
-   state while it captures. The toolbar icon is always full page.
-
-3. **Draw** annotations and add comments. Pick a tool on the palette above
-   the capture, or press its key:
+2. **Annotate.** Pick a tool on the palette above the capture, or press its
+   key:
 
    | Key | Tool                                                      |
    | --- | --------------------------------------------------------- |
@@ -109,50 +111,37 @@ npm run build
    | `R` | Redact                                                    |
    | `C` | Crop                                                      |
 
-   A drawing tool stays selected after each shape, so you can draw several in a
-   row without going back to the palette; the comment box for the shape you
-   just drew is focused, and tool keys typed into it are text, not shortcuts.
-   `Esc` deselects, `Del` removes the selected item, and `Ctrl/Cmd+Z` /
-   `Ctrl/Cmd+Shift+Z` undo and redo any step (the sidebar has buttons too).
-   The six swatches beside the tools set the colour of the **next** annotation;
-   the last disc opens the system colour picker.
+   After each shape the tool stays selected and the new shape's comment box is
+   focused - type the note, then `Tab` (or click elsewhere) to keep it, or
+   `Esc` to discard it and return to the canvas. Tool keys typed inside a
+   comment are text, not shortcuts. Keyboard-only: with a drawing tool armed
+   and the canvas focused, `Enter` places the shape, arrows move it,
+   `Shift`+arrows resize it. `Del` removes the selected item and
+   `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` undo and redo any step.
 
-4. **Crop** (optional) - press `C` (or pick `Crop` on the palette), drag the
-   region you want to hand over, then **Apply crop**. Everything below is then about that
-   region only; **Clear** restores the full capture (nothing is thrown away -
-   annotations are kept in capture coordinates and only shifted on export).
-5. **Use** one of the outputs. The sidebar lists them in that order, and
-   **Copy for Claude Code** is the only filled button - it is the handoff
-   Shotback is built around:
+3. **Crop** (optional) - press `C`, drag the region you want to hand over,
+   then **Apply crop** (or `Enter`). Every output now covers just that region;
+   **Clear** restores the full capture. Annotations are kept in capture
+   coordinates and only shifted at export time.
 
-   - **Copy for Claude Code** saves the PNG and a JSON sidecar to `Downloads/shotback/` and copies a prompt that points to both by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read them directly - see [Use with Claude Code](#-use-with-claude-code)
-   - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
-   - **Copy Local Share Link** for local profile review - the link goes on the clipboard, and the sidebar offers an **Open** button rather than printing it
-   - **Download Image** writes the annotated PNG (or JPEG) to Downloads
-   - **Copy Image** puts the annotated PNG on the clipboard - paste it straight into an agent chat
+4. **Export.** The sidebar ranks the outputs; **Copy for Claude Code** is the
+   filled one - it is the handoff Shotback is built around:
 
-   Two actions that would take work away ask first, in place rather than
-   through a browser dialog: **Capture Page** with annotations on screen swaps
-   to **Replace capture? / Cancel**, and a saved share's **Delete** swaps to
-   **Confirm / Cancel**. `Esc` cancels either one, both revert on their own
-   after a few seconds if you walk away, and the keyboard lands back on the
-   button you started from. The confirm ignores the first fraction of a second
-   after it appears, so a double-click cannot delete something.
+   - **Copy for Claude Code** - PNG + JSON sidecar to `Downloads/shotback/`, prompt on the clipboard, a copy kept in Saved Shares
+   - **Prepare for Cloud LLM** - image download + prompt for external LLMs
+   - **Copy Local Share Link** - profile-local viewer link on the clipboard
+   - **Download Image** / **Copy Image** - the annotated PNG (or JPEG) as a file or on the clipboard
 
-   How much of that a prompt carries is set by the sidebar's **Prompt detail**
-   dropdown, which persists across sessions. At **Compact** a prompt is just the
-   numbered comments, general feedback and the page URL. At **Standard** (the
-   default) it also includes an **Environment** block describing the captured
-   tab (page title, viewport size, device pixel ratio, colour scheme, whether
-   the document or an inner element scrolled, user agent and capture time), and
-   each area comment names the element it covers - a CSS selector such as
+   Destructive actions confirm in place (**Replace capture?**, **Confirm /
+   Cancel** on delete) and time out back to safe on their own.
+
+   The **Prompt detail** setting controls how much a prompt carries. **Compact**
+   is the numbered comments, general feedback and page URL. **Standard** (the
+   default) adds an Environment block (title, viewport, pixel ratio, colour
+   scheme, scroller, user agent) and names the element each annotation covers -
    `#pricing > div.card:nth-of-type(2) > button.cta`, plus the React component
-   chain when the page is React - read back from the live tab as you annotate.
-   At **Detailed** each annotated element also gets its visible text, classes
-   and page-px rect on their own indented lines, and - when the captured page
-   asked for something and did not get it - the prompt carries a
-   **Diagnostics** block listing those requests (status and URL), read from the
-   page's own resource timing at capture time:
+   chain on React pages. **Detailed** adds each element's text, classes and
+   rect, and a **Diagnostics** block when the page had failing requests:
 
    ```text
    Diagnostics:
@@ -161,24 +150,14 @@ npm run build
      2. 500 https://example.com/api/user
    ```
 
-   **What the block can miss:** a status is only readable for same-origin
-   responses and for cross-origin ones that opt in with
-   `Access-Control-Allow-Origin`, so a failing third-party request (a CDN image,
-   an analytics call) is invisible here - as is a request that never got a
-   response at all. The browser also keeps only about 250 resource entries, so
-   on a long-lived single-page app an early failure can be evicted before you
-   capture. An absent Diagnostics block means "nothing readable failed", not
-   "nothing failed".
+   Diagnostics are a partial view by construction: only same-origin failures
+   (and cross-origin ones that opt in via CORS) are readable, and the browser
+   keeps roughly the last 250 resource entries. An absent block means "nothing
+   readable failed". The page's own console errors are deliberately **not**
+   collected - that would require extension code inside every page's JavaScript
+   world on every load, a trade Shotback refuses; see [`SECURITY.md`](SECURITY.md).
 
-   **Known limitation:** uncaught JavaScript errors from the page are _not_
-   collected. Chromium delivers an error only to listeners in the JavaScript
-   world that threw, and Shotback's content script runs in an isolated world, so
-   it never sees the page's own errors. Collecting them would need extension
-   code running in every page's own world on every page load, which is a
-   deliberate trade Shotback has not made - see [`SECURITY.md`](SECURITY.md).
-   Paste the console output yourself if an agent needs it.
-
-## 🧑‍💻 Use with Claude Code
+## Use with Claude Code
 
 **Copy for Claude Code** writes two files with the same timestamp and copies a
 prompt that names both:
@@ -194,28 +173,26 @@ Machine-readable annotations (selectors, rects, diagnostics): /mnt/c/Users/you/D
 ...
 ```
 
-Paste that into your session and the agent can read the annotations instead of
-guessing at pixels. The sidecar is `version: 1` and carries, per annotation, the
+Paste that into your session and the agent reads the annotations instead of
+guessing at pixels. The sidecar (`version: 1`) carries, per annotation: the
 number drawn on the image, its comment, its `rect` in image px, a
 `normalizedRect` (0..1 of the capture) and the element it covers - CSS path,
 React component chain, `data-testid`, visible text - plus the capture
-environment, the page's failed requests and the image's relative path.
+environment, failed requests and the image's relative path.
 
-For a repeatable workflow, copy [`skills/shotback/SKILL.md`](skills/shotback/SKILL.md)
-into your project's `.claude/skills/shotback/`. It tells the agent to read the
-sidecar first, find the source from the selectors and component names rather
-than from the image, treat `normalizedRect` as layout position, fold the
-diagnostics into the fix, and open the PNG only when the selectors are
-ambiguous.
+For a repeatable workflow, copy
+[`skills/shotback/SKILL.md`](skills/shotback/SKILL.md) into your project's
+`.claude/skills/shotback/`. It tells the agent to read the sidecar first, find
+the source from selectors and component names, and open the PNG only when the
+selectors are ambiguous.
 
 The sidecar is best effort: if it cannot be written, the prompt still copies -
 without the machine-readable line - and the status says so.
 
 ### Several captures at once
 
-Every saved share in the sidebar has a checkbox. Tick one or more and **Copy
-batch for Claude Code** writes them all into one folder and copies a single
-prompt for the lot:
+Every saved share has a checkbox. Tick one or more and **Copy batch for Claude
+Code** writes them all into one portable folder with a single prompt:
 
 ```text
 Downloads/shotback/batch-1756052403118/cap-0.png
@@ -231,75 +208,65 @@ Machine-readable annotations for every capture (selectors, rects, environment): 
 2. https://example.com/checkout - 1 annotation - /mnt/c/Users/you/Downloads/shotback/batch-1756052403118/cap-1.png
 ```
 
-`batch.json` is `version: 1` with a `captures` array holding exactly the same
-per-capture sidecar shown above, each one's `imagePath` relative to the batch
-folder so the whole folder can be moved. The prompt itself stays an index: the
-detail is in the JSON. Unlike the single-capture handoff, the batch is
-all-or-nothing - if any capture cannot be written the export stops, no prompt is
-copied, and the status names what failed and which folder may hold leftovers.
+`batch.json` holds a `captures` array of the same per-capture sidecars, each
+`imagePath` relative to the folder. The batch is all-or-nothing: if any capture
+cannot be written, no prompt is copied and the status names what failed.
 
-## 📁 Project Structure
+## Project structure
 
 ```text
 src/
   editor/      # annotation editor UI (opened by the toolbar icon)
   viewer/      # local share viewer page
-  lib/         # capture, rendering, storage helpers
+  background.ts, content.ts   # MV3 service worker + content script
+  lib/         # pure logic: capture math, rendering, storage, prompts
   types/       # shared TS types
 skills/
-  shotback/    # the companion agent skill to copy into your own project
+  shotback/    # companion agent skill to copy into your own project
 public/
   manifest.json
-tests/
-  capture.test.ts
-.docs/
-  PRD, todo/doing/done workflow docs
+tests/         # Vitest unit tests + Playwright e2e (tests/e2e/)
+.docs/         # PRD and the todo/doing/done change-folder workflow
 ```
 
-## 🛠️ Development Commands
+## Development
 
-| Command             | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| `npm run dev`       | Run Vite dev server                             |
-| `npm run build`     | Production build to `dist/`                     |
-| `npm run test`      | Run unit tests (Vitest)                         |
-| `npm run typecheck` | Type-check with `tsc --noEmit`                  |
-| `npm run lint`      | Lint with ESLint                                |
-| `npm run format`    | Format with Prettier (`format:check` to verify) |
-| `npm run check`     | Run typecheck + lint + test + build             |
-| `npm run preview`   | Preview production build                        |
+| Command            | Description                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`      | Vite dev server                                                                                                           |
+| `npm run build`    | Production build to `dist/` (fails if `content.js` is not a self-contained classic script)                                |
+| `npm run check`    | The gate: typecheck + lint + unit tests + build                                                                           |
+| `npm run test`     | Unit tests (Vitest)                                                                                                       |
+| `npm run test:e2e` | Playwright end-to-end suite - drives the real unpacked extension in Chromium (one-time `npx playwright install chromium`) |
+| `npm run lint`     | ESLint (`lint:fix` to fix)                                                                                                |
+| `npm run format`   | Prettier (`format:check` to verify)                                                                                       |
 
-## ⚠️ Local Link Constraint
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the change workflow.
 
-Local share links are **intentionally local**. They only work where:
+## Permissions & privacy
 
-- ✅ the extension is installed
-- ✅ the share exists in that browser profile's `chrome.storage.local`
+Shotback makes **no network requests of its own**. Captures, annotations and
+feedback stay in your browser profile; data leaves the device only through an
+export you trigger yourself, and every export is a local file write or a
+clipboard copy you then paste somewhere manually.
 
-> **Note:** For cloud LLM tools that cannot access local links, use **Prepare for Cloud LLM**.
+It requests only what full-page capture needs - `activeTab`, `tabs`,
+`scripting`, `storage`/`unlimitedStorage`, `downloads`, and `<all_urls>` host
+access so it can capture whatever page you are viewing. Page access is used
+only while you capture or annotate, never in the background.
 
-## 🔐 Permissions & Privacy
+- [`PRIVACY.md`](PRIVACY.md) - the plain-language privacy policy
+- [`SECURITY.md`](SECURITY.md) - per-permission rationale, the redaction
+  guarantee and its limits, and the deliberate non-collection decisions
 
-Shotback is local-first and makes **no network requests of its own**. Captured
-images, annotations, and feedback stay in your browser profile. Data leaves the
-device only through an export you trigger yourself, and every one of them is a
-local file write or a clipboard copy that you then paste somewhere manually:
-**Prepare for Cloud LLM** (downloads the image, copies the prompt), **Copy for
-Claude Code** (writes the image and its JSON sidecar to `Downloads/shotback/`),
-**Copy Image** (clipboard only), **Copy batch for Claude Code** (writes every
-ticked capture plus one `batch.json` into `Downloads/shotback/batch-<ts>/`) and
-the plain **Download Image** button. Shotback itself uploads nothing.
+Local share links are intentionally local: they work only in the browser
+profile that created them. For tools that cannot open local links, use
+**Prepare for Cloud LLM**.
 
-It requests only the permissions full-page capture needs - `activeTab`, `tabs`,
-`scripting`, `storage`/`unlimitedStorage`, `downloads` (for the exports above),
-and `<all_urls>` host access so it can capture whatever page you are viewing. Page access is used **only when you start
-a capture**. See [`SECURITY.md`](SECURITY.md) for the full per-permission
-rationale, and [`PRIVACY.md`](PRIVACY.md) for the plain-language privacy policy.
-
-## 🤝 Contributing
+## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## 📄 License
+## License
 
 MIT ([`LICENSE`](LICENSE)).

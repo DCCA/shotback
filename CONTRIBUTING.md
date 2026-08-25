@@ -20,6 +20,11 @@ npm run check   # typecheck + lint + test + build
 Useful individual commands: `npm run typecheck`, `npm run lint`,
 `npm run format`, `npm run test`, `npm run build`.
 
+`npm run test:e2e` runs the Playwright end-to-end suite against the real
+unpacked extension (one-time setup: `npx playwright install chromium`). It is
+deliberately not part of `npm run check` or CI - run it locally for changes
+that touch capture, the editor UI, or the content script.
+
 Load `dist/` via `chrome://extensions` for manual verification.
 
 ## Coding Guidelines

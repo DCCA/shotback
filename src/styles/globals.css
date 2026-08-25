@@ -219,4 +219,11 @@
   .transition-colors {
     transition-duration: 0ms;
   }
+
+  /* The status toast's slide-and-fade entrance. Collapsed to instant rather
+   * than removed: the toast still has to end up opaque and in place, it just
+   * arrives there without travelling. */
+  .transition-\[transform\,opacity\] {
+    transition-duration: 0ms;
+  }
 }

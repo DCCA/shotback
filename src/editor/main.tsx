@@ -71,7 +71,6 @@ function EditorApp(): JSX.Element {
       state.setEnvironment(result.environment);
       state.setDiagnostics(result.diagnostics);
       captureScaleRef.current = result.scale;
-      state.setProgress("Capture completed");
     } catch (error) {
       state.setStatus({
         kind: "error",
@@ -79,6 +78,10 @@ function EditorApp(): JSX.Element {
       });
     } finally {
       state.setIsBusy(false);
+      // Progress says what is happening *now*. The capture is on screen the
+      // moment it finishes, so a lingering "Capture completed" would only be a
+      // stale line to read past on the next export.
+      state.setProgress("");
     }
   };
 
@@ -146,7 +149,17 @@ function EditorApp(): JSX.Element {
   };
 
   return (
-    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[360px_1fr] lg:p-5">
+    // A fixed two-pane app shell from `lg` up: the window never scrolls, each
+    // column scrolls its own contents, and the capture's scrollport is the one
+    // scroller for the capture - so reaching the bottom of a tall screenshot no
+    // longer means scrolling the page and then scrolling the image again.
+    //
+    // Below `lg` there is no room to hold two panes on screen at once, so the
+    // shell unwinds: the canvas comes first (it is what the session is about),
+    // the sidebar follows it, and the window scrolls normally. DOM order is
+    // unchanged - only the visual order flips - so the sidebar keeps its place
+    // in the tab sequence and for a screen reader.
+    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_1fr] lg:overflow-hidden lg:p-5">
       <Sidebar state={state} exports={exports} onCapture={() => void takeScreenshot()}>
         <Separator />
         <CommentTimeline

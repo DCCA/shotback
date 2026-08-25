@@ -207,6 +207,20 @@ async function rectOf(
 }
 
 /**
+ * The crop in force, in image px. Read off the canvas window rather than a
+ * marquee rect: once a crop is applied the canvas stops drawing a marquee
+ * entirely and shows only the cropped region, so `#capture-window`'s own
+ * `data-crop` is where the applied region is stated.
+ */
+async function appliedCrop(
+  editor: Page
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const raw = await editor.locator("#capture-window").getAttribute("data-crop");
+  const [x, y, width, height] = (raw ?? "").split(",").map(Number);
+  return { x, y, width, height };
+}
+
+/**
  * Draw a box over the fixture's CTA button. `top` is the header band above the
  * scroller on the stitched image, so the same call works for the document
  * scroller (0) and the inner one (64). Returns the button centre on screen.
@@ -380,6 +394,44 @@ for (const [name, headerHeight] of [
       );
       expect(type).toBe("image/png");
 
+      // The outcome is announced over the canvas, not at the bottom of the
+      // sidebar's scroll flow, where it was routinely off screen. Checked
+      // against the canvas pane's own box rather than a coordinate.
+      // "missing" rather than a thrown dereference: the toast clears itself
+      // after 4s, and a slow machine could get here after it has gone. That is
+      // a real failure, but it should read as one rather than as a TypeError.
+      const toastInCanvasPane = await editor.evaluate(() => {
+        const node = document.querySelector('[aria-live="polite"] p.font-medium');
+        if (!node) return "missing";
+        const pane = document.querySelectorAll("main > div")[1].getBoundingClientRect();
+        const toast = node.getBoundingClientRect();
+        return (
+          toast.left >= pane.left &&
+          toast.right <= pane.right &&
+          toast.top >= pane.top &&
+          toast.bottom <= pane.bottom
+        );
+      });
+      expect(toastInCanvasPane).toBe(true);
+      // A success clears itself rather than sitting there through the next
+      // three exports, and capture progress leaves nothing behind either.
+      await expect(editor.locator('[aria-live="polite"] p.font-medium')).toHaveCount(0, {
+        timeout: 10_000
+      });
+      await expect(editor.getByText(/Capturing/)).toHaveCount(0);
+
+      // One scroller: at the desktop breakpoint the window itself does not
+      // scroll at all, and the capture's own scrollport is what moves.
+      const shell = await editor.evaluate(() => {
+        const viewport = document.querySelector("#capture-viewport")!;
+        return {
+          pageOverflow: document.documentElement.scrollHeight - window.innerHeight,
+          viewportScrolls: viewport.scrollHeight > viewport.clientHeight
+        };
+      });
+      expect(shell.pageOverflow).toBeLessThanOrEqual(0);
+      expect(shell.viewportScrolls).toBe(true);
+
       // A second box, over the CTA: with the document scrolling, the element
       // under an annotation must be named just as it is for an inner scroller.
       const inspectedBefore = await inspectGen(editor);
@@ -433,7 +485,7 @@ for (const [name, headerHeight] of [
       // This branch is the suite's mega-block: capture, annotate, share,
       // sidecar, JPEG, crop and the batch handoff, all against one editor.
       // It needs more than the default per-test budget.
-      test.setTimeout(120_000);
+      test.setTimeout(180_000);
 
       // Fit-to-width default: a capture wider than the editor pane must not
       // be silently clipped by the canvas Card's `overflow-hidden` (nor
@@ -718,12 +770,103 @@ for (const [name, headerHeight] of [
 
       // A marquee is not an annotation: no timeline row, no pin, no history.
       await expect(rows).toHaveCount(3);
+      // While it waits for Apply it is adjustable: the same eight handles a
+      // box gets, drawn on the marquee itself.
+      await expect(editor.locator("[data-crop-handles] > g")).toHaveCount(8);
+
+      // The floating bar never leaves the window whatever the marquee's
+      // position: its anchor is clamped against its own size, so it cannot be
+      // clipped out of reach by the window's overflow.
+      const barInsideWindow = await editor.evaluate(() => {
+        const win = document.querySelector("#capture-window")!.getBoundingClientRect();
+        const bar = document.querySelector("[data-crop-controls]")!.getBoundingClientRect();
+        return (
+          bar.left >= win.left - 1 &&
+          bar.right <= win.right + 1 &&
+          bar.top >= win.top - 1 &&
+          bar.bottom <= win.bottom + 1
+        );
+      });
+      expect(barInsideWindow).toBe(true);
+
       await editor.getByRole("button", { name: "Apply crop" }).click();
-      const cropRect = await rectOf(editor.locator("#crop-region"));
-      // Only the CTA box is inside the crop; the sidebar says what it costs.
+      const cropRect = await appliedCrop(editor);
+      expect(cropRect.width).toBeGreaterThan(0);
+      // Applied means applied: no marquee, no dimming, and the canvas window
+      // now shows the crop and nothing else. Measured as a ratio, because the
+      // window is fit to the pane - the visible fraction of the capture must
+      // be the crop's fraction of it on both axes.
+      await expect(editor.locator("#crop-region")).toHaveCount(0);
+      await expect(editor.locator("[data-crop-handles]")).toHaveCount(0);
+      const cropped = await editor.evaluate(() => {
+        const image = document.querySelector("#capture-image") as HTMLImageElement;
+        const shown = image.getBoundingClientRect();
+        const window_ = document.querySelector("#capture-window")!.getBoundingClientRect();
+        return {
+          widthRatio: window_.width / shown.width,
+          heightRatio: window_.height / shown.height,
+          natural: { width: image.naturalWidth, height: image.naturalHeight }
+        };
+      });
+      expect(cropped.widthRatio).toBeCloseTo(cropRect.width / cropped.natural.width, 2);
+      expect(cropped.heightRatio).toBeCloseTo(cropRect.height / cropped.natural.height, 2);
+      // The overlay still covers the whole image, not the window: annotations
+      // keep their capture coordinates, and the part the crop hides is still
+      // hit-tested correctly the moment the crop is cleared.
+      expect(await overlayMatchesImage()).toBe(true);
+
+      // 1:1 with a crop applied: the same percentage mapping, so the window
+      // is exactly the crop's pixel size and the overlay still covers the
+      // image. Untested until now - the zoom branch only changes the window.
+      await editor.getByRole("combobox", { name: "Zoom" }).click();
+      await editor.getByRole("option", { name: "Actual size (100%)" }).click();
+      const actualWindow = await editor
+        .locator("#capture-window")
+        .evaluate((el) => ({ width: el.clientWidth, height: el.clientHeight }));
+      expect(actualWindow).toEqual({ width: cropRect.width, height: cropRect.height });
+      expect(await overlayMatchesImage()).toBe(true);
+
+      // ...and a pointer still lands where it looks like it lands. At 1:1 an
+      // offset in window px is the same offset in capture px, so a marquee
+      // dragged from 10px inside the window's top-left must report the crop
+      // origin plus 10 - which only holds if `getScreenCTM` sees through the
+      // window's offset wrapper. (The overlay deliberately keeps the FULL
+      // image's viewBox rather than switching it to the crop rect - see
+      // `.docs/done/2026-08-25-feedback-shell/design.md`.)
+      const windowBox = (await editor.locator("#capture-window").boundingBox())!;
+      await editor.mouse.move(windowBox.x + 10, windowBox.y + 10);
+      await editor.mouse.down();
+      await editor.mouse.move(windowBox.x + 90, windowBox.y + 90, { steps: 5 });
+      await editor.mouse.up();
+      const probe = await rectOf(editor.locator("#crop-region"));
+      expect(probe.x).toBeGreaterThanOrEqual(cropRect.x + 8);
+      expect(probe.x).toBeLessThanOrEqual(cropRect.x + 12);
+      expect(probe.y).toBeGreaterThanOrEqual(cropRect.y + 8);
+      expect(probe.y).toBeLessThanOrEqual(cropRect.y + 12);
+      // Escape cancels the probe marquee; the applied crop is untouched.
+      await editor.keyboard.press("Escape");
+      await expect(editor.locator("#crop-region")).toHaveCount(0);
+      expect(await appliedCrop(editor)).toEqual(cropRect);
+
+      await editor.getByRole("combobox", { name: "Zoom" }).click();
+      await editor.getByRole("option", { name: "Fit width" }).click();
+
+      // Only the CTA box is inside the crop; the chip over the canvas says
+      // what that costs.
       await expect(editor.getByText("outside the crop")).toContainText(
         "2 annotations outside the crop are excluded from exports"
       );
+      await expect(
+        editor.getByText(`Cropped to ${cropRect.width}x${cropRect.height}`)
+      ).toBeVisible();
+
+      // The canvas numbers what the export numbers: two of the three
+      // annotations fall outside the crop, so exactly one pin is drawn, and it
+      // is pin 1 - not the 3 it carried before the crop was applied.
+      const pinLabels = await editor
+        .locator("#capture-viewport svg text[text-anchor='middle']")
+        .allTextContents();
+      expect(pinLabels).toEqual(["1"]);
 
       await copyCloudPrompt(editor);
       const croppedPrompt = await readClipboard(editor);
@@ -760,7 +903,20 @@ for (const [name, headerHeight] of [
 
       // Clearing the crop puts the whole capture back.
       await editor.getByRole("button", { name: "Clear", exact: true }).click();
-      await expect(editor.locator("#crop-region")).toHaveCount(0);
+      await expect(editor.locator("#capture-window")).not.toHaveAttribute("data-crop");
+      expect(await overlayMatchesImage()).toBe(true);
+
+      // Enter applies a drawn marquee from the keyboard, the counterpart to
+      // Escape cancelling one - so the floating bar is never the only way in.
+      await editor.mouse.move(cropFrom.x, cropFrom.y);
+      await editor.mouse.down();
+      await editor.mouse.move(cropTo.x, cropTo.y, { steps: 5 });
+      await editor.mouse.up();
+      await expect(editor.locator("#capture-window")).not.toHaveAttribute("data-crop");
+      await editor.keyboard.press("Enter");
+      await expect(editor.locator("#capture-window")).toHaveAttribute("data-crop", /\d+/);
+      await editor.getByRole("button", { name: "Clear", exact: true }).click();
+      await expect(editor.locator("#capture-window")).not.toHaveAttribute("data-crop");
 
       // Batch handoff: two shares are saved by now (the sidebar-overflow one
       // and the cropped one). Ticking both writes every PNG plus a single

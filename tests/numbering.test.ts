@@ -9,7 +9,8 @@ import {
   inspectAnchor,
   pinAnchor,
   pinCenter,
-  pinRadius
+  pinRadius,
+  viewPins
 } from "../src/lib/numbering";
 
 const ts = "2026-08-23T00:00:00.000Z";
@@ -241,5 +242,76 @@ describe("redactions", () => {
       redaction("early", "2026-08-23T00:00:01Z")
     ];
     expect(redactions(list).map((item) => item.id)).toEqual(["early", "late"]);
+  });
+});
+
+describe("viewPins", () => {
+  const image = { width: 1200, height: 2000 };
+  // Radius is 20 for a 1200px image and 14 for the 300px-wide crop below
+  // (`pinRadius` clamps at 14), which is what makes the clamp differences
+  // visible in these cases.
+  const crop = { x: 500, y: 400, width: 300, height: 240 };
+  const box = (id: string, x: number, y: number, createdAt = ts) => ({
+    id,
+    tool: "box" as const,
+    color: "#f00",
+    createdAt,
+    x,
+    y,
+    width: 20,
+    height: 20,
+    comment: ""
+  });
+
+  it("numbers and clamps against the full image when nothing is cropped", () => {
+    const { radius, pins } = viewPins([box("a", 0, 0)], null, image);
+    expect(radius).toBe(20);
+    expect(pins.get("a")).toEqual({ n: 1, center: { x: 20, y: 20 } });
+  });
+
+  /**
+   * The four crop edges. Each anchor sits inside the crop but nearer its edge
+   * than the pin radius, so the export clamps it a full radius in - which is
+   * exactly what the canvas used to disagree about, because it clamped against
+   * the whole image instead and drew the pin half outside the crop.
+   */
+  it("clamps a west-edge anchor against the crop, not the image", () => {
+    const { pins } = viewPins([box("a", 502, 500)], crop, image);
+    expect(pins.get("a")).toEqual({ n: 1, center: { x: 500 + 14, y: 500 } });
+  });
+
+  it("clamps a north-edge anchor against the crop", () => {
+    expect(viewPins([box("a", 600, 402)], crop, image).pins.get("a")).toEqual({
+      n: 1,
+      center: { x: 600, y: 400 + 14 }
+    });
+  });
+
+  it("clamps an east-edge anchor against the crop", () => {
+    expect(viewPins([box("a", 798, 500)], crop, image).pins.get("a")).toEqual({
+      n: 1,
+      center: { x: 500 + (300 - 14), y: 500 }
+    });
+  });
+
+  it("clamps a south-edge anchor against the crop", () => {
+    expect(viewPins([box("a", 600, 638)], crop, image).pins.get("a")).toEqual({
+      n: 1,
+      center: { x: 600, y: 400 + (240 - 14) }
+    });
+  });
+
+  it("renumbers the survivors and gives a dropped annotation no pin", () => {
+    const list = [
+      box("outside", 0, 0, "2026-08-23T00:00:01Z"),
+      box("inside", 600, 500, "2026-08-23T00:00:02Z"),
+      box("alsoInside", 650, 550, "2026-08-23T00:00:03Z")
+    ];
+    const { pins } = viewPins(list, crop, image);
+    expect(pins.has("outside")).toBe(false);
+    // The survivors take 1 and 2 - the same renumbering the export does, and
+    // the reason a pin numbered 3 on the canvas used to be 2 in the PNG.
+    expect(pins.get("inside")?.n).toBe(1);
+    expect(pins.get("alsoInside")?.n).toBe(2);
   });
 });

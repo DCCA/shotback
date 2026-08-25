@@ -436,7 +436,10 @@ for (const [name, headerHeight] of [
       await editor.keyboard.type("Chart");
 
       const row = editor.locator("ol li button").first();
-      await expect(row.locator("div").last()).toHaveText("Chart");
+      // `nth(1)`, not `last()`: the row is meta line, note, then - once the
+      // DOM inspection lands - the element descriptor, so `last()` raced the
+      // round trip and read the selector instead of the note.
+      await expect(row.locator("div").nth(1)).toHaveText("Chart");
 
       await editor.getByRole("button", { name: "Copy Image" }).click();
       // The copy runs async after the click; wait for the success status

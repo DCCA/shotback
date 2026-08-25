@@ -36,7 +36,7 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
 - ✏️ **Area annotations**: box, arrow, text
 - 🎛️ **Canvas tool palette** - a segmented control above the capture holds every drawing tool plus six stroke swatches (and a custom colour picker) and the zoom toggle. Each tool has a one-key shortcut - `V` select, `B` box, `A` arrow, `T` text, `R` redact, `C` crop - and a drawing tool **stays active after each shape**, so five boxes are five drags. Shortcuts are ignored while you are typing a comment
-- 🕶️ **Redact before sharing** - drag the Redact tool (`R`) over anything private and it is pixelated into every export _and_ into the saved share, before either is written. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
+- 🕶️ **Redact before sharing** - drag the Redact tool (`R`) over anything private and the canvas pixelates it **live**, with the same block size every export burns in, so you can see whether enough is covered before a file is written. It is pixelated into every export _and_ into the saved share. Select a region and hold `Alt` to peek at what is under it. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
 - ✂️ **Crop before export** - draw a region with the Crop tool (`C`) and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
@@ -111,11 +111,21 @@ npm run build
    region you want to hand over, then **Apply crop**. Everything below is then about that
    region only; **Clear** restores the full capture (nothing is thrown away -
    annotations are kept in capture coordinates and only shifted on export).
-5. **Use** one of the outputs:
-   - **Copy Local Share Link** for local profile review
-   - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
+5. **Use** one of the outputs. The sidebar lists them in that order, and
+   **Copy for Claude Code** is the only filled button - it is the handoff
+   Shotback is built around:
+
    - **Copy for Claude Code** saves the PNG and a JSON sidecar to `Downloads/shotback/` and copies a prompt that points to both by path (a Windows path is translated to its WSL `/mnt/c/...` equivalent), so a Claude Code session can read them directly - see [Use with Claude Code](#-use-with-claude-code)
+   - **Prepare for Cloud LLM** for external LLMs (prompt + image download)
+   - **Copy Local Share Link** for local profile review - the link goes on the clipboard, and the sidebar offers an **Open** button rather than printing it
+   - **Download Image** writes the annotated PNG (or JPEG) to Downloads
    - **Copy Image** puts the annotated PNG on the clipboard - paste it straight into an agent chat
+
+   Two actions that would take work away ask first, in place rather than
+   through a browser dialog: **Capture Page** with annotations on screen swaps
+   to **Replace capture? / Cancel**, and a saved share's **Delete** swaps to
+   **Confirm / Cancel**. Both revert on their own after a few seconds if you
+   walk away.
 
    How much of that a prompt carries is set by the sidebar's **Prompt detail**
    dropdown, which persists across sessions. At **Compact** a prompt is just the

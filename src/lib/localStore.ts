@@ -336,6 +336,18 @@ export async function deleteLocalShare(id: string): Promise<void> {
   await deleteShareByMeta(meta);
 }
 
+/**
+ * An object URL for a stored share's image, for a thumbnail in the saved-shares
+ * list. Here rather than in the component because `shareDb` is IndexedDB and
+ * this module is the only one that reaches into it; `null` when the blob is
+ * gone (a pruned or half-deleted record), so a row can simply show no preview.
+ * The caller owns the URL and must revoke it.
+ */
+export async function getLocalShareImageUrl(meta: LocalShareMeta): Promise<string | null> {
+  const blob = await getImageBlob(meta.imageBlobKey);
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
 export async function listLocalShares(): Promise<LocalShareMeta[]> {
   const items = await getAllStorage();
   const entries = getMetaEntries(items);

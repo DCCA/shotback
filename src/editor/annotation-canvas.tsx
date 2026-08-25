@@ -7,7 +7,7 @@ import { moveAnnotation, uid } from "@/editor/annotation-geometry";
 import { StatusToast } from "@/editor/status-toast";
 import { ToolPalette } from "@/editor/tool-palette";
 import type { EditorState } from "@/editor/use-editor-state";
-import { arrowHeadPoints } from "@/lib/annotate";
+import { arrowHeadPoints, pixelateRegion } from "@/lib/annotate";
 import {
   applyBoxResizeDelta,
   BOX_RESIZE_HANDLES,
@@ -17,7 +17,13 @@ import {
 } from "@/lib/boxResize";
 import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
 import { placeInlineEditor } from "@/lib/editor-placement";
-import { annotationBounds, canvasScale, numberAnnotations, viewPins } from "@/lib/numbering";
+import {
+  annotationBounds,
+  canvasScale,
+  numberAnnotations,
+  redactions,
+  viewPins
+} from "@/lib/numbering";
 import { hotkeyTool } from "@/lib/tool-palette";
 import type { Annotation, BoxAnnotation, RectAnnotation } from "@/types/annotation";
 
@@ -139,6 +145,11 @@ export function AnnotationCanvas({
   };
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  // Alt is held down. Only ever a reveal for the *selected* redaction, so it
+  // costs one boolean and cannot uncover something the user is not looking at.
+  const [altHeld, setAltHeld] = useState(false);
   const [draft, setDraft] = useState<DraftShape | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
@@ -212,6 +223,9 @@ export function AnnotationCanvas({
   };
   const inlineEditorFontSize = BASE_INLINE_EDITOR_FONT_SIZE * scale;
   const hatchSize = BASE_REDACT_HATCH_SIZE * scale;
+  // The one redaction Alt is currently showing through, if any.
+  const revealedId =
+    altHeld && selectedAnnotation?.tool === "redact" ? selectedAnnotation.id : null;
 
   const viewMetrics = cropViewMetrics(view, imageSize);
   const cropWindowStyle: React.CSSProperties =
@@ -374,6 +388,64 @@ export function AnnotationCanvas({
     inlineCommentRef,
     setShouldFocusSelectedComment
   ]);
+
+  /**
+   * Track Alt, so holding it over a selected redaction can show what is under
+   * it. Cleared on blur as well as keyup: the key can be released while the
+   * window is not focused, and a reveal that never ends would be a hole in the
+   * one feature whose whole job is covering something up.
+   *
+   * ponytail: a platform where a bare Alt moves focus into the browser's own
+   * menu would end the reveal through that same blur - the region stays
+   * covered, which is the safe way to fail. Upgrade path if it bites: hold to
+   * reveal from a pointer gesture on the region instead.
+   */
+  useEffect(() => {
+    const onAlt = (event: KeyboardEvent): void => {
+      if (event.key === "Alt") setAltHeld(event.type === "keydown");
+    };
+    const clear = (): void => setAltHeld(false);
+
+    window.addEventListener("keydown", onAlt);
+    window.addEventListener("keyup", onAlt);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", onAlt);
+      window.removeEventListener("keyup", onAlt);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
+
+  /**
+   * Paint every redaction onto the overlay canvas exactly as the export will
+   * burn it in - the same `pixelateRegion`, the same block size, reading from
+   * the `<img>` instead of from the export's own canvas. That is the point: a
+   * hatch only promised the pixels would go, so "is enough of that address
+   * covered?" was a question the editor could not answer until the file had
+   * already been written.
+   *
+   * Sizing the canvas clears it, which is also how an undone, deleted or moved
+   * redaction stops being drawn. It runs after every annotation change and
+   * after the image reports its size - `onLoad` sets a fresh `imageSize`
+   * object, so a second capture of identical dimensions still re-runs this.
+   */
+  useEffect(() => {
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    canvas.width = imageSize.width;
+    canvas.height = imageSize.height;
+
+    const regions = redactions(annotations);
+    const image = imageRef.current;
+    if (regions.length === 0 || !image?.complete) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    for (const region of regions) {
+      if (region.id === revealedId) continue;
+      pixelateRegion(ctx, image, region, imageSize);
+    }
+  }, [annotations, baseDataUrl, imageSize, revealedId]);
 
   // The inline editor is gone (deselected, unmounted, or moved to another
   // annotation): write the pending comment before the selection changes.
@@ -892,6 +964,7 @@ export function AnnotationCanvas({
               <div className="absolute" style={imageWrapperStyle}>
                 <img
                   id="capture-image"
+                  ref={imageRef}
                   src={baseDataUrl}
                   alt="Captured page"
                   decoding="async"
@@ -903,6 +976,17 @@ export function AnnotationCanvas({
                     const img = event.currentTarget;
                     setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
                   }}
+                />
+                {/* The redactions, pixelated for real. Sized in image px and
+                    stretched over the wrapper exactly as the SVG is, so it
+                    tracks the capture through fit-width and 1:1 alike; under
+                    the SVG so pins, outlines and handles still draw on top,
+                    and inert to the pointer so it changes no gesture. */}
+                <canvas
+                  ref={overlayRef}
+                  id="redaction-overlay"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 h-full w-full"
                 />
                 <svg
                   ref={svgRef}
@@ -944,21 +1028,26 @@ export function AnnotationCanvas({
                       );
                     }
 
-                    // A redaction: hatched so it reads as "covered" without
-                    // hiding what it covers from the person who drew it (the
-                    // pixels only go for good in the export). No pin, no
-                    // comment editor - it carries no note by design.
+                    // A redaction: the overlay canvas below already shows the
+                    // region pixelated exactly as the export will burn it in,
+                    // so all this adds is the outline that makes it selectable
+                    // - plus the hatch while it is selected, which is what
+                    // tells a selected region from a plain one at a glance.
+                    // Holding Alt drops both the hatch and the pixelation, so
+                    // "reveal" really reveals. No pin, no comment editor - a
+                    // redaction carries no note by design.
                     if (item.tool === "redact") {
                       const patternId = `redact-hatch-${item.id}`;
+                      const hatched = isSelected && item.id !== revealedId;
                       return (
                         <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
-                          {hatchPattern(patternId, item.color)}
+                          {hatched ? hatchPattern(patternId, item.color) : null}
                           <rect
                             x={item.x}
                             y={item.y}
                             width={item.width}
                             height={item.height}
-                            fill={`url(#${patternId})`}
+                            fill={hatched ? `url(#${patternId})` : "transparent"}
                             fillOpacity="0.35"
                             stroke={item.color}
                             strokeWidth={isSelected ? "4" : "3"}

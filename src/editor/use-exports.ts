@@ -12,6 +12,7 @@ import {
   type LocalShareMeta
 } from "@/lib/localStore";
 import { buildBatchSidecar, buildSidecar, type Sidecar } from "@/lib/sidecar";
+import { plural } from "@/lib/utils";
 import { toClaudePath } from "@/lib/wslPath";
 import type { Annotation } from "@/types/annotation";
 
@@ -242,6 +243,9 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     // Cleared up front: the success message is worded the same on every call,
     // so without this a second download in a row leaves stale text on screen.
     state.setStatus(null);
+    // The "Local share link copied" chip describes the clipboard, and this
+    // export is about to take it - so the chip goes with it.
+    state.setShareUrl("");
 
     try {
       const view = exportView(state);
@@ -275,6 +279,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     // Cleared up front: the success message is worded the same on every call,
     // so without this a second copy in a row leaves stale text on screen.
     state.setStatus(null);
+    state.setShareUrl("");
 
     try {
       const view = exportView(state);
@@ -313,6 +318,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     // worded the same on every call, so without this a second copy in a row
     // leaves stale text on screen with no visible sign the click did anything.
     state.setStatus(null);
+    state.setShareUrl("");
 
     try {
       const view = exportView(state);
@@ -365,6 +371,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
 
     state.setIsBusy(true);
     state.setStatus(null);
+    state.setShareUrl("");
 
     try {
       const view = exportView(state);
@@ -442,6 +449,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
 
     state.setIsBusy(true);
     state.setStatus(null);
+    state.setShareUrl("");
 
     const folder = `shotback/batch-${Date.now()}`;
     try {
@@ -488,9 +496,10 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       await navigator.clipboard.writeText(buildBatchPrompt(entries, toClaudePath(batchPath)));
       state.setStatus({
         kind: "success",
-        message: `Copied a Claude Code prompt for ${entries.length} saved ${
-          entries.length === 1 ? "capture" : "captures"
-        } in ${folder}. Paste it into your session.`
+        message: `Copied a Claude Code prompt for ${plural(
+          entries.length,
+          "saved capture"
+        )} in ${folder}. Paste it into your session.`
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Batch export failed";

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exportAnnotatedImage, selectFeedbackRenderMode } from "../src/lib/annotate";
+import {
+  exportAnnotatedImage,
+  pixelateRegion,
+  selectFeedbackRenderMode
+} from "../src/lib/annotate";
 import { applyCrop, type Rect } from "../src/lib/crop";
 import type { ArrowAnnotation, BoxAnnotation, RedactAnnotation } from "../src/types/annotation";
 
@@ -473,5 +477,41 @@ describe("exportAnnotatedImage redactions", () => {
     const draws = calls.filter((call) => call.name === "drawImage");
     expect(draws).toHaveLength(3);
     expect(draws[1].args.slice(1)).toEqual([1150, 780, 50, 20, 0, 0, 5, 2]);
+  });
+});
+
+describe("pixelateRegion", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("blocks a region from an arbitrary source, so the canvas can reuse the export's own code", () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+    // Stands in for the editor's <img>: the live overlay reads the untouched
+    // capture, where the export reads its own canvas.
+    const source = { width: 1200, height: 800 } as unknown as CanvasImageSource;
+
+    pixelateRegion(ctx, source, redaction(), { width: 1200, height: 800 });
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    // Exactly the two the export makes per region, with the same block
+    // geometry: 60x40 down to ceil(60/12) x ceil(40/12) and back.
+    expect(draws).toHaveLength(2);
+    expect(draws[0].args[0]).toBe(source);
+    expect(draws[0].args.slice(1)).toEqual([150, 250, 60, 40, 0, 0, 5, 4]);
+    expect(draws[1].args.slice(1)).toEqual([0, 0, 5, 4, 150, 250, 60, 40]);
+  });
+
+  it("skips a region with no area, so a zero-sized drawImage can never be attempted", () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    pixelateRegion(ctx, {} as CanvasImageSource, redaction({ width: 0 }), {
+      width: 1200,
+      height: 800
+    });
+
+    expect(calls.filter((call) => call.name === "drawImage")).toHaveLength(0);
   });
 });

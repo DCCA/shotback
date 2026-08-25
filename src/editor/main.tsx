@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AnnotationCanvas } from "@/editor/annotation-canvas";
 import { CommentTimeline } from "@/editor/comment-timeline";
@@ -171,15 +172,26 @@ function EditorApp(): JSX.Element {
           onSelect={selectTimelineItem}
           onRemove={state.removeAnnotation}
         />
+        {/* The link itself is on the clipboard, which is what "Copy" meant -
+            printing 90 unreadable characters of `chrome-extension://<id>/...`
+            in the sidebar only pushed everything below it down. Still an
+            anchor, so Open is a real link (middle-click, new tab), and it
+            clears the moment a different export runs so it can never label
+            the wrong thing. */}
         {state.shareUrl ? (
-          <a
-            href={state.shareUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block break-all text-sm font-medium text-primary underline underline-offset-2"
-          >
-            {state.shareUrl}
-          </a>
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              Local share link copied
+            </span>
+            <a
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+              href={state.shareUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open
+            </a>
+          </div>
         ) : null}
 
         <Separator />

@@ -3,11 +3,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { useTimedConfirm } from "@/editor/use-confirm";
 import type { EditorState } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
 import type { Verbosity } from "@/lib/feedback";
 import { numberAnnotations, redactions } from "@/lib/numbering";
+import { plural } from "@/lib/utils";
+
+/** How long the "Replace capture?" pair waits before reverting on its own. */
+const CAPTURE_CONFIRM_MS = 5000;
 
 interface SidebarProps {
   state: EditorState;
@@ -47,6 +53,17 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     if (selectedId) removeAnnotation(selectedId);
   };
 
+  // A capture replaces the image every annotation is anchored to, so with work
+  // on screen the button asks first. Nothing to lose with an empty canvas, so
+  // nothing is asked there.
+  const [captureArmed, setCaptureArmed] = useTimedConfirm<boolean>(CAPTURE_CONFIRM_MS);
+  const captureWouldDiscard = annotations.length > 0;
+
+  const startCapture = (): void => {
+    setCaptureArmed(null);
+    onCapture();
+  };
+
   return (
     // In the fixed shell the sidebar column is exactly the pane's height, so
     // `min-h-0` is what lets it scroll its own contents instead of stretching
@@ -56,11 +73,33 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
       <CardHeader className="space-y-3">
         <div className="flex items-center justify-between">
           <CardTitle as="h1">Shotback Editor</CardTitle>
-          <Badge variant="accent">{noteCount} notes</Badge>
+          {/* The one place the annotation count is stated in the sidebar. The
+              timeline's own badge counts the rows it is showing, which is the
+              same number said about the list it labels, not a second readout
+              of the same fact floating on its own line. */}
+          <Badge variant="accent">{plural(noteCount, "note")}</Badge>
         </div>
-        <Button disabled={isBusy} onClick={onCapture}>
-          Capture Page
-        </Button>
+        {captureArmed ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="destructive" disabled={isBusy} autoFocus onClick={startCapture}>
+              Replace capture?
+            </Button>
+            <Button variant="secondary" disabled={isBusy} onClick={() => setCaptureArmed(null)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            // Primary only while it is the way in. Once there is a capture the
+            // session's destination is the handoff below, and two filled
+            // buttons in one column is no hierarchy at all.
+            variant={baseDataUrl ? "secondary" : "default"}
+            disabled={isBusy}
+            onClick={() => (captureWouldDiscard ? setCaptureArmed(true) : startCapture())}
+          >
+            Capture Page
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Tool, colour and zoom live on the canvas toolbar
@@ -91,7 +130,9 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Shift+Z</kbd>{" "}
           redoes. With a crop drawn,{" "}
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Enter</kbd> applies
-          it.
+          it. Holding{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Alt</kbd> over a
+          selected redaction shows what is under it.
         </p>
 
         <div className="space-y-1.5">
@@ -131,7 +172,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-2">
+        {/* Three groups, separated: edit what is on the canvas, send the review
+            somewhere, or just take the file. Exactly one button is filled -
+            the handoff this extension exists for - so the column reads as a
+            recommendation rather than a wall of equal choices. */}
+        <div id="editor-actions" className="grid grid-cols-1 gap-2">
           <div className="grid grid-cols-2 gap-2">
             <Button variant="secondary" disabled={!canUndo || isBusy} onClick={undoAnnotations}>
               Undo
@@ -143,6 +188,36 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           <Button variant="destructive" disabled={!selectedId || isBusy} onClick={removeSelected}>
             Delete Selected Item
           </Button>
+
+          <Separator className="my-1.5" />
+
+          <Button
+            variant="default"
+            disabled={!baseDataUrl || isBusy}
+            onClick={() => void exports.copyForClaudeCode()}
+          >
+            Copy for Claude Code
+          </Button>
+          <p className="m-0 -mt-1 text-xs text-muted-foreground">
+            Saves PNG + JSON to Downloads/shotback and copies the prompt.
+          </p>
+          <Button
+            variant="secondary"
+            disabled={!baseDataUrl || isBusy}
+            onClick={() => void exports.prepareExternalLlmPackage()}
+          >
+            Prepare for Cloud LLM
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!baseDataUrl || isBusy}
+            onClick={() => void exports.createShareUrl()}
+          >
+            Copy Local Share Link
+          </Button>
+
+          <Separator className="my-1.5" />
+
           <Button
             variant="secondary"
             disabled={!baseDataUrl || isBusy}
@@ -157,27 +232,6 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           >
             Copy Image
           </Button>
-          <Button
-            variant="secondary"
-            disabled={!baseDataUrl || isBusy}
-            onClick={() => void exports.prepareExternalLlmPackage()}
-          >
-            Prepare for Cloud LLM
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!baseDataUrl || isBusy}
-            onClick={() => void exports.copyForClaudeCode()}
-          >
-            Copy for Claude Code
-          </Button>
-          <Button
-            variant="default"
-            disabled={!baseDataUrl || isBusy}
-            onClick={() => void exports.createShareUrl()}
-          >
-            Copy Local Share Link
-          </Button>
         </div>
 
         {/* Counts only. What just happened is announced by the canvas toast
@@ -185,10 +239,10 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             a status buried at the bottom of a scrolling sidebar was routinely
             off screen when it mattered. */}
         <div className="space-y-1 text-sm">
-          <p className="m-0 text-muted-foreground">Annotations: {noteCount}</p>
           {redactedCount > 0 ? (
             <p className="m-0 text-muted-foreground">
-              Redacted regions: {redactedCount} (pixelated in every export and in the saved share)
+              {plural(redactedCount, "redacted region")} (pixelated in every export and in the saved
+              share)
             </p>
           ) : null}
           {lastExportSize !== null ? (

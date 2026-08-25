@@ -19,6 +19,13 @@ export function moveAnnotation(annotation: Annotation, dx: number, dy: number): 
     };
   }
 
+  if (annotation.tool === "pen") {
+    return {
+      ...annotation,
+      points: annotation.points.map((point) => ({ x: point.x + dx, y: point.y + dy }))
+    };
+  }
+
   return { ...annotation, x: annotation.x + dx, y: annotation.y + dy };
 }
 

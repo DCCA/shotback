@@ -9,7 +9,14 @@ import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
-import { captureFullPage, inspectPoints } from "@/lib/capture";
+import {
+  captureFullPage,
+  captureOptions,
+  inspectPoints,
+  toPageCoords,
+  type CaptureMapping,
+  type CaptureMode
+} from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
 import { inspectableAnnotations, inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
@@ -27,9 +34,10 @@ function EditorApp(): JSX.Element {
   const exports = useExports(state, previousShareId);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
-  // Stitched image px per page CSS px, set by the last capture. A ref, not
-  // state: nothing renders from it, and the commit handler must see it at once.
-  const captureScaleRef = useRef<number | null>(null);
+  // How the last capture's image px map back onto the live page, for the
+  // inspection round trip. A ref, not state: nothing renders from it, and the
+  // commit handler must see it at once.
+  const captureMappingRef = useRef<CaptureMapping | null>(null);
   // Bumped per inspection: only the newest response may write contexts, so a
   // slow one cannot land on top of a newer commit's result.
   const inspectGenRef = useRef(0);
@@ -38,7 +46,7 @@ function EditorApp(): JSX.Element {
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
 
-  const takeScreenshot = async (): Promise<void> => {
+  const takeScreenshot = async (mode: CaptureMode = "full"): Promise<void> => {
     if (!canCapture) {
       state.setStatus({
         kind: "error",
@@ -50,7 +58,7 @@ function EditorApp(): JSX.Element {
 
     state.setIsBusy(true);
     state.setStatus(null);
-    captureScaleRef.current = null;
+    captureMappingRef.current = null;
     state.setShareUrl("");
     state.setEnvironment(undefined);
     state.setDiagnostics(undefined);
@@ -64,14 +72,23 @@ function EditorApp(): JSX.Element {
     state.setLastExportSize(null);
 
     try {
-      const result = await captureFullPage(tabId, windowId, (index, total) => {
-        state.setProgress(`Capturing ${index}/${total}...`);
-      });
+      const result = await captureFullPage(
+        tabId,
+        windowId,
+        (index, total) => {
+          state.setProgress(`Capturing ${index}/${total}...`);
+        },
+        captureOptions(mode)
+      );
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
       state.setDiagnostics(result.diagnostics);
-      captureScaleRef.current = result.scale;
+      captureMappingRef.current = {
+        scale: result.scale,
+        scrollerTop: result.scrollerTop,
+        scrollOffset: result.scrollOffset
+      };
     } catch (error) {
       state.setStatus({
         kind: "error",
@@ -88,11 +105,13 @@ function EditorApp(): JSX.Element {
 
   // When opened directly from the toolbar icon (autocapture=1), start the
   // full-page capture once on load so a single click yields a ready screenshot.
-  // The manual Capture button remains available for re-capture.
+  // Always full page: there is nowhere to pick a mode before this fires, and
+  // the whole point of one-click capture is that nothing is asked. The manual
+  // Capture button (and its mode chooser) remains available for re-capture.
   useEffect(() => {
     if (!autoCapture || autoCaptureFiredRef.current || !canCapture) return;
     autoCaptureFiredRef.current = true;
-    void takeScreenshot();
+    void takeScreenshot("full");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,17 +132,17 @@ function EditorApp(): JSX.Element {
    * cannot leak by default.
    */
   const refreshContexts = async (): Promise<void> => {
-    const scale = captureScaleRef.current;
-    if (!scale || !canCapture) return;
+    const mapping = captureMappingRef.current;
+    if (!mapping || !canCapture) return;
 
     const generation = (inspectGenRef.current += 1);
     const items = inspectableAnnotations(state.getAnnotations());
     const contexts = await inspectPoints(
       tabId,
-      items.map((annotation) => {
-        const { x, y } = inspectAnchor(annotation);
-        return { x: x / scale, y: y / scale };
-      }),
+      // `toPageCoords`, not a bare unscale: a visible-area capture's image
+      // starts at the scroll position it was taken from, so every point on it
+      // is that much further down the page than its image coordinate says.
+      items.map((annotation) => toPageCoords(inspectAnchor(annotation), mapping)),
       state.pageUrl
     );
     if (generation !== inspectGenRef.current) return;
@@ -163,8 +182,13 @@ function EditorApp(): JSX.Element {
     // the sidebar follows it, and the window scrolls normally. DOM order is
     // unchanged - only the visual order flips - so the sidebar keeps its place
     // in the tab sequence and for a screen reader.
-    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_1fr] lg:overflow-hidden lg:p-5">
-      <Sidebar state={state} exports={exports} onCapture={() => void takeScreenshot()}>
+    // `minmax(0,1fr)`, not `1fr`: a bare `1fr` track has an automatic minimum,
+    // so anything inside the canvas card that refuses to shrink (the tool
+    // palette, before it was allowed to wrap) widens the column, overflows the
+    // window and clips the capture. The explicit 0 minimum is what keeps the
+    // pane's width a property of the window rather than of its contents.
+    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)] lg:overflow-hidden lg:p-5">
+      <Sidebar state={state} exports={exports} onCapture={(mode) => void takeScreenshot(mode)}>
         <Separator />
         <CommentTimeline
           items={state.annotations}

@@ -33,9 +33,11 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 
 - ⚡ **One-click capture** - clicking the toolbar icon or pressing `Alt+Shift+S` opens the editor and captures immediately (no popup, no second click)
 - 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
+- 🎚️ **Three capture modes** - the chooser beside **Capture Page** picks **Full page**, **Visible area** (just what is on screen: one instant frame, no scrolling, no notice) or **Full page after 3s** (a "Capturing in 3...2...1" countdown on the page first, so you can open a menu, a hover state or a tooltip and have it captured). The toolbar icon and `Alt+Shift+S` always capture the full page
 - 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
-- ✏️ **Area annotations**: box, arrow, text
-- 🎛️ **Canvas tool palette** - a segmented control above the capture holds every drawing tool plus six stroke swatches (and a custom colour picker) and the zoom toggle. Each tool has a one-key shortcut - `V` select, `B` box, `A` arrow, `T` text, `R` redact, `C` crop - and a drawing tool **stays active after each shape**, so five boxes are five drags. Shortcuts are ignored while you are typing a comment
+- ✏️ **Area annotations**: box, arrow, text, highlight, pen
+- 🖍️ **Highlight** (`H`) washes a region in the annotation colour the way a marker does - `multiply`, so the text under it stays readable - with a full-opacity edge so it still marks the region over dark page content. ✍️ **Pen** (`P`) is a freehand stroke. Both take a comment and a numbered pin, exactly like a box
+- 🎛️ **Canvas tool palette** - a segmented control above the capture holds every drawing tool plus six stroke swatches (and a custom colour picker) and the zoom toggle. Each tool has a one-key shortcut - `V` select, `B` box, `A` arrow, `T` text, `H` highlight, `P` pen, `R` redact, `C` crop - and a drawing tool **stays active after each shape**, so five boxes are five drags. Shortcuts are ignored while you are typing a comment
 - 🕶️ **Redact before sharing** - drag the Redact tool (`R`) over anything private and the canvas pixelates it **live**, with the same block size every export burns in, so you can see whether enough is covered before a file is written. It is pixelated into every export _and_ into the saved share. Select a region and hold `Alt` to peek at what is under it. With a crop applied the preview is the cropped export, clipping and block grid included. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
 - ✂️ **Crop before export** - draw a region with the Crop tool (`C`) and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
 - 🔗 **Linked comments** tied to selected annotation
@@ -86,7 +88,13 @@ npm run build
 ## 📖 Usage
 
 1. **Open** a target webpage.
-2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
+2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the full page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
+
+   To capture something else, use the chooser beside **Capture Page** in the
+   editor: **Visible area** grabs just what is on screen, and **Full page after
+   3s** counts down on the page first so you can open a menu or hold a hover
+   state while it captures. The toolbar icon is always full page.
+
 3. **Draw** annotations and add comments. Pick a tool on the palette above
    the capture, or press its key:
 
@@ -96,6 +104,8 @@ npm run build
    | `B` | Box                                                       |
    | `A` | Arrow                                                     |
    | `T` | Text                                                      |
+   | `H` | Highlight                                                 |
+   | `P` | Pen                                                       |
    | `R` | Redact                                                    |
    | `C` | Crop                                                      |
 

@@ -147,6 +147,45 @@ describe("buildExternalLlmPrompt", () => {
     expect(prompt).toContain("3. [text] Label");
   });
 
+  it("lists a highlight and a pen stroke numbered, with their geometry", () => {
+    const prompt = buildExternalLlmPrompt({
+      pageUrl: "https://example.test/page",
+      generalFeedback: "",
+      image: { width: 1000, height: 1000 },
+      annotations: [
+        {
+          id: "h",
+          tool: "highlight",
+          color: "#f59e0b",
+          createdAt: "2026-02-21T00:00:01.000Z",
+          comment: "read this",
+          x: 100,
+          y: 200,
+          width: 300,
+          height: 40
+        },
+        {
+          id: "p",
+          tool: "pen",
+          color: "#3b82f6",
+          createdAt: "2026-02-21T00:00:02.000Z",
+          comment: "scribble",
+          points: [
+            { x: 500, y: 100 },
+            { x: 600, y: 300 }
+          ]
+        }
+      ]
+    });
+
+    expect(prompt).toContain(
+      "1. [highlight] read this - at (100, 200) size 300x40 px [10%, 20% of page]"
+    );
+    expect(prompt).toContain(
+      "2. [pen] scribble - pen path of 2 points from (500, 100) to (600, 300) px [50%, 10% of page]"
+    );
+  });
+
   it("marks empty text and missing comments explicitly", () => {
     const prompt = buildExternalLlmPrompt({
       pageUrl: "https://example.test",

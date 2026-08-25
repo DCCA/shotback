@@ -7,7 +7,13 @@ import { moveAnnotation, uid } from "@/editor/annotation-geometry";
 import { StatusToast } from "@/editor/status-toast";
 import { ToolPalette } from "@/editor/tool-palette";
 import type { EditorState } from "@/editor/use-editor-state";
-import { arrowHeadPoints, pixelateRegion, redactionBounds } from "@/lib/annotate";
+import {
+  arrowHeadPoints,
+  HIGHLIGHT_ALPHA,
+  HIGHLIGHT_EDGE_WIDTH,
+  pixelateRegion,
+  redactionBounds
+} from "@/lib/annotate";
 import {
   applyBoxResizeDelta,
   BOX_RESIZE_HANDLES,
@@ -32,6 +38,11 @@ interface DraftShape {
   yStart: number;
   xCurrent: number;
   yCurrent: number;
+}
+
+/** An SVG `points` attribute from a pen path. */
+function polylinePoints(points: Array<{ x: number; y: number }>): string {
+  return points.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
 /** A drag, normalised to a rect: drawn in any direction, stored top-left first. */
@@ -90,6 +101,13 @@ const CROP_CONTROLS_SIZE = { width: 196, height: 44 };
 const CROP_HANDLE_STYLE = { fill: "hsl(var(--card))", stroke: "hsl(var(--foreground))" };
 /** Edge of one tile of the redaction hatch, in image px at `canvasScale` 1. */
 const BASE_REDACT_HATCH_SIZE = 8;
+/**
+ * How far the pointer must travel before a pen stroke records another point.
+ * Thinning as it draws is what keeps a stroke a few dozen points instead of
+ * one per pointer event - the difference between a readable sidecar rect and
+ * a thousand-entry array in every saved share.
+ */
+const PEN_POINT_SPACING = 3;
 
 interface AnnotationCanvasProps {
   state: EditorState;
@@ -154,6 +172,9 @@ export function AnnotationCanvas({
   // costs one boolean and cannot uncover something the user is not looking at.
   const [altHeld, setAltHeld] = useState(false);
   const [draft, setDraft] = useState<DraftShape | null>(null);
+  // The pen's own draft: a path, not a rect, so it gets its own state rather
+  // than being bent into `DraftShape`.
+  const [penDraft, setPenDraft] = useState<Array<{ x: number; y: number }> | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
   const [cropResize, setCropResize] = useState<CropResizeState | null>(null);
@@ -523,8 +544,8 @@ export function AnnotationCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // Editor keyboard shortcuts, all on one window listener: V/B/A/T/R/C pick a
-  // tool from the palette, Escape clears selection/in-progress gestures,
+  // Editor keyboard shortcuts, all on one window listener: V/B/A/T/H/P/R/C
+  // pick a tool from the palette, Escape clears selection/in-progress gestures,
   // Delete/Backspace removes the selected annotation, Ctrl/Cmd+Z undoes and
   // Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes. Everything but Escape is ignored
   // while typing in a field - the comment editor is a textarea on the canvas,
@@ -585,6 +606,7 @@ export function AnnotationCanvas({
         setSelectedId(null);
         setCropDraft(null);
         setDraft(null);
+        setPenDraft(null);
         setDrag(null);
         setResize(null);
         setCropResize(null);
@@ -679,6 +701,11 @@ export function AnnotationCanvas({
       // A text annotation is placed on pointer-down and never reaches the
       // pointer-up commit below, so it snapshots itself here.
       onCommit();
+      return;
+    }
+
+    if (tool === "pen") {
+      setPenDraft([{ x, y }]);
       return;
     }
 
@@ -799,7 +826,8 @@ export function AnnotationCanvas({
       gestureMovedRef.current = true;
       setAnnotations((prev) =>
         prev.map((item) =>
-          item.id === resize.id && (item.tool === "box" || item.tool === "redact")
+          item.id === resize.id &&
+          (item.tool === "box" || item.tool === "redact" || item.tool === "highlight")
             ? { ...item, ...result.box }
             : item
         )
@@ -826,6 +854,18 @@ export function AnnotationCanvas({
       return;
     }
 
+    if (penDraft) {
+      const { x, y } = pointerPos(event);
+      setPenDraft((prev) => {
+        if (!prev) return prev;
+        const last = prev[prev.length - 1];
+        // Thinned as it goes: a point every few px, not one per event.
+        if (Math.hypot(x - last.x, y - last.y) < PEN_POINT_SPACING) return prev;
+        return [...prev, { x, y }];
+      });
+      return;
+    }
+
     if (!draft) return;
 
     const { x, y } = pointerPos(event);
@@ -848,6 +888,24 @@ export function AnnotationCanvas({
     if (drag) {
       setDrag(null);
       if (gestureMovedRef.current) onCommit();
+      return;
+    }
+
+    if (penDraft) {
+      const points = penDraft;
+      setPenDraft(null);
+      // One point is a click that never moved: no line, nothing to comment on.
+      if (points.length >= 2) {
+        commitNewAnnotation({
+          id: uid(),
+          tool: "pen",
+          points,
+          color,
+          comment: "",
+          createdAt: new Date().toISOString()
+        });
+        onCommit();
+      }
       return;
     }
 
@@ -894,6 +952,26 @@ export function AnnotationCanvas({
         const item: Annotation = {
           id: uid(),
           tool: "box",
+          x,
+          y,
+          width,
+          height,
+          color,
+          comment: "",
+          createdAt: new Date().toISOString()
+        };
+        commitNewAnnotation(item);
+        added = true;
+      }
+    }
+
+    if (tool === "highlight") {
+      const { x, y, width, height } = draftRect(draft);
+
+      if (width > 5 && height > 5) {
+        const item: Annotation = {
+          id: uid(),
+          tool: "highlight",
           x,
           y,
           width,
@@ -1093,6 +1171,77 @@ export function AnnotationCanvas({
                       );
                     }
 
+                    if (item.tool === "highlight") {
+                      return (
+                        <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                          {/* `multiply` is what makes this a marker pen rather
+                              than a coloured pane over the page: the darker
+                              pixels underneath (the text being highlighted)
+                              stay readable. The export composites the same
+                              way, off the same alpha. */}
+                          <rect
+                            x={item.x}
+                            y={item.y}
+                            width={item.width}
+                            height={item.height}
+                            fill={item.color}
+                            fillOpacity={HIGHLIGHT_ALPHA}
+                            style={{ mixBlendMode: "multiply" }}
+                            pointerEvents="all"
+                          />
+                          {/* The edge, outside the blend: `multiply` over a
+                              dark section leaves the wash invisible, so this
+                              is what marks the region there. Same width and
+                              colour the export strokes it with. */}
+                          <rect
+                            x={item.x}
+                            y={item.y}
+                            width={item.width}
+                            height={item.height}
+                            fill="none"
+                            stroke={item.color}
+                            strokeWidth={isSelected ? "4" : String(HIGHLIGHT_EDGE_WIDTH)}
+                            strokeDasharray={isSelected ? "8 5" : undefined}
+                            pointerEvents="none"
+                          />
+                          {renderPin(item)}
+                          {isSelected && interactionMode === "move"
+                            ? renderResizeHandles(item)
+                            : null}
+                        </g>
+                      );
+                    }
+
+                    if (item.tool === "pen") {
+                      const path = polylinePoints(item.points);
+                      return (
+                        <g key={item.id} onPointerDown={onAnnotationPointerDown(item)}>
+                          {/* A wide transparent stroke under the visible one,
+                              the same trick the arrow uses: a 3px line is a
+                              hard thing to click on. */}
+                          <polyline
+                            points={path}
+                            fill="none"
+                            stroke="transparent"
+                            strokeWidth="14"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <polyline
+                            points={path}
+                            fill="none"
+                            stroke={item.color}
+                            strokeWidth={isSelected ? "4" : "3"}
+                            strokeDasharray={isSelected ? "8 5" : undefined}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            pointerEvents="none"
+                          />
+                          {renderPin(item)}
+                        </g>
+                      );
+                    }
+
                     // A redaction: the overlay canvas below already shows the
                     // region pixelated exactly as the export will burn it in,
                     // so all this adds is the outline that makes it selectable
@@ -1236,6 +1385,36 @@ export function AnnotationCanvas({
                         strokeDasharray="6 4"
                       />
                     </g>
+                  ) : null}
+
+                  {draft && tool === "highlight" ? (
+                    <g pointerEvents="none">
+                      <rect
+                        {...draftRect(draft)}
+                        fill={color}
+                        fillOpacity={HIGHLIGHT_ALPHA}
+                        style={{ mixBlendMode: "multiply" }}
+                      />
+                      <rect
+                        {...draftRect(draft)}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={HIGHLIGHT_EDGE_WIDTH}
+                        strokeDasharray="6 4"
+                      />
+                    </g>
+                  ) : null}
+
+                  {penDraft && penDraft.length > 1 ? (
+                    <polyline
+                      points={polylinePoints(penDraft)}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      pointerEvents="none"
+                    />
                   ) : null}
 
                   {draft && tool === "arrow" ? (

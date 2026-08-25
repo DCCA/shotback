@@ -5,6 +5,11 @@ import {
   readFiberComponents,
   buildEnvironment,
   buildScrollSteps,
+  CAPTURE_DELAY_SECONDS,
+  CAPTURE_MODES,
+  captureNoticeHeading,
+  captureOptions,
+  toPageCoords,
   isNoReceiverError,
   isTabsBusyError,
   segmentPlacement,
@@ -26,6 +31,64 @@ describe("buildScrollSteps", () => {
   });
 });
 
+describe("captureOptions", () => {
+  it("maps the three offered modes onto what the orchestrator takes", () => {
+    expect(captureOptions("full")).toEqual({ mode: "full", delaySeconds: 0 });
+    expect(captureOptions("visible")).toEqual({ mode: "visible", delaySeconds: 0 });
+    expect(captureOptions("delayed")).toEqual({
+      mode: "full",
+      delaySeconds: CAPTURE_DELAY_SECONDS
+    });
+  });
+
+  it("offers exactly the three modes the chooser renders, full first", () => {
+    expect(CAPTURE_MODES.map((mode) => mode.value)).toEqual(["full", "visible", "delayed"]);
+    // The primary button captures the full page; the chooser only changes that.
+    expect(CAPTURE_MODES[0].label).toBe("Full page");
+  });
+
+  it("counts the delay down in whole seconds", () => {
+    expect(CAPTURE_DELAY_SECONDS).toBe(3);
+  });
+});
+
+describe("captureNoticeHeading", () => {
+  it("counts down while a delay runs", () => {
+    expect(captureNoticeHeading(3)).toBe("Capturing in 3...");
+    expect(captureNoticeHeading(1)).toBe("Capturing in 1...");
+  });
+
+  it("names the capture itself once the countdown is done", () => {
+    expect(captureNoticeHeading(0)).toBe("Capturing full page…");
+  });
+});
+
+describe("toPageCoords", () => {
+  // A full-page capture starts by scrolling to the top, so image space and
+  // page space share an origin.
+  const full = { scale: 2, scrollerTop: 0, scrollOffset: 0 };
+
+  it("is a plain unscale for a full-page capture", () => {
+    expect(toPageCoords({ x: 200, y: 400 }, full)).toEqual({ x: 100, y: 200 });
+  });
+
+  it("adds the scroll the capture started from, for a visible-area one", () => {
+    // The page was 1200 CSS px down when the one frame was taken, so the top
+    // of the image is page y 1200 - not page y 0.
+    expect(
+      toPageCoords({ x: 200, y: 400 }, { scale: 2, scrollerTop: 0, scrollOffset: 1200 })
+    ).toEqual({ x: 100, y: 1400 });
+  });
+
+  it("leaves a band above the scroller alone: it never scrolled", () => {
+    // Inner-scroller page: the 64px header is kept whole in the first frame
+    // and does not move with the scroller, so the offset must not apply to it.
+    const inner = { scale: 1, scrollerTop: 64, scrollOffset: 900 };
+    expect(toPageCoords({ x: 10, y: 20 }, inner)).toEqual({ x: 10, y: 20 });
+    expect(toPageCoords({ x: 10, y: 100 }, inner)).toEqual({ x: 10, y: 1000 });
+  });
+});
+
 describe("buildEnvironment", () => {
   const metrics = {
     fullHeight: 2400,
@@ -34,6 +97,7 @@ describe("buildEnvironment", () => {
     devicePixelRatio: 2,
     pageUrl: "https://example.test/page",
     scrollerTop: 0,
+    scrollTop: 0,
     title: "Acme Dashboard",
     colorScheme: "dark" as const,
     scroller: "document" as const

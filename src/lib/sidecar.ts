@@ -71,6 +71,25 @@ export function buildBatchSidecar(captures: Sidecar[]): BatchSidecar {
   return { version: 1, captures };
 }
 
+/**
+ * The part of `bounds` that is actually on the image. The stored geometry is
+ * deliberately not clamped - `applyCrop` keeps an arrow's head and a pen's
+ * stray points outside the crop rather than redrawing the shape - but the rect
+ * the sidecar *reports* answers "where is this on the attached image", so it
+ * cannot describe pixels the image does not have, and `normalizedRect` cannot
+ * leave 0..1. An annotation already inside is returned unchanged.
+ */
+function clampToImage(bounds: SidecarRect, image: { width: number; height: number }): SidecarRect {
+  const x = Math.max(0, Math.min(bounds.x, image.width));
+  const y = Math.max(0, Math.min(bounds.y, image.height));
+  return {
+    x,
+    y,
+    width: Math.max(0, Math.min(bounds.x + bounds.width, image.width) - x),
+    height: Math.max(0, Math.min(bounds.y + bounds.height, image.height) - y)
+  };
+}
+
 /** 4dp is ~0.1px on a 1000px-wide capture: precise enough, still readable. */
 function normalize(value: number, extent: number): number {
   if (!(extent > 0)) return 0;
@@ -91,7 +110,7 @@ function redactionsField(
   image: { width: number; height: number }
 ): { redactions?: SidecarRedaction[] } {
   const hidden = redactions(annotations).map((region) => {
-    const rect = annotationBounds(region);
+    const rect = clampToImage(annotationBounds(region), image);
     return { tool: "redact" as const, rect, normalizedRect: normalizeRect(rect, image) };
   });
   return hidden.length > 0 ? { redactions: hidden } : {};
@@ -124,7 +143,7 @@ export function buildSidecar(params: {
     pageUrl: params.pageUrl,
     generalFeedback: params.generalFeedback.trim(),
     annotations: numberAnnotations(params.annotations).map(({ n, annotation }) => {
-      const rect = annotationBounds(annotation);
+      const rect = clampToImage(annotationBounds(annotation), params.image);
       return {
         n,
         tool: annotation.tool,

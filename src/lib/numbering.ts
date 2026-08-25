@@ -55,27 +55,38 @@ export function canvasScale(imageWidth: number): number {
   return pinRadius(imageWidth) / 20;
 }
 
-/** Where the pin sits: top-left corner of a box, the arrow tail, the text baseline start. */
+/**
+ * Where the pin sits: top-left corner of a box or a highlight, the arrow tail,
+ * the text baseline start, the top-left of a pen stroke's bounds.
+ */
 export function pinAnchor(annotation: Annotation): { x: number; y: number } {
   if (annotation.tool === "arrow") return { x: annotation.x1, y: annotation.y1 };
+  if (annotation.tool === "pen") {
+    const { x, y } = annotationBounds(annotation);
+    return { x, y };
+  }
   return { x: annotation.x, y: annotation.y };
 }
 
 /**
  * The point an annotation means, for mapping it back onto the live page: the
- * centre of a box (what it frames), the tail of an arrow and the start of a
- * text label (where their pin sits, which is what they point at).
+ * centre of whatever it covers (a box, a highlight, a pen stroke's bounds),
+ * and for an arrow or a text label the point their pin sits on, which is what
+ * they point at.
  */
 export function inspectAnchor(annotation: Annotation): { x: number; y: number } {
-  if (annotation.tool === "box") {
-    return { x: annotation.x + annotation.width / 2, y: annotation.y + annotation.height / 2 };
+  if (annotation.tool === "box" || annotation.tool === "highlight" || annotation.tool === "pen") {
+    const { x, y, width, height } = annotationBounds(annotation);
+    return { x: x + width / 2, y: y + height / 2 };
   }
   return pinAnchor(annotation);
 }
 
 /**
  * The rectangle an annotation occupies on the capture. Text has no measurable
- * box here, so it is estimated from its length and drawn baseline.
+ * box here, so it is estimated from its length and drawn baseline; a pen
+ * stroke's is the extent of its points (an empty one has no extent, so it gets
+ * a zero rect rather than the `Infinity` a bare `Math.min` of nothing yields).
  */
 export function annotationBounds(annotation: Annotation): {
   x: number;
@@ -83,7 +94,11 @@ export function annotationBounds(annotation: Annotation): {
   width: number;
   height: number;
 } {
-  if (annotation.tool === "box" || annotation.tool === "redact") {
+  if (
+    annotation.tool === "box" ||
+    annotation.tool === "redact" ||
+    annotation.tool === "highlight"
+  ) {
     const { x, y, width, height } = annotation;
     return { x, y, width, height };
   }
@@ -99,6 +114,15 @@ export function annotationBounds(annotation: Annotation): {
     };
   }
 
+  if (annotation.tool === "pen") {
+    if (annotation.points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+    const xs = annotation.points.map((point) => point.x);
+    const ys = annotation.points.map((point) => point.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  }
+
   return { x: annotation.x, y: annotation.y - 18, width: annotation.text.length * 10, height: 22 };
 }
 
@@ -111,11 +135,20 @@ export function describeGeometry(a: Annotation, image: { width: number; height: 
   const pct = (x: number, y: number) =>
     `[${Math.round((100 * x) / image.width)}%, ${Math.round((100 * y) / image.height)}% of page]`;
 
-  if (a.tool === "box") {
+  if (a.tool === "box" || a.tool === "highlight") {
     return `at (${Math.round(a.x)}, ${Math.round(a.y)}) size ${Math.round(a.width)}x${Math.round(a.height)} px ${pct(a.x, a.y)}`;
   }
   if (a.tool === "arrow") {
     return `from (${Math.round(a.x1)}, ${Math.round(a.y1)}) to (${Math.round(a.x2)}, ${Math.round(a.y2)}) px`;
+  }
+  if (a.tool === "pen") {
+    // Endpoints plus a count: the whole path would be unreadable in a prompt,
+    // and the bounds (which is what the % refers to) is where to look on the
+    // image. The sidecar carries the same rect for anything that needs it.
+    const first = a.points[0] ?? { x: 0, y: 0 };
+    const last = a.points[a.points.length - 1] ?? first;
+    const bounds = annotationBounds(a);
+    return `pen path of ${a.points.length} points from (${Math.round(first.x)}, ${Math.round(first.y)}) to (${Math.round(last.x)}, ${Math.round(last.y)}) px ${pct(bounds.x, bounds.y)}`;
   }
   return `at (${Math.round(a.x)}, ${Math.round(a.y)}) px`;
 }

@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTimedConfirm } from "@/editor/use-confirm";
 import type { EditorState } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
+import { CAPTURE_MODES, type CaptureMode } from "@/lib/capture";
 import type { Verbosity } from "@/lib/feedback";
 import { numberAnnotations, redactions } from "@/lib/numbering";
 import { plural } from "@/lib/utils";
@@ -18,7 +20,8 @@ const CAPTURE_CONFIRM_MS = 5000;
 interface SidebarProps {
   state: EditorState;
   exports: EditorExports;
-  onCapture: () => void;
+  /** Runs a capture in the mode the chooser beside the button is showing. */
+  onCapture: (mode: CaptureMode) => void;
   /** Timeline, share link and saved-shares sections, rendered below the status block. */
   children?: React.ReactNode;
 }
@@ -59,9 +62,15 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
   const capture = useTimedConfirm<boolean>(CAPTURE_CONFIRM_MS);
   const captureWouldDiscard = annotations.length > 0;
 
+  // Local, not editor state: the mode is read once, at the click, and nothing
+  // else in the session depends on which one is showing.
+  const [captureMode, setCaptureMode] = useState<CaptureMode>("full");
+
+  const runCapture = (): void => onCapture(captureMode);
+
   const startCapture = (): void => {
     capture.arm(null);
-    onCapture();
+    runCapture();
   };
 
   return (
@@ -87,7 +96,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
               variant="destructive"
               disabled={isBusy}
               autoFocus
-              onClick={capture.onConfirm(onCapture)}
+              onClick={capture.onConfirm(runCapture)}
             >
               Replace capture?
             </Button>
@@ -96,17 +105,34 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             </Button>
           </div>
         ) : (
-          <Button
-            ref={capture.triggerRef(true)}
-            // Primary only while it is the way in. Once there is a capture the
-            // session's destination is the handoff below, and two filled
-            // buttons in one column is no hierarchy at all.
-            variant={baseDataUrl ? "secondary" : "default"}
-            disabled={isBusy}
-            onClick={() => (captureWouldDiscard ? capture.arm(true) : startCapture())}
-          >
-            Capture Page
-          </Button>
+          // A split control: one filled primary that captures, and a compact
+          // chooser next to it for the two variations. The button always says
+          // the same thing because it always does the same thing - capture the
+          // page - and the chooser is what says how much of it.
+          <div className="flex items-stretch gap-2">
+            <Button
+              ref={capture.triggerRef(true)}
+              // Primary only while it is the way in. Once there is a capture
+              // the session's destination is the handoff below, and two filled
+              // buttons in one column is no hierarchy at all.
+              variant={baseDataUrl ? "secondary" : "default"}
+              className="flex-1"
+              disabled={isBusy}
+              onClick={() => (captureWouldDiscard ? capture.arm(true) : startCapture())}
+            >
+              Capture Page
+            </Button>
+            <div className="w-[9.5rem] shrink-0">
+              <Select
+                aria-label="Capture mode"
+                value={captureMode}
+                onValueChange={(value) => setCaptureMode(value as CaptureMode)}
+                options={CAPTURE_MODES.map((mode) => ({ value: mode.value, label: mode.label }))}
+                disabled={isBusy}
+                className="text-[13px]"
+              />
+            </div>
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-3">

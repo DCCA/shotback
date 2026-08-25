@@ -12,6 +12,7 @@ import {
   pinRadius,
   viewPins
 } from "../src/lib/numbering";
+import type { HighlightAnnotation, PenAnnotation } from "../src/types/annotation";
 
 const ts = "2026-08-23T00:00:00.000Z";
 
@@ -313,5 +314,73 @@ describe("viewPins", () => {
     // the reason a pin numbered 3 on the canvas used to be 2 in the PNG.
     expect(pins.get("inside")?.n).toBe(1);
     expect(pins.get("alsoInside")?.n).toBe(2);
+  });
+});
+
+describe("highlight and pen", () => {
+  const highlight: HighlightAnnotation = {
+    id: "h1",
+    tool: "highlight",
+    color: "#f59e0b",
+    createdAt: ts,
+    comment: "read this",
+    x: 40,
+    y: 60,
+    width: 120,
+    height: 30
+  };
+
+  const pen: PenAnnotation = {
+    id: "p1",
+    tool: "pen",
+    color: "#3b82f6",
+    createdAt: ts,
+    comment: "scribble",
+    points: [
+      { x: 200, y: 100 },
+      { x: 260, y: 180 },
+      { x: 150, y: 140 }
+    ]
+  };
+
+  it("bounds a highlight like a box", () => {
+    expect(annotationBounds(highlight)).toEqual({ x: 40, y: 60, width: 120, height: 30 });
+  });
+
+  it("bounds a pen stroke to the extent of its points", () => {
+    expect(annotationBounds(pen)).toEqual({ x: 150, y: 100, width: 110, height: 80 });
+  });
+
+  it("gives a pointless pen stroke a zero rect rather than NaN", () => {
+    expect(annotationBounds({ ...pen, points: [] })).toEqual({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    });
+  });
+
+  it("pins both at the top-left of their bounds", () => {
+    expect(pinAnchor(highlight)).toEqual({ x: 40, y: 60 });
+    expect(pinAnchor(pen)).toEqual({ x: 150, y: 100 });
+  });
+
+  it("inspects both at the centre of their bounds", () => {
+    expect(inspectAnchor(highlight)).toEqual({ x: 100, y: 75 });
+    expect(inspectAnchor(pen)).toEqual({ x: 205, y: 140 });
+  });
+
+  it("numbers and inspects both alongside the other tools", () => {
+    const list = [highlight, pen];
+    expect(numberAnnotations(list).map((item) => item.n)).toEqual([1, 2]);
+    expect(inspectableAnnotations(list)).toHaveLength(2);
+  });
+
+  it("describes a highlight like a box and a pen stroke as a path", () => {
+    const image = { width: 1000, height: 1000 };
+    expect(describeGeometry(highlight, image)).toBe("at (40, 60) size 120x30 px [4%, 6% of page]");
+    expect(describeGeometry(pen, image)).toBe(
+      "pen path of 3 points from (200, 100) to (150, 140) px [15%, 10% of page]"
+    );
   });
 });

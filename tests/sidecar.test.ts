@@ -66,6 +66,84 @@ describe("buildSidecar", () => {
     ]);
   });
 
+  it("lists a highlight and a pen stroke with their bounds", () => {
+    const highlight: Annotation = {
+      id: "h",
+      tool: "highlight",
+      color: "#f59e0b",
+      createdAt: "2026-08-24T00:00:04.000Z",
+      comment: "read this",
+      x: 100,
+      y: 200,
+      width: 300,
+      height: 40
+    };
+    const pen: Annotation = {
+      id: "p",
+      tool: "pen",
+      color: "#3b82f6",
+      createdAt: "2026-08-24T00:00:05.000Z",
+      comment: "scribble",
+      points: [
+        { x: 500, y: 100 },
+        { x: 600, y: 300 }
+      ]
+    };
+
+    const sidecar = buildSidecar({ ...base, annotations: [highlight, pen] });
+    expect(sidecar.annotations.map((a) => [a.n, a.tool, a.comment])).toEqual([
+      [1, "highlight", "read this"],
+      [2, "pen", "scribble"]
+    ]);
+    expect(sidecar.annotations[0].rect).toEqual({ x: 100, y: 200, width: 300, height: 40 });
+    // A pen stroke has no rect of its own: its bounds are the extent of its
+    // points, which is what an agent needs to find it on the image.
+    expect(sidecar.annotations[1].rect).toEqual({ x: 500, y: 100, width: 100, height: 200 });
+    expect(sidecar.annotations[1].normalizedRect).toEqual({
+      x: 0.5,
+      y: 0.05,
+      width: 0.1,
+      height: 0.1
+    });
+  });
+
+  it("clamps a reported rect to the image, so the JSON never leaves 0..1", () => {
+    // A pen stroke kept by a crop because one point was inside: the points
+    // outside it keep their real (now negative) coordinates so the stroke is
+    // not redrawn, but the rect the sidecar *reports* describes where it is on
+    // the exported image - which cannot be off it.
+    const pen: Annotation = {
+      id: "p",
+      tool: "pen",
+      color: "#3b82f6",
+      createdAt: "2026-08-24T00:00:06.000Z",
+      comment: "crosses the edge",
+      points: [
+        { x: -80, y: -40 },
+        { x: 300, y: 500 },
+        { x: 1400, y: 2600 }
+      ]
+    };
+
+    const sidecar = buildSidecar({ ...base, annotations: [pen] });
+    const { rect, normalizedRect } = sidecar.annotations[0];
+    expect(rect).toEqual({ x: 0, y: 0, width: 1000, height: 2000 });
+    for (const value of Object.values(normalizedRect)) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("leaves a rect already inside the image alone", () => {
+    // The clamp must not quietly reshape the tools that were already correct.
+    expect(buildSidecar({ ...base, annotations: [box] }).annotations[0].rect).toEqual({
+      x: 100,
+      y: 250,
+      width: 300,
+      height: 120
+    });
+  });
+
   it("carries the note text of each annotation", () => {
     const sidecar = buildSidecar({ ...base, annotations: [box, text] });
     expect(sidecar.annotations.map((a) => a.comment)).toEqual(["too tight", "label"]);

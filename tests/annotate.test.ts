@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exportAnnotatedImage, selectFeedbackRenderMode } from "../src/lib/annotate";
+import {
+  exportAnnotatedImage,
+  pixelateRegion,
+  redactionBounds,
+  selectFeedbackRenderMode
+} from "../src/lib/annotate";
 import { applyCrop, type Rect } from "../src/lib/crop";
 import type { ArrowAnnotation, BoxAnnotation, RedactAnnotation } from "../src/types/annotation";
 
@@ -473,5 +478,79 @@ describe("exportAnnotatedImage redactions", () => {
     const draws = calls.filter((call) => call.name === "drawImage");
     expect(draws).toHaveLength(3);
     expect(draws[1].args.slice(1)).toEqual([1150, 780, 50, 20, 0, 0, 5, 2]);
+  });
+});
+
+describe("pixelateRegion", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("blocks a region from an arbitrary source, so the canvas can reuse the export's own code", () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+    // Stands in for the editor's <img>: the live overlay reads the untouched
+    // capture, where the export reads its own canvas.
+    const source = { width: 1200, height: 800 } as unknown as CanvasImageSource;
+
+    pixelateRegion(ctx, source, redaction(), { width: 1200, height: 800 });
+
+    const draws = calls.filter((call) => call.name === "drawImage");
+    // Exactly the two the export makes per region, with the same block
+    // geometry: 60x40 down to ceil(60/12) x ceil(40/12) and back.
+    expect(draws).toHaveLength(2);
+    expect(draws[0].args[0]).toBe(source);
+    expect(draws[0].args.slice(1)).toEqual([150, 250, 60, 40, 0, 0, 5, 4]);
+    expect(draws[1].args.slice(1)).toEqual([0, 0, 5, 4, 150, 250, 60, 40]);
+  });
+
+  it("skips a region with no area, so a zero-sized drawImage can never be attempted", () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    pixelateRegion(ctx, {} as CanvasImageSource, redaction({ width: 0 }), {
+      width: 1200,
+      height: 800
+    });
+
+    expect(calls.filter((call) => call.name === "drawImage")).toHaveLength(0);
+  });
+});
+
+describe("redactionBounds", () => {
+  it("anchors a crop-clipped region where the export does, not at its un-clipped corner", () => {
+    // A crop whose left edge is not on a block boundary (505 % 12 !== 0), with
+    // a redaction that starts outside it - the case where a preview drawn in
+    // image space and an export drawn in crop space disagree.
+    const crop: Rect = { x: 505, y: 100, width: 400, height: 300 };
+    const region = redaction({ x: 490, y: 150, width: 120, height: 40 });
+    const image = { width: 1200, height: 800 };
+
+    const [clipped] = applyCrop([region], crop) as RedactAnnotation[];
+    // What the export pixelates: the visible part, measured from the crop.
+    expect(clipped.x).toBe(0);
+    const exported = redactionBounds(clipped, { width: crop.width, height: crop.height })!;
+    expect(exported).toEqual({ x: 0, y: 50, width: 105, height: 40 });
+
+    const seams = (start: number, width: number): number[] =>
+      Array.from({ length: Math.ceil(width / 12) }, (_, i) => start + i * 12);
+
+    // Back in image px, the export's block seams start at the crop's edge...
+    const exportSeams = seams(crop.x + exported.x, exported.width);
+    expect(exportSeams[0]).toBe(505);
+
+    // ...where pixelating the whole region off the untouched image would start
+    // them 15px earlier and land every seam somewhere else. That is the
+    // divergence the canvas overlay avoids by rendering the export's own view.
+    const naive = redactionBounds(region, image)!;
+    const naiveSeams = seams(naive.x, naive.width);
+    expect(naiveSeams[0]).toBe(490);
+    expect(exportSeams.some((seam) => naiveSeams.includes(seam))).toBe(false);
+  });
+
+  it("returns null for a region the canvas has no room for", () => {
+    expect(redactionBounds(redaction({ x: 1200, width: 40 }), { width: 1200, height: 800 })).toBe(
+      null
+    );
   });
 });

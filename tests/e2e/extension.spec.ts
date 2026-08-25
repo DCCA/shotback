@@ -1005,16 +1005,20 @@ for (const [name, headerHeight] of [
  * destroys - inside a block every pixel is identical, so only the block seams
  * contribute - which makes it the honest measure of "the text is gone",
  * unlike plain variance, which survives as the spread between block averages.
+ *
+ * Takes an `<img>` or a `<canvas>`: the export and the saved share are images,
+ * the editor's live redaction overlay is a canvas, and both must be measured
+ * the same way for "what you see is what is burned in" to mean anything.
  */
 function pixelDetail(
   image: Locator,
   region: { x: number; y: number; width: number; height: number }
 ): Promise<number> {
   return image.evaluate((el, rect) => {
-    const source = el as HTMLImageElement;
+    const source = el as HTMLImageElement | HTMLCanvasElement;
     const canvas = document.createElement("canvas");
-    canvas.width = source.naturalWidth;
-    canvas.height = source.naturalHeight;
+    canvas.width = "naturalWidth" in source ? source.naturalWidth : source.width;
+    canvas.height = "naturalHeight" in source ? source.naturalHeight : source.height;
     const c = canvas.getContext("2d")!;
     c.drawImage(source, 0, 0);
     const { data } = c.getImageData(rect.x, rect.y, rect.width, rect.height);
@@ -1031,6 +1035,55 @@ function pixelDetail(
     }
     return total / pairs;
   }, region);
+}
+
+/**
+ * Mean absolute luminance difference between the same region of two images (or
+ * canvases). Zero means the two are showing identical pixels there - which is
+ * the only honest way to state "the editor's preview IS the export".
+ */
+async function regionDelta(
+  a: Locator,
+  aRegion: { x: number; y: number; width: number; height: number },
+  b: Locator,
+  bRegion: { x: number; y: number; width: number; height: number }
+): Promise<number> {
+  const read = (locator: Locator, rect: typeof aRegion): Promise<number[]> =>
+    locator.evaluate((el, r) => {
+      const source = el as HTMLImageElement | HTMLCanvasElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = "naturalWidth" in source ? source.naturalWidth : source.width;
+      canvas.height = "naturalHeight" in source ? source.naturalHeight : source.height;
+      const c = canvas.getContext("2d")!;
+      c.drawImage(source, 0, 0);
+      const { data } = c.getImageData(r.x, r.y, r.width, r.height);
+      const out: number[] = [];
+      for (let i = 0; i < data.length; i += 4) {
+        out.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      }
+      return out;
+    }, rect);
+
+  const [left, right] = await Promise.all([read(a, aRegion), read(b, bRegion)]);
+  expect(left).toHaveLength(right.length);
+  let total = 0;
+  for (let i = 0; i < left.length; i += 1) total += Math.abs(left[i] - right[i]);
+  return total / left.length;
+}
+
+/**
+ * The alpha of one pixel of the live redaction overlay, in image px. 255 means
+ * the overlay is painting there (the capture underneath is hidden), 0 means it
+ * is not - which is the whole of "Alt reveals the original".
+ */
+function overlayAlpha(overlay: Locator, x: number, y: number): Promise<number> {
+  return overlay.evaluate(
+    (el, point) => {
+      const c = (el as HTMLCanvasElement).getContext("2d")!;
+      return c.getImageData(point.x, point.y, 1, 1).data[3];
+    },
+    { x, y }
+  );
 }
 
 test("a redaction is pixelated in the export and in the saved share", async () => {
@@ -1079,12 +1132,32 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await editor.mouse.up();
   await editor.keyboard.press("Escape");
 
-  // Drawn, and mute: a hatched region on the canvas, no timeline row, no pin.
-  await expect(editor.locator("svg rect[fill^='url(#redact-hatch-']")).toHaveCount(1);
+  // Drawn, and mute: one region on the canvas, no timeline row, no pin.
+  await expect(editor.locator("svg rect[stroke='#ef4444']")).toHaveCount(1);
   await expect(editor.locator("ol li")).toHaveCount(0);
   // The sidebar counts them apart from the notes, and says where they land.
   await expect(editor.getByText("0 notes")).toBeVisible();
-  await expect(editor.getByText("Redacted regions: 1 (pixelated")).toBeVisible();
+  await expect(editor.getByText("1 redacted region (pixelated here,")).toBeVisible();
+
+  // ...and the canvas shows the pixels actually gone, not a hatch promising
+  // they will be: the overlay paints the region, its detail has collapsed the
+  // same way the export's does, and it stops at the region's edge.
+  const overlay = editor.locator("#redaction-overlay");
+  await expect.poll(() => overlayAlpha(overlay, sample.x + 10, sample.y + 10)).toBe(255);
+  expect(await overlayAlpha(overlay, control.x + 5, control.y + 5)).toBe(0);
+  const onCanvas = await pixelDetail(overlay, sample);
+  expect(onCanvas).toBeGreaterThan(0);
+  expect(onCanvas).toBeLessThan(before / 4);
+
+  // Holding Alt over the selected region shows what is under it, and letting
+  // go covers it again - a check before the file is written, not a hole.
+  await pickTool(editor, "Select");
+  await editor.mouse.click(onScreen(300, 182).x, onScreen(300, 182).y);
+  await editor.keyboard.down("Alt");
+  await expect.poll(() => overlayAlpha(overlay, sample.x + 10, sample.y + 10)).toBe(0);
+  await editor.keyboard.up("Alt");
+  await expect.poll(() => overlayAlpha(overlay, sample.x + 10, sample.y + 10)).toBe(255);
+  await editor.keyboard.press("Escape");
 
   // The prompt counts it and says nothing else about it - no numbered line, no
   // tool tag, and no element name read from under it.
@@ -1112,6 +1185,47 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   // share still carries the detail it was captured with.
   expect(await pixelDetail(shared, control)).toBeGreaterThan(controlBefore * 0.7);
 
+  // The preview must not merely *look* pixelated - it has to be the export.
+  // A crop whose left edge cuts through the redaction is where that stops
+  // being free: the export clips the region and blocks it from the crop's own
+  // edge, so a preview that blocked the whole region off the untouched capture
+  // would land a different grid. Compare the two, pixel for pixel.
+  await pickTool(editor, "Crop");
+  await editor.mouse.move(onScreen(241, 120).x, onScreen(241, 120).y);
+  await editor.mouse.down();
+  await editor.mouse.move(onScreen(700, 400).x, onScreen(700, 400).y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.keyboard.press("Enter");
+  await expect(editor.locator("#capture-window")).toHaveAttribute("data-crop", /\d+/);
+
+  const crop = await appliedCrop(editor);
+  // The crop really does cut the region (235..365) rather than clear it.
+  expect(crop.x).toBeGreaterThan(235);
+  expect(crop.x).toBeLessThan(261);
+
+  await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  const croppedHref = (await editor.locator("a[href*='viewer.html']").getAttribute("href"))!;
+  const croppedViewer = await ctx.newPage();
+  await croppedViewer.goto(croppedHref);
+  const croppedShare = croppedViewer.locator("img[alt='Annotated share']");
+  await expect(croppedShare).toHaveJSProperty("complete", true, { timeout: 15_000 });
+
+  // A window wholly inside the clipped redaction, addressed in image px on the
+  // canvas and in crop px in the export - the same pixels, two coordinate
+  // systems. Identical blocks mean identical `drawImage` calls upstream.
+  const window = { x: crop.x + 4, y: 165, width: 100, height: 30 };
+  const delta = await regionDelta(overlay, window, croppedShare, {
+    x: window.x - crop.x,
+    y: window.y - crop.y,
+    width: window.width,
+    height: window.height
+  });
+  expect(delta).toBeLessThan(1);
+
+  await croppedViewer.close();
   await viewer.close();
   await editor.close();
   await page.close();
@@ -1306,11 +1420,126 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await page.close();
 });
 
+test("destructive actions confirm in place before they take anything away", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  await boxOverCta(editor, img, 0);
+  const notes = editor.locator("ol li");
+  await expect(notes).toHaveCount(1);
+
+  // A capture replaces the image every annotation is anchored to, so with work
+  // on screen the button asks - in place, not through a `window.confirm` - and
+  // cancelling keeps the work.
+  const captureButton = editor.getByRole("button", { name: "Capture Page" });
+  await captureButton.click();
+  const replace = editor.getByRole("button", { name: "Replace capture?" });
+  await expect(replace).toBeVisible();
+  await editor.getByRole("button", { name: "Cancel" }).click();
+  await expect(replace).toHaveCount(0);
+  await expect(notes).toHaveCount(1);
+  await expect(captureButton).toBeVisible();
+
+  // Driven from the keyboard, the pair must hand the keyboard back. The pair
+  // replaces the trigger, so confirming, cancelling or waiting out the timer
+  // unmounts whatever had focus - without the restore, Escape here would drop
+  // the user on `document.body` with nothing to tab from.
+  const focused = (): Promise<string> =>
+    editor.evaluate(() => document.activeElement?.textContent?.trim() ?? "(body)");
+  await captureButton.focus();
+  await editor.keyboard.press("Enter");
+  await expect(replace).toBeVisible();
+  expect(await focused()).toBe("Replace capture?");
+  await editor.keyboard.press("Escape");
+  await expect(replace).toHaveCount(0);
+  expect(await focused()).toBe("Capture Page");
+  await expect(notes).toHaveCount(1);
+
+  // A saved share is the only copy of an annotated capture that outlives the
+  // tab, so its Delete is two steps as well: the first click only arms the row.
+  await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  // The link is on the clipboard, so the sidebar says so and offers to open it
+  // rather than printing 90 unreadable characters of `chrome-extension://`.
+  await expect(editor.getByText("Local share link copied")).toBeVisible();
+  await expect(editor.getByRole("link", { name: "Open" })).toBeVisible();
+  await expect(editor.getByText(/^chrome-extension:\/\//)).toHaveCount(0);
+  // ...and it describes the clipboard, so a different export takes it with it.
+  await editor.getByRole("button", { name: "Copy Image" }).click();
+  await expect(editor.getByText("Local share link copied")).toHaveCount(0);
+
+  await editor.getByRole("button", { name: "Show" }).click();
+  const rows = editor.locator("section:has(> div > h2:text-is('Saved Shares')) ul > li");
+  const before = await rows.count();
+  expect(before).toBeGreaterThan(0);
+
+  const deleteButton = rows.first().getByRole("button", { name: /^Delete saved share/ });
+  const confirmButton = rows.first().getByRole("button", { name: /^Confirm deleting/ });
+  // A double-click must not delete: the second click lands after the pair has
+  // swapped in, on a button the user has had no time to read.
+  await deleteButton.dblclick();
+  await expect(rows).toHaveCount(before);
+  await expect(confirmButton).toBeVisible();
+  await editor.keyboard.press("Escape");
+  await expect(confirmButton).toHaveCount(0);
+  expect(await editor.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Delete");
+
+  await deleteButton.click();
+  await expect(rows).toHaveCount(before);
+  // Deliberately waited out: the confirm ignores activation for its first
+  // quarter-second (the guard that makes the double-click above safe), and a
+  // real second click arrives well after that.
+  await editor.waitForTimeout(300);
+  await confirmButton.click();
+  await expect(rows).toHaveCount(before - 1);
+
+  await editor.close();
+  await page.close();
+});
+
 test("editor page renders the capture UI", async () => {
   const editor = await ctx.newPage();
   await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });
   await expect(editor.getByRole("button", { name: "Capture Page" })).toBeVisible();
   await expect(editor.getByRole("button", { name: "Copy for Claude Code" })).toBeVisible();
+
+  // One filled button in the actions column, and it is the handoff this
+  // extension exists for - everything else is a secondary. A second primary
+  // would mean the column recommends two things, which is no recommendation.
+  const primary = editor.locator("#editor-actions button.bg-primary");
+  await expect(primary).toHaveCount(1);
+  await expect(primary).toHaveText("Copy for Claude Code");
+  // Format-aware: the caption must name the file the export actually writes.
+  await expect(
+    editor.getByText(/^Saves (PNG|JPEG) \+ JSON to Downloads\/shotback and copies the prompt\.$/)
+  ).toBeVisible();
+  // The order the column reads in: edit, then send, then take the file.
+  // The download's format suffix is a persisted pref, so it is normalised out.
+  const labels = await editor.locator("#editor-actions button").allInnerTexts();
+  expect(labels.map((label) => label.replace(/ \((PNG|JPEG)\)$/, ""))).toEqual([
+    "Undo",
+    "Redo",
+    "Delete Selected Item",
+    "Copy for Claude Code",
+    "Prepare for Cloud LLM",
+    "Copy Local Share Link",
+    "Download Image",
+    "Copy Image"
+  ]);
 
   // With no capture there is nothing for a tool or a swatch to act on, so the
   // palette says so rather than offering inert controls - and the hotkeys must

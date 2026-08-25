@@ -36,24 +36,46 @@ const REDACT_BLOCK_SIZE = 12;
 /**
  * Destroy the pixels under one redaction: the region is squashed onto a buffer
  * of one pixel per block and stretched straight back over itself, so what
- * lands on the canvas is one resampled value per block and the original is
- * gone from it.
+ * lands on `ctx` is one resampled value per block and the original is gone
+ * from it.
  *
- * Clamped to the canvas because the region is drawn by hand and can hang off
- * the edge, and skipped when it has no area - `drawImage` throws on a
- * zero-sized source rect, and there is nothing to hide in one anyway.
+ * `source` is where the pixels are read from - the export's own canvas, which
+ * already holds the base image, or the editor's `<img>` when the canvas paints
+ * the same blocks live over the capture. Exported so those two paths cannot
+ * drift: what the editor shows is what every export burns in.
+ *
+ * Clamped to `size` by `redactionBounds` because the region is drawn by hand
+ * and can hang off the edge, and skipped when it has no area - `drawImage`
+ * throws on a zero-sized source rect, and there is nothing to hide in one
+ * anyway.
  */
-function pixelateRegion(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
+/**
+ * Where one redaction actually lands on a canvas of `size`: whole px, clamped
+ * to the canvas, or `null` when nothing of it is left to hide. Exported
+ * because the editor's live overlay has to copy back exactly the rects
+ * `pixelateRegion` touched, and reproducing this rounding by hand is how the
+ * preview and the export would start disagreeing by a pixel.
+ */
+export function redactionBounds(
   region: RedactAnnotation,
   size: { width: number; height: number }
-): void {
+): Rect | null {
   const x = Math.max(0, Math.floor(region.x));
   const y = Math.max(0, Math.floor(region.y));
   const width = Math.min(Math.ceil(region.x + region.width), size.width) - x;
   const height = Math.min(Math.ceil(region.y + region.height), size.height) - y;
-  if (width <= 0 || height <= 0) return;
+  return width > 0 && height > 0 ? { x, y, width, height } : null;
+}
+
+export function pixelateRegion(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  region: RedactAnnotation,
+  size: { width: number; height: number }
+): void {
+  const bounds = redactionBounds(region, size);
+  if (!bounds) return;
+  const { x, y, width, height } = bounds;
 
   const blocksWide = Math.ceil(width / REDACT_BLOCK_SIZE);
   const blocksHigh = Math.ceil(height / REDACT_BLOCK_SIZE);
@@ -70,7 +92,7 @@ function pixelateRegion(
   // a block is a summary of what it replaced rather than a sample of it.
   bufferCtx.imageSmoothingEnabled = true;
   bufferCtx.imageSmoothingQuality = "high";
-  bufferCtx.drawImage(canvas, x, y, width, height, 0, 0, blocksWide, blocksHigh);
+  bufferCtx.drawImage(source, x, y, width, height, 0, 0, blocksWide, blocksHigh);
   // Off for the way back, or the blocks interpolate into a blur that still
   // carries the shape of what was under them.
   ctx.imageSmoothingEnabled = false;

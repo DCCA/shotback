@@ -18,6 +18,37 @@ describe("moveAnnotation", () => {
     expect(moveAnnotation(box, 3, -4)).toMatchObject({ x: 13, y: 16 });
   });
 
+  it("moves a highlight like a box, and every point of a pen stroke", () => {
+    const highlight = {
+      id: "h",
+      tool: "highlight" as const,
+      color: "#f59e0b",
+      createdAt: ts,
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 8
+    };
+    expect(moveAnnotation(highlight, 3, -4)).toMatchObject({ x: 13, y: 16 });
+
+    const pen = {
+      id: "p",
+      tool: "pen" as const,
+      color: "#3b82f6",
+      createdAt: ts,
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 20 }
+      ]
+    };
+    expect(moveAnnotation(pen, 3, -4)).toMatchObject({
+      points: [
+        { x: 3, y: -4 },
+        { x: 13, y: 16 }
+      ]
+    });
+  });
+
   it("moves both arrow endpoints", () => {
     const arrow = {
       id: "a",

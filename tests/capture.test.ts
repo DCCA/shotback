@@ -5,6 +5,10 @@ import {
   readFiberComponents,
   buildEnvironment,
   buildScrollSteps,
+  CAPTURE_DELAY_SECONDS,
+  CAPTURE_MODES,
+  captureNoticeHeading,
+  captureOptions,
   isNoReceiverError,
   isTabsBusyError,
   segmentPlacement,
@@ -23,6 +27,38 @@ describe("buildScrollSteps", () => {
 
   it("does not duplicate last step", () => {
     expect(buildScrollSteps(3000, 1000)).toEqual([0, 1000, 2000]);
+  });
+});
+
+describe("captureOptions", () => {
+  it("maps the three offered modes onto what the orchestrator takes", () => {
+    expect(captureOptions("full")).toEqual({ mode: "full", delaySeconds: 0 });
+    expect(captureOptions("visible")).toEqual({ mode: "visible", delaySeconds: 0 });
+    expect(captureOptions("delayed")).toEqual({
+      mode: "full",
+      delaySeconds: CAPTURE_DELAY_SECONDS
+    });
+  });
+
+  it("offers exactly the three modes the chooser renders, full first", () => {
+    expect(CAPTURE_MODES.map((mode) => mode.value)).toEqual(["full", "visible", "delayed"]);
+    // The primary button captures the full page; the chooser only changes that.
+    expect(CAPTURE_MODES[0].label).toBe("Full page");
+  });
+
+  it("counts the delay down in whole seconds", () => {
+    expect(CAPTURE_DELAY_SECONDS).toBe(3);
+  });
+});
+
+describe("captureNoticeHeading", () => {
+  it("counts down while a delay runs", () => {
+    expect(captureNoticeHeading(3)).toBe("Capturing in 3...");
+    expect(captureNoticeHeading(1)).toBe("Capturing in 1...");
+  });
+
+  it("names the capture itself once the countdown is done", () => {
+    expect(captureNoticeHeading(0)).toBe("Capturing full page…");
   });
 });
 

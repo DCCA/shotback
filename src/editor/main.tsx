@@ -9,7 +9,7 @@ import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
-import { captureFullPage, inspectPoints } from "@/lib/capture";
+import { captureFullPage, captureOptions, inspectPoints, type CaptureMode } from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
 import { inspectableAnnotations, inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
@@ -38,7 +38,7 @@ function EditorApp(): JSX.Element {
 
   const canCapture = Number.isFinite(tabId) && Number.isFinite(windowId);
 
-  const takeScreenshot = async (): Promise<void> => {
+  const takeScreenshot = async (mode: CaptureMode = "full"): Promise<void> => {
     if (!canCapture) {
       state.setStatus({
         kind: "error",
@@ -64,9 +64,14 @@ function EditorApp(): JSX.Element {
     state.setLastExportSize(null);
 
     try {
-      const result = await captureFullPage(tabId, windowId, (index, total) => {
-        state.setProgress(`Capturing ${index}/${total}...`);
-      });
+      const result = await captureFullPage(
+        tabId,
+        windowId,
+        (index, total) => {
+          state.setProgress(`Capturing ${index}/${total}...`);
+        },
+        captureOptions(mode)
+      );
       state.setBaseDataUrl(result.dataUrl);
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
@@ -88,11 +93,13 @@ function EditorApp(): JSX.Element {
 
   // When opened directly from the toolbar icon (autocapture=1), start the
   // full-page capture once on load so a single click yields a ready screenshot.
-  // The manual Capture button remains available for re-capture.
+  // Always full page: there is nowhere to pick a mode before this fires, and
+  // the whole point of one-click capture is that nothing is asked. The manual
+  // Capture button (and its mode chooser) remains available for re-capture.
   useEffect(() => {
     if (!autoCapture || autoCaptureFiredRef.current || !canCapture) return;
     autoCaptureFiredRef.current = true;
-    void takeScreenshot();
+    void takeScreenshot("full");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -163,8 +170,13 @@ function EditorApp(): JSX.Element {
     // the sidebar follows it, and the window scrolls normally. DOM order is
     // unchanged - only the visual order flips - so the sidebar keeps its place
     // in the tab sequence and for a screen reader.
-    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_1fr] lg:overflow-hidden lg:p-5">
-      <Sidebar state={state} exports={exports} onCapture={() => void takeScreenshot()}>
+    // `minmax(0,1fr)`, not `1fr`: a bare `1fr` track has an automatic minimum,
+    // so anything inside the canvas card that refuses to shrink (the tool
+    // palette, before it was allowed to wrap) widens the column, overflows the
+    // window and clips the capture. The explicit 0 minimum is what keeps the
+    // pane's width a property of the window rather than of its contents.
+    <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)] lg:overflow-hidden lg:p-5">
+      <Sidebar state={state} exports={exports} onCapture={(mode) => void takeScreenshot(mode)}>
         <Separator />
         <CommentTimeline
           items={state.annotations}

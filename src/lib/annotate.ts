@@ -34,6 +34,19 @@ export function dataUrlByteLength(dataUrl: string): number {
 const REDACT_BLOCK_SIZE = 12;
 
 /**
+ * How opaque a highlight's wash is. Exported because the canvas paints the
+ * same wash live (as an SVG `fill-opacity`), and two hand-written 0.35s is how
+ * the preview and the PNG start disagreeing.
+ */
+export const HIGHLIGHT_ALPHA = 0.35;
+
+/**
+ * Width of a highlight's full-opacity edge, in image px. Shared with the
+ * canvas for the same reason `HIGHLIGHT_ALPHA` is.
+ */
+export const HIGHLIGHT_EDGE_WIDTH = 2;
+
+/**
  * Destroy the pixels under one redaction: the region is squashed onto a buffer
  * of one pixel per block and stretched straight back over itself, so what
  * lands on `ctx` is one resampled value per block and the original is gone
@@ -530,6 +543,37 @@ export async function exportAnnotatedImage(
       ctx.textBaseline = "alphabetic";
       ctx.font = `${Math.round(r * 0.9)}px sans-serif`;
       ctx.fillText(annotation.text, annotation.x + r * 1.4, annotation.y);
+    } else if (annotation.tool === "highlight") {
+      // A marker pen, not a coloured pane: `multiply` keeps the darker pixels
+      // underneath (the text being highlighted) rather than washing them out,
+      // which is what the canvas's `mix-blend-mode: multiply` shows on screen.
+      // Saved and restored so the mode and alpha cannot leak onto the pin
+      // drawn straight after it, or onto the next annotation.
+      ctx.save();
+      ctx.globalCompositeOperation = "multiply";
+      ctx.globalAlpha = HIGHLIGHT_ALPHA;
+      ctx.fillRect(annotation.x, annotation.y, annotation.width, annotation.height);
+      ctx.restore();
+      // The edge, at full opacity and outside the multiply. `multiply` against
+      // a near-black section leaves near-black, so the wash alone is invisible
+      // over dark page content (verified on a two-tone fixture) - the edge is
+      // what says "this region" wherever the wash cannot. Thin, so on light
+      // content it reads as the marker's own boundary and not as a box.
+      ctx.lineWidth = HIGHLIGHT_EDGE_WIDTH;
+      ctx.strokeRect(annotation.x, annotation.y, annotation.width, annotation.height);
+    } else if (annotation.tool === "pen") {
+      // Two points is the shortest thing that is a stroke; one is a stray
+      // click that never moved, and has no line to draw.
+      if (annotation.points.length >= 2) {
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(annotation.points[0].x, annotation.points[0].y);
+        for (const point of annotation.points.slice(1)) ctx.lineTo(point.x, point.y);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     const center = pinCenter(annotation, r, size);

@@ -1,4 +1,4 @@
-export type AnnotationTool = "box" | "arrow" | "text" | "redact";
+export type AnnotationTool = "box" | "arrow" | "text" | "highlight" | "pen" | "redact";
 
 /**
  * The live element an annotation points at, read back from the captured tab so
@@ -57,6 +57,32 @@ export interface TextAnnotation extends AnnotationBase {
 }
 
 /**
+ * A marker-pen swipe over a region: the annotation colour at low alpha,
+ * composited `multiply` so the text underneath still reads through it. A
+ * rectangle like a box, and a note-carrying annotation like one - numbered,
+ * commented, inspected against the live page - it just says "look at this"
+ * with a wash instead of an outline.
+ */
+export interface HighlightAnnotation extends AnnotationBase {
+  tool: "highlight";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A freehand stroke: the raw pointer path, thinned as it is drawn (a point
+ * every few px, not one per pointer event) and stored in capture space like
+ * every other annotation. Its bounds - which is what pins it, crops it and
+ * describes it - are the extent of its points.
+ */
+export interface PenAnnotation extends AnnotationBase {
+  tool: "pen";
+  points: Array<{ x: number; y: number }>;
+}
+
+/**
  * A region hidden from every export: `exportAnnotatedImage` pixelates it onto
  * the base image before it draws anything else, so no output carries the
  * pixels underneath. It is deliberately mute - it is never numbered, never
@@ -75,7 +101,13 @@ export interface RedactAnnotation extends AnnotationBase {
   height: number;
 }
 
-export type Annotation = BoxAnnotation | ArrowAnnotation | TextAnnotation | RedactAnnotation;
+export type Annotation =
+  | BoxAnnotation
+  | ArrowAnnotation
+  | TextAnnotation
+  | HighlightAnnotation
+  | PenAnnotation
+  | RedactAnnotation;
 
 /** The annotations that are plain rectangles: drawn, dragged and resized alike. */
-export type RectAnnotation = BoxAnnotation | RedactAnnotation;
+export type RectAnnotation = BoxAnnotation | HighlightAnnotation | RedactAnnotation;

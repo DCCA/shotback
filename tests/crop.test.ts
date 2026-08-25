@@ -3,6 +3,8 @@ import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from 
 import type {
   ArrowAnnotation,
   BoxAnnotation,
+  HighlightAnnotation,
+  PenAnnotation,
   RedactAnnotation,
   TextAnnotation
 } from "../src/types/annotation";
@@ -164,6 +166,96 @@ describe("applyCrop text", () => {
 
   it("drops a text anchored outside the crop", () => {
     expect(applyCrop([text({ x: 20, y: 20 })], CROP)).toEqual([]);
+  });
+});
+
+describe("applyCrop highlights", () => {
+  const highlight = (overrides: Partial<HighlightAnnotation> = {}): HighlightAnnotation => ({
+    id: "h1",
+    tool: "highlight",
+    color: "#f59e0b",
+    createdAt: "2026-02-21T00:00:04.000Z",
+    comment: "read this",
+    x: 150,
+    y: 150,
+    width: 60,
+    height: 40,
+    ...overrides
+  });
+
+  it("shifts a highlight fully inside the crop", () => {
+    expect(applyCrop([highlight()], CROP)).toEqual([{ ...highlight(), x: 50, y: 50 }]);
+  });
+
+  it("clamps a highlight that hangs over the crop edge, like a box", () => {
+    expect(applyCrop([highlight({ x: 60, y: 60, width: 100, height: 80 })], CROP)).toEqual([
+      { ...highlight({ x: 60, y: 60, width: 100, height: 80 }), x: 0, y: 0, width: 60, height: 40 }
+    ]);
+  });
+
+  it("drops a highlight entirely outside the crop", () => {
+    expect(applyCrop([highlight({ x: 0, y: 0, width: 10, height: 10 })], CROP)).toEqual([]);
+  });
+});
+
+describe("applyCrop pen strokes", () => {
+  const pen = (overrides: Partial<PenAnnotation> = {}): PenAnnotation => ({
+    id: "p1",
+    tool: "pen",
+    color: "#3b82f6",
+    createdAt: "2026-02-21T00:00:05.000Z",
+    comment: "scribble",
+    points: [
+      { x: 150, y: 150 },
+      { x: 200, y: 220 }
+    ],
+    ...overrides
+  });
+
+  it("shifts every point of a stroke inside the crop", () => {
+    expect(applyCrop([pen()], CROP)).toEqual([
+      {
+        ...pen(),
+        points: [
+          { x: 50, y: 50 },
+          { x: 100, y: 120 }
+        ]
+      }
+    ]);
+  });
+
+  it("keeps a stroke with any point inside, and does not clamp the ones outside", () => {
+    const partly = pen({
+      points: [
+        { x: 20, y: 20 },
+        { x: 150, y: 150 }
+      ]
+    });
+    expect(applyCrop([partly], CROP)).toEqual([
+      {
+        ...partly,
+        points: [
+          { x: -80, y: -80 },
+          { x: 50, y: 50 }
+        ]
+      }
+    ]);
+  });
+
+  it("drops a stroke with every point outside the crop", () => {
+    expect(
+      applyCrop(
+        [
+          pen({
+            points: [
+              { x: 10, y: 10 },
+              { x: 20, y: 20 }
+            ]
+          })
+        ],
+        CROP
+      )
+    ).toEqual([]);
   });
 });
 

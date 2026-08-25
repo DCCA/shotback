@@ -59,22 +59,26 @@ export function ToolPalette({ state }: ToolPaletteProps): JSX.Element {
 
   return (
     // `shrink-0`: the bar keeps its height while the scrollport below takes the
-    // card's leftover space. From `lg` up it is exactly one 48px row; below it
-    // wraps into as many rows as it needs, because the sub-lg page scrolls
-    // vertically anyway and a Redact segment hidden off the right edge is worse
-    // than a second row.
+    // card's leftover space. It wraps into as many rows as it needs at **every**
+    // width - a segment hidden off the right edge is worse than a second row,
+    // and eight segments plus the swatches and Zoom no longer fit one row on a
+    // narrow canvas pane even above `lg`. Wrapping rather than overflowing is
+    // also what keeps the pane from being widened by its own toolbar.
     <div
       data-tool-palette
-      className="flex h-auto min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1.5 lg:h-12 lg:flex-nowrap lg:py-0"
+      className="flex h-auto min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1.5"
     >
       {/* One bordered group with hairlines between the segments - a real
-          segmented control, not six floating pills. `overflow-hidden` is what
-          lets the filled active segment take the group's rounded corners. */}
+          segmented control, not eight floating pills. `overflow-hidden` is what
+          lets the filled active segment take the group's rounded corners.
+          It wraps internally rather than holding a fixed width: eight segments
+          are wider than the canvas pane on a narrow window, and a group that
+          refuses to shrink widens the pane and clips the capture in it. */}
       <div
         role="group"
         aria-label="Tool"
         className={cn(
-          "flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-input",
+          "flex h-auto min-h-8 min-w-0 flex-wrap items-center overflow-hidden rounded-md border border-input",
           // One opacity on the group, not six: a per-segment fade leaves the
           // dividers and the border at full strength and reads as a rendering
           // bug. `color` itself is untouched, so the contrast sweep still sees

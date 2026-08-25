@@ -204,6 +204,12 @@ async function pickTool(editor: Page, label: string): Promise<void> {
   await editor.getByRole("button", { name: label, exact: true }).click();
 }
 
+/** Pick a capture mode from the chooser beside the Capture Page button. */
+async function pickMode(editor: Page, label: string): Promise<void> {
+  await editor.getByRole("combobox", { name: "Capture mode" }).click();
+  await editor.getByRole("option", { name: label }).click();
+}
+
 /** True when that palette segment is the lit one. */
 const toolIsActive = (editor: Page, label: string): Promise<boolean> =>
   editor
@@ -1376,8 +1382,8 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   // a letter, not a shortcut.
   const note = editor.locator("foreignObject textarea");
   await expect(note).toHaveCount(1);
-  await editor.keyboard.type("vbatrc");
-  await expect(note).toHaveValue("vbatrc");
+  await editor.keyboard.type("vbathprc");
+  await expect(note).toHaveValue("vbathprc");
   expect(await toolIsActive(editor, "Box")).toBe(true);
 
   // ...and so is a listbox's typeahead. `Select` is a WAI-ARIA listbox built
@@ -1415,6 +1421,142 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await expect(rows).toHaveCount(3);
   await expect(boxes.nth(2).locator("rect").first()).toHaveAttribute("stroke", "#ef4444");
   await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+
+  await editor.close();
+  await page.close();
+});
+
+test("visible-area mode captures one viewport, not the whole page", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  // No `autocapture`: the mode has to be picked before the capture runs, which
+  // is exactly the path the chooser exists for.
+  const editor = await ctx.newPage();
+  await editor.goto(`chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}`);
+  await pickMode(editor, "Visible area");
+  await editor.getByRole("button", { name: "Capture Page" }).click();
+
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  const height = await img.evaluate((el) => (el as HTMLImageElement).naturalHeight);
+
+  // The fixture is 2400px of colour blocks; visible mode must stop at the one
+  // viewport that is on screen.
+  expect(height).toBe(viewportHeight);
+  expect(height).toBeLessThan(8 * 300);
+
+  await editor.close();
+  await page.close();
+});
+
+test("the delayed mode counts down in the on-page notice before it captures", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(`chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}`);
+  await pickMode(editor, "Full page after 3s");
+  await editor.getByRole("button", { name: "Capture Page" }).click();
+
+  // The countdown runs on the *target* tab, for three seconds, so poll it
+  // there rather than trying to catch one frame of it. The 3s is the real UI
+  // value: there is no injectable shorter delay, and one three-second wait in
+  // the suite is cheaper than a test hook that proves something else.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            (document.querySelector("[data-shotback-overlay]") as HTMLElement | null)?.innerText ??
+            ""
+        ),
+      { timeout: 5_000, intervals: [100] }
+    )
+    .toMatch(/Capturing in [123]\.\.\./);
+
+  // ...and it still produces the full page once the countdown is done.
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  expect(await img.evaluate((el) => (el as HTMLImageElement).naturalHeight)).toBe(8 * 300);
+  // The notice is taken down with the capture, countdown or not.
+  await expect
+    .poll(() => page.evaluate(() => !document.querySelector("[data-shotback-overlay]")), {
+      timeout: 10_000
+    })
+    .toBe(true);
+
+  await editor.close();
+  await page.close();
+});
+
+test("highlight and pen are drawn, pinned and carried into the prompt", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const shown = (await img.boundingBox())!;
+  const at = (x: number, y: number) => ({ x: shown.x + x, y: shown.y + y });
+
+  // Highlight: a drag, like a box.
+  await pickTool(editor, "Highlight");
+  await editor.mouse.move(at(40, 40).x, at(40, 40).y);
+  await editor.mouse.down();
+  await editor.mouse.move(at(240, 80).x, at(240, 80).y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.keyboard.type("read this");
+  await editor.keyboard.press("Escape");
+
+  // Pen: a freehand path, so several moves with the button down.
+  await pickTool(editor, "Pen");
+  await editor.mouse.move(at(320, 200).x, at(320, 200).y);
+  await editor.mouse.down();
+  for (const [x, y] of [
+    [360, 240],
+    [400, 210],
+    [440, 260],
+    [480, 220]
+  ]) {
+    await editor.mouse.move(at(x, y).x, at(x, y).y, { steps: 4 });
+  }
+  await editor.mouse.up();
+  await editor.keyboard.type("scribble");
+  await editor.keyboard.press("Escape");
+
+  // Two numbered rows, two pins on the canvas.
+  await expect(editor.locator("ol li")).toHaveCount(2);
+  const highlightRect = editor.locator('#capture-viewport svg rect[fill-opacity="0.35"]').first();
+  await expect(highlightRect).toHaveCSS("mix-blend-mode", "multiply");
+  // The visible stroke, not the transparent hit area under it.
+  const stroke = editor.locator('#capture-viewport svg polyline[stroke-width="3"]').first();
+  const points = (await stroke.getAttribute("points")) ?? "";
+  expect(points.split(" ").length).toBeGreaterThan(2);
+  await expect(editor.locator("#capture-viewport svg text")).toHaveText(["1", "2"]);
+
+  await copyCloudPrompt(editor);
+  const prompt = await readClipboard(editor);
+  expect(prompt).toMatch(/1\. \[highlight\] read this - at \(\d+, \d+\) size \d+x\d+ px/);
+  expect(prompt).toMatch(/2\. \[pen\] scribble - pen path of \d+ points from \(\d+, \d+\) to/);
 
   await editor.close();
   await page.close();

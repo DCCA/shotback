@@ -181,6 +181,7 @@ function ensureCaptureOverlay(): HTMLDivElement {
 
   const text = document.createElement("div");
   const heading = document.createElement("div");
+  heading.setAttribute("data-shotback-heading", "");
   heading.textContent = "Capturing full page…";
   const sub = document.createElement("div");
   sub.textContent = "Please don’t switch tabs or scroll until it finishes";
@@ -347,7 +348,16 @@ function inspectPoints(points: Array<{ x: number; y: number }>): Array<ElementCo
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SB_CAPTURE_BEGIN") {
-    ensureCaptureOverlay().style.display = "flex";
+    const overlay = ensureCaptureOverlay();
+    // An optional heading is what makes the delayed mode's countdown work:
+    // the orchestrator owns the timing and re-sends this once a second, so the
+    // content script holds no timer and the text simply changes - no
+    // animation, so a reduced-motion preference is unaffected.
+    if (typeof message.heading === "string") {
+      const heading = overlay.querySelector("[data-shotback-heading]");
+      if (heading) heading.textContent = message.heading;
+    }
+    overlay.style.display = "flex";
     window.requestAnimationFrame(() => sendResponse({ ok: true }));
     return true;
   }

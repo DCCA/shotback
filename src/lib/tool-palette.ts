@@ -1,15 +1,15 @@
 import type { AnnotationTool } from "@/types/annotation";
 
 /**
- * What the canvas does with a pointer drag. The four annotation tools (box,
- * arrow, text, redact) plus `crop`, which draws a region marquee instead of an
- * annotation - hence a separate type: nothing stored in an `Annotation` can
- * ever be a crop.
+ * What the canvas does with a pointer drag. The six annotation tools (box,
+ * arrow, text, highlight, pen, redact) plus `crop`, which draws a region
+ * marquee instead of an annotation - hence a separate type: nothing stored in
+ * an `Annotation` can ever be a crop.
  */
 export type EditorTool = AnnotationTool | "crop";
 
 /**
- * A segment of the canvas tool palette: the five drawing tools plus `select`,
+ * A segment of the canvas tool palette: the seven drawing tools plus `select`,
  * which is the editor's move mode rather than a tool of its own.
  */
 export type PaletteTool = "select" | EditorTool;
@@ -27,6 +27,8 @@ export const TOOL_SEGMENTS: readonly ToolSegment[] = [
   { value: "box", label: "Box", hotkey: "B" },
   { value: "arrow", label: "Arrow", hotkey: "A" },
   { value: "text", label: "Text", hotkey: "T" },
+  { value: "highlight", label: "Highlight", hotkey: "H" },
+  { value: "pen", label: "Pen", hotkey: "P" },
   { value: "redact", label: "Redact", hotkey: "R" },
   { value: "crop", label: "Crop", hotkey: "C" }
 ];

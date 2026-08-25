@@ -17,13 +17,15 @@ describe("activeSegment", () => {
   it("lights the tool itself in draw mode", () => {
     expect(activeSegment("box", "draw")).toBe("box");
     expect(activeSegment("arrow", "draw")).toBe("arrow");
+    expect(activeSegment("highlight", "draw")).toBe("highlight");
+    expect(activeSegment("pen", "draw")).toBe("pen");
     expect(activeSegment("redact", "draw")).toBe("redact");
     expect(activeSegment("crop", "draw")).toBe("crop");
   });
 
   it("never lights a segment the palette does not render", () => {
     const values = TOOL_SEGMENTS.map((segment) => segment.value);
-    for (const tool of ["box", "arrow", "text", "redact", "crop"] as const) {
+    for (const tool of ["box", "arrow", "text", "highlight", "pen", "redact", "crop"] as const) {
       expect(values).toContain(activeSegment(tool, "draw"));
       expect(values).toContain(activeSegment(tool, "move"));
     }
@@ -53,6 +55,15 @@ describe("hotkeyTool", () => {
   it("binds one key to at most one segment", () => {
     const keys = TOOL_SEGMENTS.map((segment) => segment.hotkey.toLowerCase());
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("TOOL_SEGMENTS", () => {
+  it("puts Highlight and Pen straight after Text, on H and P", () => {
+    const order = TOOL_SEGMENTS.map((segment) => segment.value);
+    expect(order).toEqual(["select", "box", "arrow", "text", "highlight", "pen", "redact", "crop"]);
+    expect(hotkeyTool("h")).toBe("highlight");
+    expect(hotkeyTool("p")).toBe("pen");
   });
 });
 

@@ -66,6 +66,47 @@ describe("buildSidecar", () => {
     ]);
   });
 
+  it("lists a highlight and a pen stroke with their bounds", () => {
+    const highlight: Annotation = {
+      id: "h",
+      tool: "highlight",
+      color: "#f59e0b",
+      createdAt: "2026-08-24T00:00:04.000Z",
+      comment: "read this",
+      x: 100,
+      y: 200,
+      width: 300,
+      height: 40
+    };
+    const pen: Annotation = {
+      id: "p",
+      tool: "pen",
+      color: "#3b82f6",
+      createdAt: "2026-08-24T00:00:05.000Z",
+      comment: "scribble",
+      points: [
+        { x: 500, y: 100 },
+        { x: 600, y: 300 }
+      ]
+    };
+
+    const sidecar = buildSidecar({ ...base, annotations: [highlight, pen] });
+    expect(sidecar.annotations.map((a) => [a.n, a.tool, a.comment])).toEqual([
+      [1, "highlight", "read this"],
+      [2, "pen", "scribble"]
+    ]);
+    expect(sidecar.annotations[0].rect).toEqual({ x: 100, y: 200, width: 300, height: 40 });
+    // A pen stroke has no rect of its own: its bounds are the extent of its
+    // points, which is what an agent needs to find it on the image.
+    expect(sidecar.annotations[1].rect).toEqual({ x: 500, y: 100, width: 100, height: 200 });
+    expect(sidecar.annotations[1].normalizedRect).toEqual({
+      x: 0.5,
+      y: 0.05,
+      width: 0.1,
+      height: 0.1
+    });
+  });
+
   it("carries the note text of each annotation", () => {
     const sidecar = buildSidecar({ ...base, annotations: [box, text] });
     expect(sidecar.annotations.map((a) => a.comment)).toEqual(["too tight", "label"]);

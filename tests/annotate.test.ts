@@ -6,7 +6,13 @@ import {
   selectFeedbackRenderMode
 } from "../src/lib/annotate";
 import { applyCrop, type Rect } from "../src/lib/crop";
-import type { ArrowAnnotation, BoxAnnotation, RedactAnnotation } from "../src/types/annotation";
+import type {
+  ArrowAnnotation,
+  BoxAnnotation,
+  HighlightAnnotation,
+  PenAnnotation,
+  RedactAnnotation
+} from "../src/types/annotation";
 
 describe("selectFeedbackRenderMode", () => {
   it("uses footer when resulting canvas size is within limits", () => {
@@ -404,6 +410,130 @@ function redaction(overrides: Partial<RedactAnnotation> = {}): RedactAnnotation 
     ...overrides
   };
 }
+
+/**
+ * The path calls of the one stroke that starts at `from`. Scoped that way
+ * because the notes footer draws its own separator rule with the same
+ * `moveTo`/`lineTo` pair, and this is about the pen stroke, not that.
+ */
+function pathFrom(calls: RecordedCall[], from: [number, number]): RecordedCall[] {
+  const start = calls.findIndex(
+    (call) => call.name === "moveTo" && call.args[0] === from[0] && call.args[1] === from[1]
+  );
+  if (start < 0) return [];
+  const end = calls.findIndex((call, index) => index > start && call.name === "stroke");
+  return calls.slice(start, end < 0 ? undefined : end);
+}
+
+describe("exportAnnotatedImage highlight and pen", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const highlight: HighlightAnnotation = {
+    id: "h1",
+    tool: "highlight",
+    color: "#f59e0b",
+    createdAt: "2026-02-21T00:00:01.000Z",
+    comment: "read this",
+    x: 100,
+    y: 200,
+    width: 300,
+    height: 40
+  };
+
+  const pen: PenAnnotation = {
+    id: "p1",
+    tool: "pen",
+    color: "#3b82f6",
+    createdAt: "2026-02-21T00:00:02.000Z",
+    comment: "scribble",
+    points: [
+      { x: 500, y: 100 },
+      { x: 540, y: 160 },
+      { x: 600, y: 130 }
+    ]
+  };
+
+  it("fills a highlight as a multiply composite and restores the context after", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [highlight]);
+
+    const fill = calls.findIndex((call) => call.name === "fillRect");
+    expect(calls[fill].args).toEqual([100, 200, 300, 40]);
+
+    // The multiply mode and the alpha have to be in force at the fill, and
+    // undone by a restore before anything else (the pin, the legend) is drawn.
+    const composite = calls.findIndex(
+      (call) => call.name === "set:globalCompositeOperation" && call.args[0] === "multiply"
+    );
+    const alpha = calls.findIndex(
+      (call) => call.name === "set:globalAlpha" && call.args[0] === 0.35
+    );
+    const save = calls.findIndex((call) => call.name === "save");
+    expect(save).toBeGreaterThanOrEqual(0);
+    expect(save).toBeLessThan(composite);
+    expect(composite).toBeLessThan(fill);
+    expect(alpha).toBeLessThan(fill);
+    const restore = calls.findIndex((call, index) => index > fill && call.name === "restore");
+    expect(restore).toBeGreaterThan(fill);
+
+    // The edge is stroked after the restore, so it lands at full opacity and
+    // in normal composite - which is the only thing visible over a dark
+    // section, where multiply leaves the wash invisible.
+    const edge = calls.findIndex((call) => call.name === "strokeRect");
+    expect(edge).toBeGreaterThan(restore);
+    expect(calls[edge].args).toEqual([100, 200, 300, 40]);
+  });
+
+  it("strokes a pen stroke as one round-capped polyline through every point", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [pen]);
+
+    const path = pathFrom(calls, [500, 100]);
+    expect(path.map((call) => [call.name, ...call.args])).toEqual([
+      ["moveTo", 500, 100],
+      ["lineTo", 540, 160],
+      ["lineTo", 600, 130]
+    ]);
+    expect(calls.some((call) => call.name === "set:lineCap" && call.args[0] === "round")).toBe(
+      true
+    );
+    expect(calls.some((call) => call.name === "set:lineJoin" && call.args[0] === "round")).toBe(
+      true
+    );
+    expect(calls.some((call) => call.name === "stroke")).toBe(true);
+  });
+
+  it("pins both at the top-left of their bounds and legends their comments", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [highlight, pen]);
+
+    const pins = calls.filter((call) => call.name === "arc" && call.args[2] === 20);
+    expect(pins.map((call) => [call.args[0], call.args[1]])).toEqual([
+      [100, 200],
+      [500, 100]
+    ]);
+    const labels = calls.filter((call) => call.name === "fillText").map((call) => call.args[0]);
+    expect(labels).toContain("read this");
+    expect(labels).toContain("scribble");
+  });
+
+  it("draws nothing for a pen stroke with fewer than two points", async () => {
+    const { ctx, calls } = recordingContext();
+    stubCanvasAndImage(calls, ctx);
+
+    await exportAnnotatedImage("data:", [{ ...pen, points: [{ x: 10, y: 10 }] }]);
+
+    expect(pathFrom(calls, [10, 10])).toEqual([]);
+  });
+});
 
 describe("exportAnnotatedImage redactions", () => {
   afterEach(() => {

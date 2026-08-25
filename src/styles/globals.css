@@ -227,3 +227,28 @@
     transition-duration: 0ms;
   }
 }
+
+/*
+ * The annotation canvas's focus ring.
+ *
+ * The SVG is the focusable region (it is where the keyboard draws), but it is
+ * sized to the whole capture - 2400px tall on a normal page - inside a ~740px
+ * scrollport. The UA outline is drawn on that element's own edges, so on any
+ * capture taller than the pane it sits off screen entirely: measured at
+ * 1280x900 with the capture scrolled 900px, the SVG's box ran from y=-775 to
+ * y=1625 against a scrollport of 124..863, and the screenshot showed no
+ * indicator anywhere. "The canvas has focus" is a real mode now that Enter
+ * draws, so it cannot be invisible.
+ *
+ * The ring therefore goes on the scrollport, which is by definition the
+ * visible frame, and is `inset` so nothing can clip it. `:focus-visible`, not
+ * `:focus`: arriving by pointer means a drag is starting and needs no ring.
+ */
+#capture-viewport:has(svg[role="group"]:focus-visible) {
+  box-shadow: inset 0 0 0 2px hsl(var(--ring));
+}
+
+/* One indicator, not two: the ring above stands in for this one. */
+#capture-viewport svg[role="group"]:focus-visible {
+  outline: none;
+}

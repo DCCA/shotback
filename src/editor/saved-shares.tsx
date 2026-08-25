@@ -121,7 +121,10 @@ export function SavedShares({
       <div className="flex items-center justify-between">
         <h2 className="m-0 text-sm font-semibold">Saved Shares</h2>
         <div className="flex items-center gap-2">
-          <Badge>{shares.length}</Badge>
+          {/* `id` is a test hook, in the style of `#capture-window`'s
+              `data-crop`: how many shares are stored is what the e2e checks
+              after an export claims to have saved one. */}
+          <Badge id="saved-share-count">{shares.length}</Badge>
           {shares.length > 0 ? (
             <Button
               type="button"
@@ -129,7 +132,11 @@ export function SavedShares({
               size="sm"
               onClick={() => setShowSavedShares((value) => !value)}
             >
-              {showSavedShares ? "Hide" : "Show"}
+              {/* The count rides on the toggle while the list is collapsed:
+                  after saving a share the answer to "did that work?" is at the
+                  bottom of a scrolling sidebar, and a lone badge beside a
+                  "Show" link was not enough of one. */}
+              {showSavedShares ? "Hide" : `Show (${shares.length})`}
             </Button>
           ) : null}
         </div>

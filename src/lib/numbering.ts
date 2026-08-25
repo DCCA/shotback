@@ -127,19 +127,49 @@ export function annotationBounds(annotation: Annotation): {
 }
 
 /**
+ * The part of `bounds` that is actually on the image. The stored geometry is
+ * deliberately not clamped - `applyCrop` keeps an arrow's head and a pen's
+ * stray points outside the crop rather than redrawing the shape - but anything
+ * that *reports* where an annotation is answers "where is this on the attached
+ * image", so it cannot describe pixels the image does not have. The sidecar's
+ * `rect`/`normalizedRect` and the prompt's printed geometry both go through
+ * here, which is what keeps the two agreeing. Already inside means unchanged.
+ */
+export function clampToImage(bounds: Rect, image: { width: number; height: number }): Rect {
+  const x = Math.max(0, Math.min(bounds.x, image.width));
+  const y = Math.max(0, Math.min(bounds.y, image.height));
+  return {
+    x,
+    y,
+    width: Math.max(0, Math.min(bounds.x + bounds.width, image.width) - x),
+    height: Math.max(0, Math.min(bounds.y + bounds.height, image.height) - y)
+  };
+}
+
+/**
  * Human-readable position of an annotation in image px plus % of page, for
  * the prompt's per-annotation line. Pure so it can be unit tested apart from
  * the builders that call it.
+ *
+ * Every printed number is clamped to the image by the same `clampToImage` the
+ * sidecar reports its rect through: a cropped arrow or pen keeps its real
+ * geometry in state (clipping it would redraw a shape the user never made),
+ * but a prompt that says "at (-40, 12)" is describing pixels the attached
+ * image does not have - and disagreeing with the JSON beside it.
  */
 export function describeGeometry(a: Annotation, image: { width: number; height: number }): string {
   const pct = (x: number, y: number) =>
     `[${Math.round((100 * x) / image.width)}%, ${Math.round((100 * y) / image.height)}% of page]`;
+  /** One printed coordinate, pulled onto the image and rounded. */
+  const on = (value: number, extent: number): number =>
+    Math.round(Math.max(0, Math.min(value, extent)));
 
   if (a.tool === "box" || a.tool === "highlight") {
-    return `at (${Math.round(a.x)}, ${Math.round(a.y)}) size ${Math.round(a.width)}x${Math.round(a.height)} px ${pct(a.x, a.y)}`;
+    const r = clampToImage(a, image);
+    return `at (${Math.round(r.x)}, ${Math.round(r.y)}) size ${Math.round(r.width)}x${Math.round(r.height)} px ${pct(r.x, r.y)}`;
   }
   if (a.tool === "arrow") {
-    return `from (${Math.round(a.x1)}, ${Math.round(a.y1)}) to (${Math.round(a.x2)}, ${Math.round(a.y2)}) px`;
+    return `from (${on(a.x1, image.width)}, ${on(a.y1, image.height)}) to (${on(a.x2, image.width)}, ${on(a.y2, image.height)}) px`;
   }
   if (a.tool === "pen") {
     // Endpoints plus a count: the whole path would be unreadable in a prompt,
@@ -147,10 +177,10 @@ export function describeGeometry(a: Annotation, image: { width: number; height: 
     // image. The sidecar carries the same rect for anything that needs it.
     const first = a.points[0] ?? { x: 0, y: 0 };
     const last = a.points[a.points.length - 1] ?? first;
-    const bounds = annotationBounds(a);
-    return `pen path of ${a.points.length} points from (${Math.round(first.x)}, ${Math.round(first.y)}) to (${Math.round(last.x)}, ${Math.round(last.y)}) px ${pct(bounds.x, bounds.y)}`;
+    const bounds = clampToImage(annotationBounds(a), image);
+    return `pen path of ${a.points.length} points from (${on(first.x, image.width)}, ${on(first.y, image.height)}) to (${on(last.x, image.width)}, ${on(last.y, image.height)}) px ${pct(bounds.x, bounds.y)}`;
   }
-  return `at (${Math.round(a.x)}, ${Math.round(a.y)}) px`;
+  return `at (${on(a.x, image.width)}, ${on(a.y, image.height)}) px`;
 }
 
 function clamp(value: number, min: number, max: number): number {

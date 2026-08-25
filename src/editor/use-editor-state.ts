@@ -33,6 +33,13 @@ export interface EditorState {
   canRedo: boolean;
   /** Remove one annotation and snapshot the result - every delete path uses this. */
   removeAnnotation: (id: string) => void;
+  /**
+   * What the editor's screen-reader-only live region is saying. Delete, undo
+   * and redo change the canvas and the timeline and nothing else, so without
+   * this they succeed silently for anyone not watching the pixels. The visible
+   * toast stays the one *visible* status surface; this region is never shown.
+   */
+  announcement: string;
   /** Clear the annotations and the history, for a fresh capture. */
   resetAnnotations: () => void;
   selectedId: string | null;
@@ -204,17 +211,35 @@ export function useEditorState(): EditorState {
     applyHistory(commit(historyRef.current, annotationsRef.current));
   };
 
-  const applySnapshot = (next: History<Annotation[]>): void => {
-    if (next === historyRef.current) return;
+  const [announcement, setAnnouncement] = useState("");
+  // Repeats matter here: three undos in a row are three separate outcomes to
+  // announce, and a live region that is handed the same string twice sees no
+  // DOM change and says nothing the second time. The trailing no-break space
+  // alternates so every announcement is a real text change - invisible either
+  // way, since the region is never rendered on screen.
+  const announceCount = useRef(0);
+  const announce = (text: string): void => {
+    announceCount.current += 1;
+    setAnnouncement(announceCount.current % 2 === 0 ? `${text}\u00a0` : text);
+  };
+
+  /** True when the snapshot really moved - nothing to announce otherwise. */
+  const applySnapshot = (next: History<Annotation[]>): boolean => {
+    if (next === historyRef.current) return false;
     applyHistory(next);
     setAnnotations(next.present);
     annotationsRef.current = next.present;
     if (selectedId && !next.present.some((item) => item.id === selectedId)) setSelectedId(null);
+    return true;
   };
 
-  const undoAnnotations = (): void => applySnapshot(undo(historyRef.current));
+  const undoAnnotations = (): void => {
+    if (applySnapshot(undo(historyRef.current))) announce("Undo");
+  };
 
-  const redoAnnotations = (): void => applySnapshot(redo(historyRef.current));
+  const redoAnnotations = (): void => {
+    if (applySnapshot(redo(historyRef.current))) announce("Redo");
+  };
 
   const removeAnnotation = (id: string): void => {
     const next = annotationsRef.current.filter((item) => item.id !== id);
@@ -222,6 +247,7 @@ export function useEditorState(): EditorState {
     annotationsRef.current = next;
     commitAnnotations();
     if (selectedId === id) setSelectedId(null);
+    announce("Annotation deleted");
   };
 
   const resetAnnotations = (): void => {
@@ -242,6 +268,7 @@ export function useEditorState(): EditorState {
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     removeAnnotation,
+    announcement,
     resetAnnotations,
     selectedId,
     setSelectedId,

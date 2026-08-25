@@ -55,3 +55,11 @@ export function cssPath(el: ElementLike): string {
 
   return parts.join(" > ");
 }
+
+// `describeElement` - the one-line name the comment timeline shows - lives in
+// `feedback.ts`, not here, deliberately: this module is the *content script's*
+// only import, and a helper the editor also imports would make it a shared
+// Vite chunk. `content.js` would then be emitted with a top-level `import`,
+// which a classic MV3 content script cannot execute at all - the script
+// silently never loads and every capture fails with "Receiving end does not
+// exist". Keep this file reachable from `src/content.ts` only.

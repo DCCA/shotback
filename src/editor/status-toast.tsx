@@ -46,7 +46,7 @@ function Toast({ tone, message, onDismiss }: ToastProps): JSX.Element {
   return (
     <div
       className={`pointer-events-auto flex max-w-full items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-sm shadow-[0_10px_28px_-8px_hsl(var(--card-shadow)),0_2px_6px_-2px_hsl(var(--card-shadow))] transition-[transform,opacity] duration-200 ease-swift ${
-        entered ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
+        entered ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
       } ${tone === "error" ? "border-destructive" : "border-border"}`}
     >
       {tone === "success" ? (
@@ -138,7 +138,13 @@ export function StatusToast({ status, setStatus, progress }: StatusToastProps): 
       // scrolls, so the canvas card can be scrolled away by the time an export
       // button is pressed - `fixed` keeps the answer on screen there, which is
       // the whole reason this stopped living in the sidebar.
-      className="pointer-events-none fixed right-4 top-4 z-20 flex w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 lg:absolute"
+      //
+      // Bottom-right, not top-right: the tool palette is docked along the top
+      // of this same card, so a toast up there covered the colour swatches and
+      // the Zoom select - and, being `pointer-events-auto`, swallowed clicks
+      // aimed at them for the full 4s a success is up. The bottom-left corner
+      // is taken by the applied-crop chip, so the toast takes the other one.
+      className="pointer-events-none fixed bottom-4 right-4 z-20 flex w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 lg:absolute"
     >
       {/* A stable key: progress counts up step by step, and re-animating the
           same toast on every frame of it would read as a flicker. */}

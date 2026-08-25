@@ -169,6 +169,24 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           selected redaction shows what is under it.
         </p>
 
+        {/* The canvas half of the keymap, stated because none of it is
+            discoverable from a control: Escape does the opposite of a commit
+            inside a note, and the tool letters are swallowed as text there. */}
+        <p className="m-0 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd> discards
+          a note; tool keys{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">
+            V B A T H P R C
+          </kbd>{" "}
+          work outside it. With the canvas focused,{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Enter</kbd> places
+          the armed tool&apos;s shape and{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">↑ ↓ ← →</kbd> move
+          the selection (with{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Shift</kbd>, resize
+          it).
+        </p>
+
         <div className="space-y-1.5">
           <span
             id="export-format-label"
@@ -233,10 +251,14 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             Copy for Claude Code
           </Button>
           {/* Names the format actually in force: with the pref on JPEG,
-              "Saves PNG" was simply wrong about the file it writes. */}
+              "Saves PNG" was simply wrong about the file it writes. And it
+              says whose Downloads folder: a bare "Downloads/shotback" reads as
+              a path relative to something - the project? the extension? - to
+              anyone who has not exported yet, which is exactly who this line
+              is for. */}
           <p className="m-0 -mt-1 text-xs text-muted-foreground">
-            Saves {exportFormat === "jpeg" ? "JPEG" : "PNG"} + JSON to Downloads/shotback and copies
-            the prompt.
+            Saves {exportFormat === "jpeg" ? "JPEG" : "PNG"} + JSON to your Downloads folder
+            (Downloads/shotback), copies the prompt and keeps a copy in Saved Shares.
           </p>
           <Button
             variant="secondary"

@@ -1,5 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+// @ts-expect-error - a plain .mjs build script with no types of its own; it
+// owns the one predicate the build guard fails on, reused here rather than
+// restated so the test and the gate cannot drift.
+import { hasModuleSyntax } from "../../scripts/check-content-script.mjs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -295,6 +299,19 @@ test("extension loads with no popup and the downloads permission", async () => {
   expect(manifest.action?.default_popup).toBeUndefined();
   expect(manifest.permissions).toContain("downloads");
   expect(manifest.commands?._execute_action?.suggested_key?.default).toBe("Alt+Shift+S");
+
+  // The content script is a *classic* script (the service worker is the only
+  // `"type": "module"` entry), so it has to be self-contained. The moment a
+  // helper it imports is also imported by the editor, Vite emits it as a
+  // shared chunk and `content.js` starts with `import ... from "./assets/..."`
+  // - which a classic content script cannot execute. It then never loads at
+  // all, and every capture dies with "Receiving end does not exist", far from
+  // the change that caused it. Cheaper to fail here, on the built file.
+  // `hasModuleSyntax` is the build guard's own predicate - it already fails
+  // `npm run build`, and so `npm run check`, before this test can run.
+  // Imported rather than restated so the two cannot drift, and asserted here
+  // too because this is the file the loaded extension is actually running.
+  expect(hasModuleSyntax(await readFile(path.join(EXT, "content.js"), "utf8"))).toBe(false);
 });
 
 test("capture notice shows, hides for the frame, and is removed", async () => {
@@ -419,7 +436,10 @@ for (const [name, headerHeight] of [
       await editor.keyboard.type("Chart");
 
       const row = editor.locator("ol li button").first();
-      await expect(row.locator("div").last()).toHaveText("Chart");
+      // `nth(1)`, not `last()`: the row is meta line, note, then - once the
+      // DOM inspection lands - the element descriptor, so `last()` raced the
+      // round trip and read the selector instead of the note.
+      await expect(row.locator("div").nth(1)).toHaveText("Chart");
 
       await editor.getByRole("button", { name: "Copy Image" }).click();
       // The copy runs async after the click; wait for the success status
@@ -436,19 +456,43 @@ for (const [name, headerHeight] of [
       // "missing" rather than a thrown dereference: the toast clears itself
       // after 4s, and a slow machine could get here after it has gone. That is
       // a real failure, but it should read as one rather than as a TypeError.
+      //
+      // And it is docked to the *bottom* of that pane: the tool palette runs
+      // along the top of the same card, so a toast up there covered the colour
+      // swatches and (being pointer-events-auto) ate clicks aimed at them for
+      // the whole 4s it was up.
       const toastInCanvasPane = await editor.evaluate(() => {
         const node = document.querySelector('[aria-live="polite"] p.font-medium');
         if (!node) return "missing";
         const pane = document.querySelectorAll("main > div")[1].getBoundingClientRect();
         const toast = node.getBoundingClientRect();
-        return (
-          toast.left >= pane.left &&
-          toast.right <= pane.right &&
-          toast.top >= pane.top &&
-          toast.bottom <= pane.bottom
-        );
+        const swatches = document
+          .querySelector('[role="group"][aria-label="Annotation color"]')!
+          .getBoundingClientRect();
+        return {
+          inPane:
+            toast.left >= pane.left &&
+            toast.right <= pane.right &&
+            toast.top >= pane.top &&
+            toast.bottom <= pane.bottom,
+          clearOfPalette: toast.top > swatches.bottom,
+          // Not just z-order: the toast is pointer-events-auto, so what
+          // matters is which element a click on the swatch row actually hits.
+          swatchesClickable: Boolean(
+            document
+              .elementFromPoint(
+                (swatches.left + swatches.right) / 2,
+                (swatches.top + swatches.bottom) / 2
+              )
+              ?.closest('[role="group"][aria-label="Annotation color"]')
+          )
+        };
       });
-      expect(toastInCanvasPane).toBe(true);
+      expect(toastInCanvasPane).toMatchObject({
+        inPane: true,
+        clearOfPalette: true,
+        swatchesClickable: true
+      });
       // A success clears itself rather than sitting there through the next
       // three exports, and capture progress leaves nothing behind either.
       await expect(editor.locator('[aria-live="polite"] p.font-medium')).toHaveCount(0, {
@@ -665,6 +709,25 @@ for (const [name, headerHeight] of [
       await expect(rows).toHaveCount(3);
       await waitForInspection(editor, inspectedBefore);
 
+      // ...and the editor says so *before* the export: the element the box
+      // landed on is one muted line in its timeline row, with the whole path
+      // on hover. `elementsFromPoint` always answers something, so a box a few
+      // px off its target still resolves a confident selector - which used to
+      // surface for the first time in the copied prompt.
+      const cta = rows.nth(2);
+      await expect(cta).toContainText("button.cta");
+      await expect(cta.locator("[title]")).toHaveAttribute(
+        "title",
+        "#app > section.hero > button.cta"
+      );
+      // The text annotation landed on nothing named, and says that rather than
+      // showing nothing at all - asserted on the descriptor element itself
+      // (the one node in the row carrying the full path as its `title`), so
+      // unrelated note text elsewhere in the row cannot satisfy it.
+      const anonymous = rows.nth(1).locator("[title]");
+      await expect(anonymous).toHaveText(/^[a-z]+(:nth-of-type\(\d+\)|[#.][\w-]+)?$/);
+      await expect(anonymous).toHaveAttribute("title", /^html > body/);
+
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain(
         "-> #app > section.hero > button.cta in <PricingCard > Page>"
@@ -695,6 +758,12 @@ for (const [name, headerHeight] of [
         "Copied a Claude Code prompt"
       );
       const claudePrompt = await readClipboard(editor);
+      // ...and leaves a trace inside the extension itself. The files go to
+      // Downloads and the prompt to the clipboard, and until this the tool
+      // that made the capture could not show it to you afterwards: one saved
+      // share existed at this point (the one saved above), and this export
+      // adds its own.
+      await expect(editor.locator("#saved-share-count")).toHaveText("2");
       const sidecarFile = await downloadedFile("application/json");
       expect(claudePrompt.split("\n")[0]).toBe(
         `Review this screenshot: ${await downloadedFile("image/png")}`
@@ -951,12 +1020,14 @@ for (const [name, headerHeight] of [
       await editor.getByRole("button", { name: "Clear", exact: true }).click();
       await expect(editor.locator("#capture-window")).not.toHaveAttribute("data-crop");
 
-      // Batch handoff: two shares are saved by now (the sidebar-overflow one
-      // and the cropped one). Ticking both writes every PNG plus a single
-      // batch.json into one folder, and copies a prompt that leads with it.
+      // Batch handoff: four shares are saved by now - the sidebar-overflow
+      // one, the cropped one, and one each from the PNG and JPEG Claude Code
+      // exports, which now record what they handed over. Ticking two of them
+      // writes those PNGs plus a single batch.json into one folder, and copies
+      // a prompt that leads with it.
       await editor.getByRole("button", { name: "Show" }).click();
       const checkboxes = editor.getByRole("checkbox");
-      await expect(checkboxes).toHaveCount(2);
+      await expect(checkboxes).toHaveCount(4);
       // Target size (WCAG 2.5.8): the label wrapping each checkbox is the
       // real tappable area, at least 24x24 - not the ~13px native tick.
       for (const box of await checkboxes.evaluateAll((inputs) =>
@@ -1638,6 +1709,11 @@ test("highlight and pen are drawn, pinned and carried into the prompt", async ()
   await editor.mouse.move(at(240, 80).x, at(240, 80).y, { steps: 5 });
   await editor.mouse.up();
   await editor.keyboard.type("read this");
+  // Tab first, then Escape: Escape *in the note* is a discard now (see the
+  // keyboard test at the end of this file), and this one is about keeping the
+  // note. Tab commits it and moves focus to the timeline row; Escape from
+  // there just clears the selection, so the shape draws unselected below.
+  await editor.keyboard.press("Tab");
   await editor.keyboard.press("Escape");
 
   // Pen: a freehand path, so several moves with the button down.
@@ -1654,6 +1730,7 @@ test("highlight and pen are drawn, pinned and carried into the prompt", async ()
   }
   await editor.mouse.up();
   await editor.keyboard.type("scribble");
+  await editor.keyboard.press("Tab");
   await editor.keyboard.press("Escape");
 
   // Two numbered rows, two pins on the canvas.
@@ -1778,9 +1855,13 @@ test("editor page renders the capture UI", async () => {
   const primary = editor.locator("#editor-actions button.bg-primary");
   await expect(primary).toHaveCount(1);
   await expect(primary).toHaveText("Copy for Claude Code");
-  // Format-aware: the caption must name the file the export actually writes.
+  // Format-aware: the caption must name the file the export actually writes -
+  // and whose Downloads folder it lands in, since a bare "Downloads/shotback"
+  // reads as a path relative to something to anyone who has not exported yet.
   await expect(
-    editor.getByText(/^Saves (PNG|JPEG) \+ JSON to Downloads\/shotback and copies the prompt\.$/)
+    editor.getByText(
+      /^Saves (PNG|JPEG) \+ JSON to your Downloads folder \(Downloads\/shotback\), copies the prompt and keeps a copy in Saved Shares\.$/
+    )
   ).toBeVisible();
   // The order the column reads in: edit, then send, then take the file.
   // The download's format suffix is a persisted pref, so it is normalised out.
@@ -1866,4 +1947,128 @@ test("reduced motion drops the button press/colour animation, not the state chan
   expect(chevronDuration).toBe("none");
 
   await editor.close();
+});
+
+test("the canvas draws, nudges and recovers from the keyboard alone", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const canvas = editor.locator("#capture-viewport svg");
+  const rows = editor.locator("ol li");
+  const note = editor.locator("foreignObject textarea");
+  const box = editor.locator("#capture-viewport svg > g").first().locator("rect").first();
+  const focused = (): Promise<string> =>
+    editor.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return "body";
+      return el.getAttribute("data-annotation-row") ? "timeline-row" : el.tagName.toLowerCase();
+    });
+
+  // The canvas is in the tab order now: it is where the keyboard draws, and
+  // its accessible name says so instead of admitting a pointer is required.
+  await expect(canvas).toHaveAttribute("tabindex", "0");
+  await expect(canvas).toHaveAttribute("aria-label", /Enter places a shape/);
+
+  // Enter with the Box tool armed places one at the centre of the view, and
+  // goes through the same commit a drag does: selected, comment editor open.
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  await canvas.focus();
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(1);
+  const placed = await rectOf(box);
+  expect(placed.width).toBe(160);
+  expect(placed.height).toBe(100);
+  await expect(note).toHaveCount(1);
+
+  // The comment editor is a <textarea> inside this same SVG, so the canvas's
+  // own keys must not reach it: Enter is a newline, not a second annotation,
+  // and an arrow key moves the caret, not the shape.
+  await editor.keyboard.type("first line");
+  const beforeTyping = await rectOf(box);
+  await editor.keyboard.press("Enter");
+  await editor.keyboard.type("second line");
+  await expect(note).toHaveValue("first line\nsecond line");
+  await expect(rows).toHaveCount(1);
+  await editor.keyboard.press("ArrowLeft");
+  await editor.keyboard.press("Shift+ArrowUp");
+  expect(await rectOf(box)).toEqual(beforeTyping);
+
+  // Escape in the note discards the draft instead of shipping it - the one
+  // place in the editor where Escape used to mean "commit" - and hands the
+  // keyboard back to the canvas rather than dropping it on <body>.
+  await editor.keyboard.press("Escape");
+  await expect(rows.first()).toContainText("(no comment)");
+  expect(await focused()).toBe("svg");
+
+  // ...with the annotation still selected, so the very next arrow key moves
+  // the shape that was just drawn. Deliberately no programmatic focus and no
+  // second annotation here: this is the whole Enter -> type -> Escape -> nudge
+  // run a keyboard user actually performs.
+  await editor.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await rectOf(box)).x).toBe(beforeTyping.x + 8);
+  await expect(rows).toHaveCount(1);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(box)).x).toBe(beforeTyping.x);
+
+  // The keyboard focus ring is on the scrollport, not on the SVG's own edges:
+  // the SVG is as tall as the capture, so a ring drawn on it is off screen on
+  // anything taller than the pane (measured: box -775..1625 against a
+  // 124..863 scrollport, and no indicator visible anywhere).
+  await expect(editor.locator("#capture-viewport")).toHaveCSS(
+    "box-shadow",
+    /inset|0px 0px 0px 2px/
+  );
+
+  // A committed note still commits, from every other leave path: Tab out
+  // saves it, and the keyboard lands on that annotation's timeline row rather
+  // than on <body> (where the next Tab wrapped to the top of the sidebar).
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(2);
+  await editor.keyboard.type("kept");
+  await editor.keyboard.press("Tab");
+  await expect(rows.nth(1)).toContainText("kept");
+  await expect.poll(focused).toBe("timeline-row");
+
+  // Arrow keys move the selection by 8px, Shift+arrow resizes it, and each
+  // key-up is one undo entry.
+  const second = editor.locator("#capture-viewport svg > g").nth(1).locator("rect").first();
+  const before = await rectOf(second);
+  await canvas.focus();
+  await editor.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await rectOf(second)).x).toBe(before.x + 8);
+  await editor.keyboard.press("Shift+ArrowDown");
+  await expect.poll(async () => (await rectOf(second)).height).toBe(before.height + 8);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(second)).height).toBe(before.height);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(second)).x).toBe(before.x);
+
+  // Delete, Undo and Redo say so in the editor's screen-reader-only region -
+  // the visible toast stays reserved for the exports.
+  const announcer = editor.locator("#editor-announcer");
+  await editor.keyboard.press("Delete");
+  await expect(rows).toHaveCount(1);
+  await expect(announcer).toHaveText(/Annotation deleted/);
+  await editor.keyboard.press("Control+z");
+  await expect(rows).toHaveCount(2);
+  await expect(announcer).toHaveText(/Undo/);
+  await editor.keyboard.press("Control+Shift+z");
+  await expect(announcer).toHaveText(/Redo/);
+  // Never visible: it is a second live region, not a second banner.
+  expect(await announcer.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+
+  await editor.close();
+  await page.close();
 });

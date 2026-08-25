@@ -188,6 +188,15 @@ function EditorApp(): JSX.Element {
     // window and clips the capture. The explicit 0 minimum is what keeps the
     // pane's width a property of the window rather than of its contents.
     <main className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:h-screen lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)] lg:overflow-hidden lg:p-5">
+      {/* The editor's second live region, and the only one that is never
+          shown: delete, undo and redo change the canvas and the timeline and
+          nothing else, so they succeeded silently for anyone not watching the
+          pixels. The visible toast (`status-toast.tsx`) stays the one visible
+          status surface - putting these through it would blink a banner over
+          the capture on every keystroke of an undo run. */}
+      <p id="editor-announcer" className="sr-only" role="status" aria-live="polite">
+        {state.announcement}
+      </p>
       <Sidebar state={state} exports={exports} onCapture={(mode) => void takeScreenshot(mode)}>
         <Separator />
         <CommentTimeline

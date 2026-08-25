@@ -22,6 +22,14 @@ import {
   type BoxResizeHandle
 } from "@/lib/boxResize";
 import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
+import {
+  ARROW_KEYS,
+  KEYBOARD_NUDGE,
+  onImage,
+  placementArrow,
+  placementRect,
+  resizeRect
+} from "@/lib/keyboard-shapes";
 import { placeInlineEditor } from "@/lib/editor-placement";
 import {
   annotationBounds,
@@ -128,6 +136,7 @@ export function AnnotationCanvas({
   const {
     annotations,
     setAnnotations,
+    getAnnotations,
     selectedId,
     setSelectedId,
     tool,
@@ -191,6 +200,75 @@ export function AnnotationCanvas({
     if (!noteDirtyRef.current) return;
     noteDirtyRef.current = false;
     onCommit();
+  };
+  // The note as it stood when the editor took focus - what Escape puts back.
+  // Recorded on focus rather than on selection, so re-entering an existing
+  // note and bailing out restores that note, not an empty string.
+  const noteBaselineRef = useRef<{ id: string; value: string } | null>(null);
+
+  /**
+   * Escape means cancel everywhere else in this editor - it closes a listbox
+   * without applying the highlighted option, drops a crop marquee, and backs
+   * out of "Replace capture?". In the one place a draft is most likely to be
+   * abandoned it used to do the opposite: the handler blurred the textarea and
+   * `onBlur` committed whatever had been typed, so the note shipped.
+   *
+   * The annotation itself stays - it was committed when it was drawn. Only the
+   * text goes back to its baseline, and with `noteDirtyRef` cleared the
+   * unmount cleanup below writes no history entry either, so a discard costs
+   * nothing to undo past.
+   *
+   * One exception, and it is the reason this returns a boolean: for a **text**
+   * annotation the note *is* the annotation. Discarding back to an empty
+   * baseline would leave an invisible shape that still takes a numbered pin, a
+   * timeline row and an `[text] (empty)` line in every prompt - so a text
+   * placed and then abandoned is removed instead. `true` means "there is
+   * nothing left to keep selected".
+   */
+  const discardNoteDraft = (): boolean => {
+    const baseline = noteBaselineRef.current;
+    noteBaselineRef.current = null;
+    if (!baseline || !noteDirtyRef.current) return false;
+    noteDirtyRef.current = false;
+
+    const item = getAnnotations().find((entry) => entry.id === baseline.id);
+    if (item?.tool === "text" && baseline.value === "") {
+      // Goes through `removeAnnotation` like every other delete path, so it
+      // snapshots and announces exactly as "Delete Selected Item" would.
+      removeAnnotation(baseline.id);
+      return true;
+    }
+
+    setAnnotations((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== baseline.id) return entry;
+        if (entry.tool === "redact") return entry;
+        if (entry.tool === "text") return { ...entry, text: baseline.value };
+        return { ...entry, comment: baseline.value };
+      })
+    );
+    return false;
+  };
+
+  /**
+   * Put the keyboard somewhere continuable once the comment editor lets go.
+   * Leaving the textarea used to strand focus on `<body>` with no ring on
+   * screen, and the next Tab wrapped to "Capture Page" - so annotating three
+   * regions meant tabbing the whole sidebar twice in between.
+   *
+   * Deferred by a frame, and only when focus really was orphaned: the same
+   * rule `useTimedConfirm` restores a trigger by. Selecting another annotation
+   * focuses its editor in a layout effect that has not run yet, and a click on
+   * a control has already moved focus there - neither may be yanked back.
+   */
+  const restoreFocusAfterNote = (id: string | null): void => {
+    requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
+      const row = id
+        ? document.querySelector<HTMLElement>(`[data-annotation-row="${CSS.escape(id)}"]`)
+        : null;
+      (row ?? svgRef.current)?.focus();
+    });
   };
 
   const selectedAnnotation = annotations.find((item) => item.id === selectedId) ?? null;
@@ -537,20 +615,179 @@ export function AnnotationCanvas({
   // annotation): write the pending comment before the selection changes.
   useEffect(() => {
     if (!selectedId) return;
-    return () => commitNoteIfDirty();
+    const id = selectedId;
+    return () => {
+      commitNoteIfDirty();
+      restoreFocusAfterNote(id);
+    };
     // `selectedId` only: the cleanup must run when the selection changes, not
     // on every render. `onCommit` reaches the live annotations through a ref,
     // so the captured closure stays correct.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
+  /**
+   * The middle of what is actually on screen, in image px: the scrollport, the
+   * crop window and the image intersected, so a shape placed from the keyboard
+   * lands where the user is looking rather than at the top of a 6000px capture
+   * they have scrolled well past. Falls back to the image's own centre when
+   * anything is missing or the boxes do not overlap.
+   */
+  const visibleCentre = (): { x: number; y: number } => {
+    const fallback = { x: imageSize.width / 2, y: imageSize.height / 2 };
+    const port = document.getElementById("capture-viewport")?.getBoundingClientRect();
+    const image = imageRef.current?.getBoundingClientRect();
+    const window_ = document.getElementById("capture-window")?.getBoundingClientRect();
+    if (!port || !image || !window_ || image.width <= 0 || image.height <= 0) return fallback;
+
+    const left = Math.max(port.left, window_.left, image.left);
+    const right = Math.min(port.right, window_.right, image.right);
+    const top = Math.max(port.top, window_.top, image.top);
+    const bottom = Math.min(port.bottom, window_.bottom, image.bottom);
+    if (right <= left || bottom <= top) return fallback;
+
+    return {
+      x: (((left + right) / 2 - image.left) / image.width) * imageSize.width,
+      y: (((top + bottom) / 2 - image.top) / image.height) * imageSize.height
+    };
+  };
+
+  /**
+   * Place the armed tool's default shape with no pointer. It goes through
+   * `commitNewAnnotation` + `onCommit`, exactly as a drag's pointer-up does,
+   * so the new annotation is selected, its comment editor focused, its undo
+   * entry written and its DOM context read - one creation path, not two.
+   *
+   * Pen is deliberately not here: a stroke is a path the hand draws, and a
+   * default squiggle would be a shape the user never made. Crop is, because a
+   * marquee is just a rect, and Enter already applies one.
+   */
+  const placeFromKeyboard = (): void => {
+    const centre = visibleCentre();
+    const createdAt = new Date().toISOString();
+
+    if (tool === "crop") {
+      setCropDraft(clampCrop(placementRect(centre, imageSize), imageSize));
+      return;
+    }
+    if (tool === "pen") return;
+
+    if (tool === "text") {
+      commitNewAnnotation({
+        id: uid(),
+        tool: "text",
+        x: onImage(centre.x, imageSize.width),
+        y: onImage(centre.y, imageSize.height),
+        text: "",
+        color,
+        createdAt
+      });
+      onCommit();
+      return;
+    }
+
+    if (tool === "arrow") {
+      commitNewAnnotation({
+        id: uid(),
+        tool: "arrow",
+        ...placementArrow(centre, imageSize),
+        color,
+        comment: "",
+        createdAt
+      });
+      onCommit();
+      return;
+    }
+
+    // The three rectangles. Written out per tool rather than spread from a
+    // variable: the discriminant has to be a literal for the union to narrow.
+    const base = { id: uid(), color, createdAt, ...placementRect(centre, imageSize) };
+    if (tool === "box") commitNewAnnotation({ ...base, tool: "box", comment: "" });
+    else if (tool === "highlight") commitNewAnnotation({ ...base, tool: "highlight", comment: "" });
+    else commitNewAnnotation({ ...base, tool: "redact" });
+    onCommit();
+  };
+
+  // Set by an arrow-key edit, cleared by the key-up (or window blur) that
+  // commits it: holding a key repeats keydown but fires one keyup, so a run of
+  // nudges is one undo entry rather than one per repeat.
+  const nudgedRef = useRef(false);
+  // The window listeners are bound once and read their handlers from here, so
+  // a fresh closure per render costs nothing and nothing can go stale. See the
+  // effect that fills it, below the keymap.
+  const handlersRef = useRef<{
+    onKeyDown: (event: KeyboardEvent) => void;
+    onKeyUp: (event: KeyboardEvent) => void;
+    onBlur: () => void;
+  }>({ onKeyDown: () => {}, onKeyUp: () => {}, onBlur: () => {} });
+
+  const nudgeSelected = (dx: number, dy: number): void => {
+    // `getAnnotations`, not the render value: this runs from a window listener
+    // that is not re-bound on every annotation change.
+    const item = getAnnotations().find((entry) => entry.id === selectedId);
+    if (!item) return;
+    setAnnotations((prev) =>
+      prev.map((entry) => (entry.id === item.id ? moveAnnotation(entry, dx, dy) : entry))
+    );
+    nudgedRef.current = true;
+  };
+
+  /**
+   * Shift+arrow, for the annotations that are rectangles - the rest have no
+   * size. `resizeRect` is the pointer path's own `applyBoxResizeDelta` with
+   * the image as bounds, so the keyboard cannot grow a rectangle past an edge
+   * a drag would have stopped at, and it answers `null` when the key changes
+   * nothing (already at the minimum, already filling the image). That `null`
+   * is what keeps a held Shift+Left at the floor from spending one undo entry
+   * per repeat on a rectangle that never moved.
+   */
+  const resizeSelected = (dw: number, dh: number): void => {
+    const item = getAnnotations().find((entry) => entry.id === selectedId);
+    if (!item || (item.tool !== "box" && item.tool !== "highlight" && item.tool !== "redact")) {
+      return;
+    }
+
+    const next = resizeRect(item, dw, dh, imageSize);
+    if (!next) return;
+
+    setAnnotations((prev) =>
+      prev.map((entry) =>
+        entry.id === item.id &&
+        (entry.tool === "box" || entry.tool === "highlight" || entry.tool === "redact")
+          ? { ...entry, ...next }
+          : entry
+      )
+    );
+    nudgedRef.current = true;
+  };
+
+  /**
+   * Write the pending arrow-key edit into the history. Called from key-up and
+   * from `window.blur`: a held arrow key repeats keydown and fires exactly one
+   * keyup, but Alt-Tabbing mid-hold fires no keyup at all, which used to leave
+   * the movement on screen and outside the undo stack until some later gesture
+   * swept it into an unrelated entry. The flag is cleared first, so the two
+   * paths cannot both commit the same nudge.
+   */
+  const commitPendingNudge = (): void => {
+    if (!nudgedRef.current) return;
+    nudgedRef.current = false;
+    onCommit();
+  };
+
   // Editor keyboard shortcuts, all on one window listener: V/B/A/T/H/P/R/C
   // pick a tool from the palette, Escape clears selection/in-progress gestures,
-  // Delete/Backspace removes the selected annotation, Ctrl/Cmd+Z undoes and
-  // Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes. Everything but Escape is ignored
-  // while typing in a field - the comment editor is a textarea on the canvas,
-  // so an unguarded "b" would swallow every letter of a note.
-  useEffect(() => {
+  // Delete/Backspace removes the selected annotation, Ctrl/Cmd+Z undoes,
+  // Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes, and with the canvas focused Enter
+  // places a shape and the arrow keys move or resize the selection. Everything
+  // but Escape is ignored while typing in a field - the comment editor is a
+  // textarea on the canvas, so an unguarded "b" would swallow every letter of
+  // a note, an unguarded Enter would drop a stray annotation instead of a
+  // newline, and an unguarded arrow key would move the shape, not the caret.
+  //
+  // No dependency array: this runs after every render purely to refresh the
+  // handlers in `handlersRef`, which the one real binding below reads.
+  useLayoutEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       const isTyping =
@@ -601,7 +838,61 @@ export function AnnotationCanvas({
         return;
       }
 
+      // Everything below is the pointer's work done from the keyboard, so it
+      // only answers while the canvas region itself has focus: arrow keys
+      // belong to the scrollport and to every listbox otherwise.
+      //
+      // `!isTyping` is load-bearing, not belt-and-braces: the inline comment
+      // editor is a <textarea> inside a <foreignObject> *inside* this same
+      // SVG, so `contains(target)` is true while a note is being typed.
+      // Without it, Enter in a note dropped a stray annotation instead of a
+      // newline and the arrow keys moved the shape instead of the caret.
+      const onCanvas = !!target && !isTyping && !!svgRef.current?.contains(target);
+
+      if (onCanvas && baseDataUrl && !isBusy && interactionMode === "draw") {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          placeFromKeyboard();
+          return;
+        }
+      }
+
+      const direction = ARROW_KEYS[event.key];
+      if (onCanvas && direction && selectedId && !isBusy) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          resizeSelected(direction.x * KEYBOARD_NUDGE, direction.y * KEYBOARD_NUDGE);
+        } else {
+          nudgeSelected(direction.x * KEYBOARD_NUDGE, direction.y * KEYBOARD_NUDGE);
+        }
+        return;
+      }
+
       if (event.key === "Escape") {
+        // Escape in the note is a discard, not a commit - and it hands the
+        // keyboard back to the canvas, where the next shape is drawn, rather
+        // than dropping it on `<body>`.
+        const inNote = isTyping && target === inlineCommentRef.current;
+        if (inNote) {
+          const dropped = discardNoteDraft();
+          target.blur();
+          // The selection deliberately survives: focus lands on the canvas
+          // with the shape still selected, so the arrow keys move the thing
+          // that was just drawn. Clearing it here made the natural
+          // Enter -> type -> Escape -> nudge run impossible. A second Escape,
+          // now from the canvas, is the deselect. An annotation the discard
+          // removed outright (an empty text) has nothing left to select.
+          if (dropped) setSelectedId(null);
+          setCropDraft(null);
+          setDraft(null);
+          setPenDraft(null);
+          setDrag(null);
+          setResize(null);
+          setCropResize(null);
+          svgRef.current?.focus();
+          return;
+        }
+
         if (isTyping) target.blur();
         setSelectedId(null);
         setCropDraft(null);
@@ -621,23 +912,41 @@ export function AnnotationCanvas({
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // `applyCropDraft` closes over the live `cropDraft`/`isBusy` and is
-    // recreated each render, so the listener is re-bound with it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    selectedId,
-    setSelectedId,
-    setCropDraft,
-    removeAnnotation,
-    undoAnnotations,
-    redoAnnotations,
-    setPaletteTool,
-    baseDataUrl,
-    cropDraft,
-    isBusy
-  ]);
+    // One commit per key-up, not per keydown: a held arrow key repeats, and
+    // twenty history entries for one nudge across the canvas would make undo
+    // useless. The same `onCommit` a pointer gesture ends with, so the moved
+    // annotation's DOM context is re-read too.
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (!ARROW_KEYS[event.key]) return;
+      commitPendingNudge();
+    };
+
+    handlersRef.current = { onKeyDown, onKeyUp, onBlur: commitPendingNudge };
+  });
+
+  /**
+   * The three window listeners, bound exactly once. The handlers above close
+   * over live render values (the armed tool, the colour, `imageSize`), so they
+   * are refreshed on every render through `handlersRef` instead of being
+   * re-bound: a dependency array either re-registers all three on every
+   * pointer-move of a drag (what `onCommit`'s identity used to do) or silently
+   * goes stale on the one value someone forgets to list - `imageSize`, say,
+   * which arrives after `baseDataUrl` and decides where a placed shape lands.
+   */
+  useEffect(() => {
+    const down = (event: KeyboardEvent): void => handlersRef.current.onKeyDown(event);
+    const up = (event: KeyboardEvent): void => handlersRef.current.onKeyUp(event);
+    const blur = (): void => handlersRef.current.onBlur();
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
 
   const pointerPos = (event: React.PointerEvent<SVGElement>): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -1134,7 +1443,10 @@ export function AnnotationCanvas({
                 <svg
                   ref={svgRef}
                   role="group"
-                  aria-label="Annotation canvas. Drawing requires a pointer; annotations can be managed from the comment timeline."
+                  // In the tab order, and the browser's own focus ring is left
+                  // alone as the indicator: this is where the keyboard draws.
+                  tabIndex={0}
+                  aria-label="Annotation canvas. With a drawing tool active, Enter places a shape at the centre of the view; arrow keys move the selection and Shift with an arrow key resizes it. Freehand pen strokes need a pointer; annotations can also be managed from the comment timeline."
                   className={`absolute inset-0 h-full w-full ${
                     interactionMode === "move" ? "cursor-grab" : "cursor-crosshair"
                   }`}
@@ -1352,7 +1664,19 @@ export function AnnotationCanvas({
                           style={{ fontSize: `${inlineEditorFontSize}px` }}
                           value={selectedNote}
                           onChange={(event) => updateSelectedAnnotationNote(event.target.value)}
-                          onBlur={commitNoteIfDirty}
+                          onFocus={() =>
+                            (noteBaselineRef.current = selectedId
+                              ? { id: selectedId, value: selectedNote }
+                              : null)
+                          }
+                          onBlur={() => {
+                            commitNoteIfDirty();
+                            // Tab out of the textarea has nowhere to go (it is
+                            // the last focusable thing inside the SVG), so
+                            // without this the keyboard lands on `<body>` and
+                            // the next Tab wraps to the top of the sidebar.
+                            restoreFocusAfterNote(selectedId);
+                          }}
                           placeholder="Add comment for selected area"
                           rows={3}
                         />

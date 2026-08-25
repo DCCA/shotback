@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { EditorState } from "@/editor/use-editor-state";
 import { dataUrlByteLength, exportAnnotatedImage } from "@/lib/annotate";
 import { applyCrop, clampCrop, type Rect } from "@/lib/crop";
@@ -162,6 +162,11 @@ export interface EditorExports {
 export function useExports(state: EditorState, previousShareId?: string): EditorExports {
   const [savedShares, setSavedShares] = useState<LocalShareMeta[]>([]);
 
+  // How many of this tab's own share writes are in flight. Chrome delivers
+  // `onChanged` for a tab's own writes too, and every write here is already
+  // followed by an explicit refresh - see the listener below.
+  const ownWrites = useRef(0);
+
   const refreshSavedShares = useCallback(async (): Promise<void> => {
     try {
       setSavedShares(await listLocalShares());
@@ -170,8 +175,45 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     }
   }, []);
 
+  /** Run a write that touches `share:` keys, then re-list exactly once. */
+  const withOwnWrite = async (write: () => Promise<void>): Promise<void> => {
+    ownWrites.current += 1;
+    try {
+      await write();
+      await refreshSavedShares();
+    } finally {
+      ownWrites.current -= 1;
+    }
+  };
+
   useEffect(() => {
     void refreshSavedShares();
+  }, [refreshSavedShares]);
+
+  /**
+   * Follow the store, not just this tab's own writes. Two editor tabs are the
+   * normal way to build a batch (capture page A, capture page B), and a list
+   * read once on mount left the first tab showing one share with no way to
+   * pick up the second - the only refresh being a reload, which re-runs
+   * `autocapture=1` and throws that tab's annotations away.
+   *
+   * Only `share:` keys matter; `prefs` writes on every dropdown change and
+   * re-listing every share for that would be pure waste.
+   *
+   * And only *other* tabs' writes: this tab's own save/delete paths already
+   * re-list when they finish, so without `ownWrites` every one of them listed
+   * twice - two overlapping `listLocalShares` calls that can in principle
+   * resolve out of order and leave the older answer on screen.
+   */
+  useEffect(() => {
+    const onChanged = (changes: Record<string, unknown>, area: string): void => {
+      if (area !== "local" || ownWrites.current > 0) return;
+      if (!Object.keys(changes).some((key) => key.startsWith("share:"))) return;
+      void refreshSavedShares();
+    };
+
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
   }, [refreshSavedShares]);
 
   const createShareUrl = async (): Promise<void> => {
@@ -195,22 +237,24 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
         crop: view.crop
       });
       state.setLastExportSize(dataUrlByteLength(merged));
-      const share = await saveLocalShare({
-        imageDataUrl: merged,
-        annotations: view.annotations,
-        pageUrl: state.pageUrl,
-        generalFeedback: state.generalFeedback,
-        environment: state.environment,
-        previousShareId
+      let localUrl = "";
+      await withOwnWrite(async () => {
+        const share = await saveLocalShare({
+          imageDataUrl: merged,
+          annotations: view.annotations,
+          pageUrl: state.pageUrl,
+          generalFeedback: state.generalFeedback,
+          environment: state.environment,
+          previousShareId
+        });
+        localUrl = buildLocalShareUrl(share.id);
       });
-      const localUrl = buildLocalShareUrl(share.id);
       state.setShareUrl(localUrl);
       await navigator.clipboard.writeText(localUrl);
       state.setStatus({
         kind: "success",
         message: "Local share link generated and copied to clipboard."
       });
-      await refreshSavedShares();
     } catch (error) {
       state.setStatus({
         kind: "error",
@@ -221,10 +265,52 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     }
   };
 
+  /**
+   * Keep a copy of an export inside the extension itself. A Claude Code
+   * handoff writes real files to Downloads and puts a prompt on the clipboard,
+   * and until this existed that was the whole of the record: lose the
+   * clipboard or close the tab and the tool that made the capture could not
+   * show it to you, even though it lists every share with a thumbnail.
+   *
+   * Best effort, like the sidecar: a failure here costs the row and nothing
+   * else, and the status says so rather than claiming a clean copy. The share
+   * URL is deliberately not put on the clipboard - the clipboard holds the
+   * prompt, and a chip labelling it "share link copied" would be a lie.
+   *
+   * A share is always PNG (`createShareUrl` never passes the format pref
+   * either): the viewer renders it, and the batch handoff writes every share
+   * out as `cap-<i>.png`, so a JPEG stored here would put JPEG bytes in a file
+   * named `.png`. With the pref on PNG - the default - `exported` already is
+   * one and is reused rather than rendered a second time.
+   */
+  const saveShareForExport = async (exported: string, view: ExportView): Promise<boolean> => {
+    try {
+      const imageDataUrl =
+        state.exportFormat === "png"
+          ? exported
+          : await exportAnnotatedImage(state.baseDataUrl, view.annotations, {
+              generalFeedback: state.generalFeedback,
+              crop: view.crop
+            });
+      await withOwnWrite(() =>
+        saveLocalShare({
+          imageDataUrl,
+          annotations: view.annotations,
+          pageUrl: state.pageUrl,
+          generalFeedback: state.generalFeedback,
+          environment: state.environment,
+          previousShareId
+        }).then(() => undefined)
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const removeSavedShare = async (id: string): Promise<void> => {
     try {
-      await deleteLocalShare(id);
-      await refreshSavedShares();
+      await withOwnWrite(() => deleteLocalShare(id));
       state.setShareUrl((current) => (current === buildLocalShareUrl(id) ? "" : current));
     } catch (error) {
       state.setStatus({
@@ -406,6 +492,12 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       });
       await navigator.clipboard.writeText(prompt);
 
+      // Only now. The clipboard is what this button is *for*, and the Saved
+      // Shares row is a side record - with the format pref on JPEG the save
+      // re-renders the whole capture as a PNG first, which on a tall page is
+      // seconds of canvas work the paste should never wait behind.
+      const shared = await saveShareForExport(merged, view);
+
       const problems = [
         absolutePath
           ? ""
@@ -414,7 +506,8 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
           ? sidecar.path
             ? ""
             : "the JSON sidecar was saved but could not be linked, because its full path could not be resolved"
-          : "the JSON sidecar could not be saved, so the prompt does not link one"
+          : "the JSON sidecar could not be saved, so the prompt does not link one",
+        shared ? "" : "the capture could not be added to Saved Shares"
       ].filter(Boolean);
 
       state.setStatus(

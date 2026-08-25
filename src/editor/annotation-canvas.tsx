@@ -228,9 +228,15 @@ export function AnnotationCanvas({
   const discardNoteDraft = (): boolean => {
     const baseline = noteBaselineRef.current;
     noteBaselineRef.current = null;
-    if (!baseline || !noteDirtyRef.current) return false;
+    if (!baseline) return false;
+    const wasDirty = noteDirtyRef.current;
     noteDirtyRef.current = false;
 
+    // The empty-text branch runs *before* the dirty check, deliberately: a
+    // text annotation that was placed and never typed into is precisely the
+    // one worth removing, and gating it on "something was typed" left an
+    // invisible shape behind with a numbered pin, a timeline row, an
+    // `[text] (empty)` line in both prompts and an entry in the sidecar.
     const item = getAnnotations().find((entry) => entry.id === baseline.id);
     if (item?.tool === "text" && baseline.value === "") {
       // Goes through `removeAnnotation` like every other delete path, so it
@@ -238,6 +244,9 @@ export function AnnotationCanvas({
       removeAnnotation(baseline.id);
       return true;
     }
+
+    // Nothing typed and nothing to remove: the note is already its baseline.
+    if (!wasDirty) return false;
 
     setAnnotations((prev) =>
       prev.map((entry) => {
@@ -809,14 +818,25 @@ export function AnnotationCanvas({
         }
       }
 
+      // One guard for the whole keymap, not one per branch. `select.tsx`
+      // calls `preventDefault()` but never `stopPropagation()`, so every
+      // keystroke aimed at a Select still reaches this window listener - and
+      // the keys it uses are the keys the canvas uses: Escape closes the list
+      // (it must not also drop a crop marquee), Enter picks the highlighted
+      // option (it must not also apply the crop), a letter is typeahead, and
+      // Backspace pressed as a "go back" reflex on a focused trigger must not
+      // delete the selected annotation. Undo/redo above are deliberately
+      // outside it: Ctrl+Z is an app-wide shortcut the listbox never consumes.
+      if (inListbox) return;
+
       // A bare tool letter, with no modifier: Ctrl+C is a copy, not the crop
       // tool, and Alt combinations belong to the browser. Nothing to pick a
       // tool for before there is a capture, either - the palette is disabled
       // then, and the keyboard must not be a way around that.
       if (
         baseDataUrl &&
+        !isBusy &&
         !isTyping &&
-        !inListbox &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey

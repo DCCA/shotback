@@ -1573,6 +1573,13 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await editor.keyboard.press("a");
   expect(await toolIsActive(editor, "Box")).toBe(true);
   expect(await toolIsActive(editor, "Arrow")).toBe(false);
+  // The guard covers the *whole* keymap, not just the tool letters. `Select`
+  // calls preventDefault but never stopPropagation, so every keystroke aimed
+  // at an open list still reaches the canvas's window listener - and Backspace
+  // on a focused listbox is a "go back" reflex, which used to delete the
+  // selected annotation instead.
+  await editor.keyboard.press("Backspace");
+  await expect(rows).toHaveCount(2);
   // Escape closes the list and returns focus to the combobox button, which is
   // still inside the listbox guard - so hand focus back to the page before the
   // keyboard checks below.
@@ -1601,6 +1608,24 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await expect(rows).toHaveCount(3);
   await expect(boxes.nth(2).locator("rect").first()).toHaveAttribute("stroke", "#ef4444");
   await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+
+  // A crop marquee is the other thing those keys reach. Escape aimed at an
+  // open Zoom list closes the list and used to silently discard the marquee
+  // with it; Enter picked the highlighted option and applied the crop in the
+  // same keystroke. The marquee has to survive both.
+  await editor.keyboard.press("Escape");
+  await editor.keyboard.press("c");
+  await drag(at(60, 60), at(300, 260));
+  const marquee = editor.locator("#crop-region");
+  await expect(marquee).toHaveCount(1);
+
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("Escape");
+  await expect(marquee).toHaveCount(1);
+
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("Enter");
+  await expect(marquee).toHaveCount(1);
 
   await editor.close();
   await page.close();
@@ -2147,6 +2172,21 @@ test("the canvas draws, nudges and recovers from the keyboard alone", async () =
   await expect(announcer).toHaveText(/Redo/);
   // Never visible: it is a second live region, not a second banner.
   expect(await announcer.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+
+  // For a text annotation the note *is* the annotation, so one placed and then
+  // abandoned is removed rather than restored to an empty baseline. It used to
+  // survive whenever nothing had been typed - which is exactly the abandon
+  // case - leaving an invisible shape holding a numbered pin, a timeline row,
+  // an `[text] (empty)` line in both prompts and an entry in the sidecar.
+  const placedRows = await rows.count();
+  await canvas.focus();
+  await editor.keyboard.press("t");
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(placedRows + 1);
+  await expect(note).toHaveCount(1);
+  await editor.keyboard.press("Escape");
+  await expect(rows).toHaveCount(placedRows);
+  await expect(note).toHaveCount(0);
 
   await editor.close();
   await page.close();

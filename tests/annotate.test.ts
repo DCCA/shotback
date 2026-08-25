@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exportAnnotatedImage,
   pixelateRegion,
+  redactionBounds,
   selectFeedbackRenderMode
 } from "../src/lib/annotate";
 import { applyCrop, type Rect } from "../src/lib/crop";
@@ -513,5 +514,43 @@ describe("pixelateRegion", () => {
     });
 
     expect(calls.filter((call) => call.name === "drawImage")).toHaveLength(0);
+  });
+});
+
+describe("redactionBounds", () => {
+  it("anchors a crop-clipped region where the export does, not at its un-clipped corner", () => {
+    // A crop whose left edge is not on a block boundary (505 % 12 !== 0), with
+    // a redaction that starts outside it - the case where a preview drawn in
+    // image space and an export drawn in crop space disagree.
+    const crop: Rect = { x: 505, y: 100, width: 400, height: 300 };
+    const region = redaction({ x: 490, y: 150, width: 120, height: 40 });
+    const image = { width: 1200, height: 800 };
+
+    const [clipped] = applyCrop([region], crop) as RedactAnnotation[];
+    // What the export pixelates: the visible part, measured from the crop.
+    expect(clipped.x).toBe(0);
+    const exported = redactionBounds(clipped, { width: crop.width, height: crop.height })!;
+    expect(exported).toEqual({ x: 0, y: 50, width: 105, height: 40 });
+
+    const seams = (start: number, width: number): number[] =>
+      Array.from({ length: Math.ceil(width / 12) }, (_, i) => start + i * 12);
+
+    // Back in image px, the export's block seams start at the crop's edge...
+    const exportSeams = seams(crop.x + exported.x, exported.width);
+    expect(exportSeams[0]).toBe(505);
+
+    // ...where pixelating the whole region off the untouched image would start
+    // them 15px earlier and land every seam somewhere else. That is the
+    // divergence the canvas overlay avoids by rendering the export's own view.
+    const naive = redactionBounds(region, image)!;
+    const naiveSeams = seams(naive.x, naive.width);
+    expect(naiveSeams[0]).toBe(490);
+    expect(exportSeams.some((seam) => naiveSeams.includes(seam))).toBe(false);
+  });
+
+  it("returns null for a region the canvas has no room for", () => {
+    expect(redactionBounds(redaction({ x: 1200, width: 40 }), { width: 1200, height: 800 })).toBe(
+      null
+    );
   });
 });

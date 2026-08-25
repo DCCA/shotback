@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes, shareLabel } from "@/editor/annotation-geometry";
@@ -35,20 +35,45 @@ export function SavedShares({
 }: SavedSharesProps): JSX.Element {
   const [showSavedShares, setShowSavedShares] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useTimedConfirm<string>(DELETE_CONFIRM_MS);
+  const remove = useTimedConfirm<string>(DELETE_CONFIRM_MS);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  // The same map, readable synchronously: the effect below has to know what is
+  // already loaded without listing state as a dependency of its own loader.
+  const loaded = useRef<Record<string, string>>({});
 
-  // Thumbnails are object URLs over the stored blobs, loaded only while the
-  // list is open and revoked on the way out - a share's PNG is a full-page
-  // capture, so holding fifty of them decoded would cost far more than the
-  // 40px they are shown at.
+  /**
+   * Thumbnails are object URLs over the stored blobs, loaded on demand - a
+   * share's PNG is a full-page capture, so reading every one up front would
+   * cost far more than the 40px they are shown at.
+   *
+   * Diffed rather than rebuilt. `shares` is a fresh array after every refresh
+   * (a delete, a new share), and tearing the map down on identity change made
+   * a single delete blank every row to grey and re-read every blob from
+   * IndexedDB. So: revoke only the ids that left, load only the ids that are
+   * missing.
+   *
+   * ponytail: closing the list keeps what it loaded, so reopening is instant
+   * rather than a second pass of blank rows. Bounded by the retention cap
+   * (50 shares) and released on unmount below; if that ever matters, revoke on
+   * close and accept the reload.
+   */
   useEffect(() => {
+    const wanted = new Set(shares.map((share) => share.id));
+    const kept: Record<string, string> = {};
+    for (const [id, url] of Object.entries(loaded.current)) {
+      if (wanted.has(id)) kept[id] = url;
+      else URL.revokeObjectURL(url);
+    }
+    loaded.current = kept;
+    // Deliberately no `setThumbnails` here: a departed share is not rendered,
+    // so its stale entry is invisible and goes on the next load's spread.
+    // Publishing it synchronously would only cascade a render per refresh.
     if (!showSavedShares) return;
-    let live = true;
-    const created: string[] = [];
 
+    let live = true;
     void (async () => {
       for (const share of shares) {
+        if (loaded.current[share.id]) continue;
         let url: string | null = null;
         try {
           url = await getLocalShareImageUrl(share);
@@ -60,17 +85,24 @@ export function SavedShares({
           URL.revokeObjectURL(url);
           return;
         }
-        created.push(url);
-        setThumbnails((current) => ({ ...current, [share.id]: url }));
+        loaded.current = { ...loaded.current, [share.id]: url };
+        setThumbnails(loaded.current);
       }
     })();
 
     return () => {
       live = false;
-      created.forEach((url) => URL.revokeObjectURL(url));
-      setThumbnails({});
     };
   }, [shares, showSavedShares]);
+
+  // The editor tab outlives the list, so what it still holds is released here.
+  useEffect(
+    () => () => {
+      Object.values(loaded.current).forEach((url) => URL.revokeObjectURL(url));
+      loaded.current = {};
+    },
+    []
+  );
 
   // Derived from the live list, not from the Set alone, so a share deleted
   // while ticked cannot linger in the batch.
@@ -111,7 +143,7 @@ export function SavedShares({
           <ul className="m-0 grid list-none gap-2 p-0">
             {shares.map((share) => {
               const title = shareTitle(share);
-              const armed = confirmDelete === share.id;
+              const armed = remove.armed === share.id;
               return (
                 <li key={share.id}>
                   <div className="grid grid-cols-[auto_auto_1fr] items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
@@ -171,17 +203,17 @@ export function SavedShares({
                           and the second deletes. It reverts by itself, so a
                           prompt left armed cannot be hit by a later click. */}
                       {armed ? (
-                        <>
+                        // Escape cancels and the trigger takes focus back when
+                        // this goes, timed revert included - see
+                        // `useTimedConfirm`.
+                        <span className="contents" onKeyDown={remove.onKeyDown}>
                           <Button
                             type="button"
                             variant="destructive"
                             size="sm"
                             autoFocus
                             aria-label={`Confirm deleting saved share for ${title}`}
-                            onClick={() => {
-                              setConfirmDelete(null);
-                              onDelete(share.id);
-                            }}
+                            onClick={remove.onConfirm(() => onDelete(share.id))}
                           >
                             Confirm
                           </Button>
@@ -189,19 +221,20 @@ export function SavedShares({
                             type="button"
                             variant="secondary"
                             size="sm"
-                            onClick={() => setConfirmDelete(null)}
+                            onClick={() => remove.arm(null)}
                           >
                             Cancel
                           </Button>
-                        </>
+                        </span>
                       ) : (
                         <Button
                           type="button"
+                          ref={remove.triggerRef(share.id)}
                           variant="secondary"
                           size="sm"
                           className="text-destructive hover:bg-destructive/10"
                           aria-label={`Delete saved share for ${title}`}
-                          onClick={() => setConfirmDelete(share.id)}
+                          onClick={() => remove.arm(share.id)}
                         >
                           Delete
                         </Button>

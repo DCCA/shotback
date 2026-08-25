@@ -7,7 +7,7 @@ import { moveAnnotation, uid } from "@/editor/annotation-geometry";
 import { StatusToast } from "@/editor/status-toast";
 import { ToolPalette } from "@/editor/tool-palette";
 import type { EditorState } from "@/editor/use-editor-state";
-import { arrowHeadPoints, pixelateRegion } from "@/lib/annotate";
+import { arrowHeadPoints, pixelateRegion, redactionBounds } from "@/lib/annotate";
 import {
   applyBoxResizeDelta,
   BOX_RESIZE_HANDLES,
@@ -147,6 +147,9 @@ export function AnnotationCanvas({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  // The export's canvas, reproduced: kept across renders so a redaction drag
+  // reuses one allocation instead of one per pointer-move.
+  const bufferRef = useRef<HTMLCanvasElement | null>(null);
   // Alt is held down. Only ever a reveal for the *selected* redaction, so it
   // costs one boolean and cannot uncover something the user is not looking at.
   const [altHeld, setAltHeld] = useState(false);
@@ -418,34 +421,96 @@ export function AnnotationCanvas({
 
   /**
    * Paint every redaction onto the overlay canvas exactly as the export will
-   * burn it in - the same `pixelateRegion`, the same block size, reading from
-   * the `<img>` instead of from the export's own canvas. That is the point: a
-   * hatch only promised the pixels would go, so "is enough of that address
-   * covered?" was a question the editor could not answer until the file had
-   * already been written.
+   * burn it in. A hatch only promised the pixels would go, so "is enough of
+   * that address covered?" was a question the editor could not answer until
+   * the file had already been written.
    *
-   * Sizing the canvas clears it, which is also how an undone, deleted or moved
-   * redaction stops being drawn. It runs after every annotation change and
-   * after the image reports its size - `onLoad` sets a fresh `imageSize`
-   * object, so a second capture of identical dimensions still re-runs this.
+   * "Exactly" is the whole requirement, and it takes more than calling the
+   * same helper. The export renders `exportView`: the crop clamped, the
+   * annotations shifted into *crop space* by `applyCrop` (which also clips a
+   * redaction the crop cuts through), onto a crop-sized canvas, each region
+   * pixelated from the canvas **as the region before it left it**. Two things
+   * follow that a naive "pixelate each region off the `<img>`" gets wrong: a
+   * redaction the crop cuts through would block from its un-clipped corner,
+   * landing a different block grid than the export's; and overlapping
+   * redactions would each read pristine pixels instead of stacking. So the
+   * buffer below reproduces the export's canvas step for step, and only the
+   * rects it actually touched are copied onto the overlay, shifted back into
+   * display coordinates - which is also what keeps the overlay transparent
+   * everywhere the capture is untouched.
+   *
+   * Sizing a canvas clears it, which is also how an undone, deleted or moved
+   * redaction stops being drawn - and with no redactions at all the overlay is
+   * sized to nothing rather than holding a capture-sized backing store. It
+   * runs after every annotation, crop or reveal change and after the image
+   * reports its size (`onLoad` sets a fresh `imageSize` object, so a second
+   * capture of identical dimensions still re-runs this).
+   *
+   * ponytail: the buffer is a full view-sized canvas, redrawn per change - a
+   * few MB of copy per pointer-move while dragging a redaction on a very tall
+   * capture. Reused across renders rather than reallocated. If that ever
+   * shows, the upgrade is to buffer only the union of the redactions' bounds.
    */
   useEffect(() => {
     const canvas = overlayRef.current;
     if (!canvas) return;
+
+    // Exactly the region and the annotation list the export renders.
+    const viewRect: Rect = crop
+      ? clampCrop(crop, imageSize)
+      : { x: 0, y: 0, width: imageSize.width, height: imageSize.height };
+    const visible = redactions(crop ? applyCrop(annotations, viewRect) : annotations).filter(
+      (region) => region.id !== revealedId
+    );
+
+    const image = imageRef.current;
+    if (visible.length === 0 || !image?.complete || viewRect.width <= 0 || viewRect.height <= 0) {
+      canvas.width = 0;
+      canvas.height = 0;
+      return;
+    }
+
     canvas.width = imageSize.width;
     canvas.height = imageSize.height;
-
-    const regions = redactions(annotations);
-    const image = imageRef.current;
-    if (regions.length === 0 || !image?.complete) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    for (const region of regions) {
-      if (region.id === revealedId) continue;
-      pixelateRegion(ctx, image, region, imageSize);
+    const buffer = (bufferRef.current ??= document.createElement("canvas"));
+    buffer.width = viewRect.width;
+    buffer.height = viewRect.height;
+    const bufferCtx = buffer.getContext("2d");
+    if (!bufferCtx) return;
+
+    const size = { width: viewRect.width, height: viewRect.height };
+    bufferCtx.drawImage(
+      image,
+      viewRect.x,
+      viewRect.y,
+      viewRect.width,
+      viewRect.height,
+      0,
+      0,
+      viewRect.width,
+      viewRect.height
+    );
+    for (const region of visible) pixelateRegion(bufferCtx, buffer, region, size);
+
+    for (const region of visible) {
+      const bounds = redactionBounds(region, size);
+      if (!bounds) continue;
+      ctx.drawImage(
+        buffer,
+        bounds.x,
+        bounds.y,
+        bounds.width,
+        bounds.height,
+        bounds.x + viewRect.x,
+        bounds.y + viewRect.y,
+        bounds.width,
+        bounds.height
+      );
     }
-  }, [annotations, baseDataUrl, imageSize, revealedId]);
+  }, [annotations, baseDataUrl, crop, imageSize, revealedId]);
 
   // The inline editor is gone (deselected, unmounted, or moved to another
   // annotation): write the pending comment before the selection changes.

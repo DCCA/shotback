@@ -56,11 +56,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
   // A capture replaces the image every annotation is anchored to, so with work
   // on screen the button asks first. Nothing to lose with an empty canvas, so
   // nothing is asked there.
-  const [captureArmed, setCaptureArmed] = useTimedConfirm<boolean>(CAPTURE_CONFIRM_MS);
+  const capture = useTimedConfirm<boolean>(CAPTURE_CONFIRM_MS);
   const captureWouldDiscard = annotations.length > 0;
 
   const startCapture = (): void => {
-    setCaptureArmed(null);
+    capture.arm(null);
     onCapture();
   };
 
@@ -73,29 +73,37 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
       <CardHeader className="space-y-3">
         <div className="flex items-center justify-between">
           <CardTitle as="h1">Shotback Editor</CardTitle>
-          {/* The one place the annotation count is stated in the sidebar. The
-              timeline's own badge counts the rows it is showing, which is the
-              same number said about the list it labels, not a second readout
-              of the same fact floating on its own line. */}
+          {/* The one place the annotation count is stated at all: the timeline
+              heading dropped its badge, so there is a single number to trust
+              rather than two that can disagree. */}
           <Badge variant="accent">{plural(noteCount, "note")}</Badge>
         </div>
-        {captureArmed ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="destructive" disabled={isBusy} autoFocus onClick={startCapture}>
+        {capture.armed ? (
+          // Escape cancels, and the trigger takes focus back when the pair
+          // goes - both from `useTimedConfirm`, so the timed revert restores
+          // the keyboard exactly the way an explicit Cancel does.
+          <div className="grid grid-cols-2 gap-2" onKeyDown={capture.onKeyDown}>
+            <Button
+              variant="destructive"
+              disabled={isBusy}
+              autoFocus
+              onClick={capture.onConfirm(onCapture)}
+            >
               Replace capture?
             </Button>
-            <Button variant="secondary" disabled={isBusy} onClick={() => setCaptureArmed(null)}>
+            <Button variant="secondary" disabled={isBusy} onClick={() => capture.arm(null)}>
               Cancel
             </Button>
           </div>
         ) : (
           <Button
+            ref={capture.triggerRef(true)}
             // Primary only while it is the way in. Once there is a capture the
             // session's destination is the handoff below, and two filled
             // buttons in one column is no hierarchy at all.
             variant={baseDataUrl ? "secondary" : "default"}
             disabled={isBusy}
-            onClick={() => (captureWouldDiscard ? setCaptureArmed(true) : startCapture())}
+            onClick={() => (captureWouldDiscard ? capture.arm(true) : startCapture())}
           >
             Capture Page
           </Button>
@@ -198,8 +206,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           >
             Copy for Claude Code
           </Button>
+          {/* Names the format actually in force: with the pref on JPEG,
+              "Saves PNG" was simply wrong about the file it writes. */}
           <p className="m-0 -mt-1 text-xs text-muted-foreground">
-            Saves PNG + JSON to Downloads/shotback and copies the prompt.
+            Saves {exportFormat === "jpeg" ? "JPEG" : "PNG"} + JSON to Downloads/shotback and copies
+            the prompt.
           </p>
           <Button
             variant="secondary"
@@ -241,8 +252,8 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         <div className="space-y-1 text-sm">
           {redactedCount > 0 ? (
             <p className="m-0 text-muted-foreground">
-              {plural(redactedCount, "redacted region")} (pixelated in every export and in the saved
-              share)
+              {plural(redactedCount, "redacted region")} (pixelated here, and in every export and
+              saved share)
             </p>
           ) : null}
           {lastExportSize !== null ? (

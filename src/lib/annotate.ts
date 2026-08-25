@@ -44,21 +44,38 @@ const REDACT_BLOCK_SIZE = 12;
  * the same blocks live over the capture. Exported so those two paths cannot
  * drift: what the editor shows is what every export burns in.
  *
- * Clamped to `size` because the region is drawn by hand and can hang off the
- * edge, and skipped when it has no area - `drawImage` throws on a zero-sized
- * source rect, and there is nothing to hide in one anyway.
+ * Clamped to `size` by `redactionBounds` because the region is drawn by hand
+ * and can hang off the edge, and skipped when it has no area - `drawImage`
+ * throws on a zero-sized source rect, and there is nothing to hide in one
+ * anyway.
  */
+/**
+ * Where one redaction actually lands on a canvas of `size`: whole px, clamped
+ * to the canvas, or `null` when nothing of it is left to hide. Exported
+ * because the editor's live overlay has to copy back exactly the rects
+ * `pixelateRegion` touched, and reproducing this rounding by hand is how the
+ * preview and the export would start disagreeing by a pixel.
+ */
+export function redactionBounds(
+  region: RedactAnnotation,
+  size: { width: number; height: number }
+): Rect | null {
+  const x = Math.max(0, Math.floor(region.x));
+  const y = Math.max(0, Math.floor(region.y));
+  const width = Math.min(Math.ceil(region.x + region.width), size.width) - x;
+  const height = Math.min(Math.ceil(region.y + region.height), size.height) - y;
+  return width > 0 && height > 0 ? { x, y, width, height } : null;
+}
+
 export function pixelateRegion(
   ctx: CanvasRenderingContext2D,
   source: CanvasImageSource,
   region: RedactAnnotation,
   size: { width: number; height: number }
 ): void {
-  const x = Math.max(0, Math.floor(region.x));
-  const y = Math.max(0, Math.floor(region.y));
-  const width = Math.min(Math.ceil(region.x + region.width), size.width) - x;
-  const height = Math.min(Math.ceil(region.y + region.height), size.height) - y;
-  if (width <= 0 || height <= 0) return;
+  const bounds = redactionBounds(region, size);
+  if (!bounds) return;
+  const { x, y, width, height } = bounds;
 
   const blocksWide = Math.ceil(width / REDACT_BLOCK_SIZE);
   const blocksHigh = Math.ceil(height / REDACT_BLOCK_SIZE);

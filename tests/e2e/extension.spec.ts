@@ -1038,6 +1038,40 @@ function pixelDetail(
 }
 
 /**
+ * Mean absolute luminance difference between the same region of two images (or
+ * canvases). Zero means the two are showing identical pixels there - which is
+ * the only honest way to state "the editor's preview IS the export".
+ */
+async function regionDelta(
+  a: Locator,
+  aRegion: { x: number; y: number; width: number; height: number },
+  b: Locator,
+  bRegion: { x: number; y: number; width: number; height: number }
+): Promise<number> {
+  const read = (locator: Locator, rect: typeof aRegion): Promise<number[]> =>
+    locator.evaluate((el, r) => {
+      const source = el as HTMLImageElement | HTMLCanvasElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = "naturalWidth" in source ? source.naturalWidth : source.width;
+      canvas.height = "naturalHeight" in source ? source.naturalHeight : source.height;
+      const c = canvas.getContext("2d")!;
+      c.drawImage(source, 0, 0);
+      const { data } = c.getImageData(r.x, r.y, r.width, r.height);
+      const out: number[] = [];
+      for (let i = 0; i < data.length; i += 4) {
+        out.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      }
+      return out;
+    }, rect);
+
+  const [left, right] = await Promise.all([read(a, aRegion), read(b, bRegion)]);
+  expect(left).toHaveLength(right.length);
+  let total = 0;
+  for (let i = 0; i < left.length; i += 1) total += Math.abs(left[i] - right[i]);
+  return total / left.length;
+}
+
+/**
  * The alpha of one pixel of the live redaction overlay, in image px. 255 means
  * the overlay is painting there (the capture underneath is hidden), 0 means it
  * is not - which is the whole of "Alt reveals the original".
@@ -1103,7 +1137,7 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await expect(editor.locator("ol li")).toHaveCount(0);
   // The sidebar counts them apart from the notes, and says where they land.
   await expect(editor.getByText("0 notes")).toBeVisible();
-  await expect(editor.getByText("1 redacted region (pixelated")).toBeVisible();
+  await expect(editor.getByText("1 redacted region (pixelated here,")).toBeVisible();
 
   // ...and the canvas shows the pixels actually gone, not a hatch promising
   // they will be: the overlay paints the region, its detail has collapsed the
@@ -1151,6 +1185,47 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   // share still carries the detail it was captured with.
   expect(await pixelDetail(shared, control)).toBeGreaterThan(controlBefore * 0.7);
 
+  // The preview must not merely *look* pixelated - it has to be the export.
+  // A crop whose left edge cuts through the redaction is where that stops
+  // being free: the export clips the region and blocks it from the crop's own
+  // edge, so a preview that blocked the whole region off the untouched capture
+  // would land a different grid. Compare the two, pixel for pixel.
+  await pickTool(editor, "Crop");
+  await editor.mouse.move(onScreen(241, 120).x, onScreen(241, 120).y);
+  await editor.mouse.down();
+  await editor.mouse.move(onScreen(700, 400).x, onScreen(700, 400).y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.keyboard.press("Enter");
+  await expect(editor.locator("#capture-window")).toHaveAttribute("data-crop", /\d+/);
+
+  const crop = await appliedCrop(editor);
+  // The crop really does cut the region (235..365) rather than clear it.
+  expect(crop.x).toBeGreaterThan(235);
+  expect(crop.x).toBeLessThan(261);
+
+  await editor.getByRole("button", { name: "Copy Local Share Link" }).click();
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Local share link generated"
+  );
+  const croppedHref = (await editor.locator("a[href*='viewer.html']").getAttribute("href"))!;
+  const croppedViewer = await ctx.newPage();
+  await croppedViewer.goto(croppedHref);
+  const croppedShare = croppedViewer.locator("img[alt='Annotated share']");
+  await expect(croppedShare).toHaveJSProperty("complete", true, { timeout: 15_000 });
+
+  // A window wholly inside the clipped redaction, addressed in image px on the
+  // canvas and in crop px in the export - the same pixels, two coordinate
+  // systems. Identical blocks mean identical `drawImage` calls upstream.
+  const window = { x: crop.x + 4, y: 165, width: 100, height: 30 };
+  const delta = await regionDelta(overlay, window, croppedShare, {
+    x: window.x - crop.x,
+    y: window.y - crop.y,
+    width: window.width,
+    height: window.height
+  });
+  expect(delta).toBeLessThan(1);
+
+  await croppedViewer.close();
   await viewer.close();
   await editor.close();
   await page.close();
@@ -1368,13 +1443,29 @@ test("destructive actions confirm in place before they take anything away", asyn
   // A capture replaces the image every annotation is anchored to, so with work
   // on screen the button asks - in place, not through a `window.confirm` - and
   // cancelling keeps the work.
-  await editor.getByRole("button", { name: "Capture Page" }).click();
+  const captureButton = editor.getByRole("button", { name: "Capture Page" });
+  await captureButton.click();
   const replace = editor.getByRole("button", { name: "Replace capture?" });
   await expect(replace).toBeVisible();
   await editor.getByRole("button", { name: "Cancel" }).click();
   await expect(replace).toHaveCount(0);
   await expect(notes).toHaveCount(1);
-  await expect(editor.getByRole("button", { name: "Capture Page" })).toBeVisible();
+  await expect(captureButton).toBeVisible();
+
+  // Driven from the keyboard, the pair must hand the keyboard back. The pair
+  // replaces the trigger, so confirming, cancelling or waiting out the timer
+  // unmounts whatever had focus - without the restore, Escape here would drop
+  // the user on `document.body` with nothing to tab from.
+  const focused = (): Promise<string> =>
+    editor.evaluate(() => document.activeElement?.textContent?.trim() ?? "(body)");
+  await captureButton.focus();
+  await editor.keyboard.press("Enter");
+  await expect(replace).toBeVisible();
+  expect(await focused()).toBe("Replace capture?");
+  await editor.keyboard.press("Escape");
+  await expect(replace).toHaveCount(0);
+  expect(await focused()).toBe("Capture Page");
+  await expect(notes).toHaveCount(1);
 
   // A saved share is the only copy of an annotated capture that outlives the
   // tab, so its Delete is two steps as well: the first click only arms the row.
@@ -1396,15 +1487,24 @@ test("destructive actions confirm in place before they take anything away", asyn
   const before = await rows.count();
   expect(before).toBeGreaterThan(0);
 
-  await rows
-    .first()
-    .getByRole("button", { name: /^Delete saved share/ })
-    .click();
+  const deleteButton = rows.first().getByRole("button", { name: /^Delete saved share/ });
+  const confirmButton = rows.first().getByRole("button", { name: /^Confirm deleting/ });
+  // A double-click must not delete: the second click lands after the pair has
+  // swapped in, on a button the user has had no time to read.
+  await deleteButton.dblclick();
   await expect(rows).toHaveCount(before);
-  await rows
-    .first()
-    .getByRole("button", { name: /^Confirm deleting/ })
-    .click();
+  await expect(confirmButton).toBeVisible();
+  await editor.keyboard.press("Escape");
+  await expect(confirmButton).toHaveCount(0);
+  expect(await editor.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Delete");
+
+  await deleteButton.click();
+  await expect(rows).toHaveCount(before);
+  // Deliberately waited out: the confirm ignores activation for its first
+  // quarter-second (the guard that makes the double-click above safe), and a
+  // real second click arrives well after that.
+  await editor.waitForTimeout(300);
+  await confirmButton.click();
   await expect(rows).toHaveCount(before - 1);
 
   await editor.close();
@@ -1423,8 +1523,9 @@ test("editor page renders the capture UI", async () => {
   const primary = editor.locator("#editor-actions button.bg-primary");
   await expect(primary).toHaveCount(1);
   await expect(primary).toHaveText("Copy for Claude Code");
+  // Format-aware: the caption must name the file the export actually writes.
   await expect(
-    editor.getByText("Saves PNG + JSON to Downloads/shotback and copies the prompt.")
+    editor.getByText(/^Saves (PNG|JPEG) \+ JSON to Downloads\/shotback and copies the prompt\.$/)
   ).toBeVisible();
   // The order the column reads in: edit, then send, then take the file.
   // The download's format suffix is a persisted pref, so it is normalised out.

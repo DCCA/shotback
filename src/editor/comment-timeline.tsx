@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { annotationSummary } from "@/lib/feedback";
 import { numberAnnotations } from "@/lib/numbering";
@@ -24,10 +23,10 @@ export function CommentTimeline({
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
-        <Badge>{rows.length}</Badge>
-      </div>
+      {/* No count badge: the sidebar header states the annotation count once,
+          and two badges saying the same number is one more thing that can end
+          up disagreeing. The list below is its own answer to "how many". */}
+      <h2 className="m-0 text-sm font-semibold">Comment Timeline</h2>
       {rows.length === 0 ? (
         <p className="m-0 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
           No comments yet.

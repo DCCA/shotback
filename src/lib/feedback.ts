@@ -18,6 +18,31 @@ export function annotationSummary(annotation: Annotation): string {
 }
 
 /**
+ * The shortest honest name for the element an annotation covers, for the one
+ * muted line the comment timeline shows under a note. The full `cssPath` is a
+ * tooltip's worth of text, not a row's - and every token here was already
+ * clamped to 50 chars where the context was read, since all of it is
+ * page-controlled.
+ *
+ * The point of showing it at all is that `elementsFromPoint` always answers
+ * *something*: a box a few px off its target still resolves a confident
+ * selector, and until the export nothing in the editor said which one.
+ *
+ * It lives here rather than beside `cssPath` in `dom-context.ts` because that
+ * module is the content script's only import - see the note at the end of it.
+ */
+export function describeElement(
+  context: Pick<ElementContext, "tag" | "id" | "classes" | "cssPath">
+): string {
+  if (context.id) return `${context.tag}#${context.id}`;
+  if (context.classes.length > 0) return `${context.tag}.${context.classes[0]}`;
+  // No id and no class: the last step of the path is the most specific thing
+  // known about it (`div:nth-of-type(2)`), which is itself the useful signal -
+  // the box landed on an anonymous wrapper, not on a named control.
+  return context.cssPath.split(">").pop()?.trim() || context.tag;
+}
+
+/**
  * The note an annotation contributes to the prompt list and to the exported
  * legend, placeholders included. Both call this so their wording cannot drift.
  */

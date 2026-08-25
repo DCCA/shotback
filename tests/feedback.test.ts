@@ -3,7 +3,8 @@ import {
   annotationSummary,
   buildBatchPrompt,
   buildClaudeCodePrompt,
-  buildExternalLlmPrompt
+  buildExternalLlmPrompt,
+  describeElement
 } from "../src/lib/feedback";
 import type {
   ArrowAnnotation,
@@ -1004,5 +1005,32 @@ describe("buildBatchPrompt", () => {
     );
     expect(prompt.split("\n")[0]).toBe("Review this screenshot.");
     expect(prompt).toContain("1. (unknown) - 1 annotation - /d/cap-0.png");
+  });
+});
+
+describe("describeElement", () => {
+  it("prefers the id, then the first class", () => {
+    expect(
+      describeElement({ tag: "button", id: "buy", classes: ["cta", "big"], cssPath: "#buy" })
+    ).toBe("button#buy");
+    expect(
+      describeElement({ tag: "button", classes: ["cta", "big"], cssPath: "section > button.cta" })
+    ).toBe("button.cta");
+  });
+
+  it("falls back to the path's last step for an anonymous element", () => {
+    // The signal a box landed on a spacer rather than a control: no id, no
+    // class, just a position among siblings.
+    expect(
+      describeElement({
+        tag: "div",
+        classes: [],
+        cssPath: "html > body > main > div:nth-of-type(2)"
+      })
+    ).toBe("div:nth-of-type(2)");
+  });
+
+  it("falls back to the tag when there is no path either", () => {
+    expect(describeElement({ tag: "span", classes: [], cssPath: "" })).toBe("span");
   });
 });

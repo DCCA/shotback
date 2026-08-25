@@ -295,6 +295,16 @@ test("extension loads with no popup and the downloads permission", async () => {
   expect(manifest.action?.default_popup).toBeUndefined();
   expect(manifest.permissions).toContain("downloads");
   expect(manifest.commands?._execute_action?.suggested_key?.default).toBe("Alt+Shift+S");
+
+  // The content script is a *classic* script (the service worker is the only
+  // `"type": "module"` entry), so it has to be self-contained. The moment a
+  // helper it imports is also imported by the editor, Vite emits it as a
+  // shared chunk and `content.js` starts with `import ... from "./assets/..."`
+  // - which a classic content script cannot execute. It then never loads at
+  // all, and every capture dies with "Receiving end does not exist", far from
+  // the change that caused it. Cheaper to fail here, on the built file.
+  const content = await readFile(path.join(EXT, "content.js"), "utf8");
+  expect(content).not.toMatch(/(^|[;}\s])import\s*[{*"']/);
 });
 
 test("capture notice shows, hides for the frame, and is removed", async () => {
@@ -688,6 +698,21 @@ for (const [name, headerHeight] of [
       const centre = await boxOverCta(editor, img, headerHeight);
       await expect(rows).toHaveCount(3);
       await waitForInspection(editor, inspectedBefore);
+
+      // ...and the editor says so *before* the export: the element the box
+      // landed on is one muted line in its timeline row, with the whole path
+      // on hover. `elementsFromPoint` always answers something, so a box a few
+      // px off its target still resolves a confident selector - which used to
+      // surface for the first time in the copied prompt.
+      const cta = rows.nth(2);
+      await expect(cta).toContainText("button.cta");
+      await expect(cta.locator("[title]")).toHaveAttribute(
+        "title",
+        "#app > section.hero > button.cta"
+      );
+      // The text annotation landed on nothing named, and says that rather than
+      // showing nothing at all.
+      await expect(rows.nth(1)).toContainText(/div|body|main|span/);
 
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain(

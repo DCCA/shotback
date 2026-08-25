@@ -436,19 +436,43 @@ for (const [name, headerHeight] of [
       // "missing" rather than a thrown dereference: the toast clears itself
       // after 4s, and a slow machine could get here after it has gone. That is
       // a real failure, but it should read as one rather than as a TypeError.
+      //
+      // And it is docked to the *bottom* of that pane: the tool palette runs
+      // along the top of the same card, so a toast up there covered the colour
+      // swatches and (being pointer-events-auto) ate clicks aimed at them for
+      // the whole 4s it was up.
       const toastInCanvasPane = await editor.evaluate(() => {
         const node = document.querySelector('[aria-live="polite"] p.font-medium');
         if (!node) return "missing";
         const pane = document.querySelectorAll("main > div")[1].getBoundingClientRect();
         const toast = node.getBoundingClientRect();
-        return (
-          toast.left >= pane.left &&
-          toast.right <= pane.right &&
-          toast.top >= pane.top &&
-          toast.bottom <= pane.bottom
-        );
+        const swatches = document
+          .querySelector('[role="group"][aria-label="Annotation color"]')!
+          .getBoundingClientRect();
+        return {
+          inPane:
+            toast.left >= pane.left &&
+            toast.right <= pane.right &&
+            toast.top >= pane.top &&
+            toast.bottom <= pane.bottom,
+          clearOfPalette: toast.top > swatches.bottom,
+          // Not just z-order: the toast is pointer-events-auto, so what
+          // matters is which element a click on the swatch row actually hits.
+          swatchesClickable: Boolean(
+            document
+              .elementFromPoint(
+                (swatches.left + swatches.right) / 2,
+                (swatches.top + swatches.bottom) / 2
+              )
+              ?.closest('[role="group"][aria-label="Annotation color"]')
+          )
+        };
       });
-      expect(toastInCanvasPane).toBe(true);
+      expect(toastInCanvasPane).toMatchObject({
+        inPane: true,
+        clearOfPalette: true,
+        swatchesClickable: true
+      });
       // A success clears itself rather than sitting there through the next
       // three exports, and capture progress leaves nothing behind either.
       await expect(editor.locator('[aria-live="polite"] p.font-medium')).toHaveCount(0, {

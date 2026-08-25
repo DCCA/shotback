@@ -25,8 +25,9 @@
 
 - [x] 4.1 Delete the `setInteractionMode("move")` flip in
       `commitNewAnnotation`
-- [x] 4.2 Bind `V B A T R C` in the existing keydown, behind `isTyping` and
-      with no Ctrl/Meta/Alt
+- [x] 4.2 Bind `V B A T R C` in the existing keydown, behind `isTyping`, a
+      `[role="combobox"],[role="listbox"]` check (the custom `Select`'s
+      typeahead is not a form field), a capture guard and no Ctrl/Meta/Alt
 
 ## 5. Sidebar
 
@@ -48,6 +49,22 @@
 - [x] 7.1 `npm run check` green (typecheck, lint, 247 unit tests, build)
 - [x] 7.2 `npm run format:check` green
 - [x] 7.3 `npm run test:e2e` green (11 tests)
-- [x] 7.4 Colour-literal grep zero
+- [x] 7.4 Tailwind colour-utility grep zero (hex data lives in `SWATCHES`)
 - [x] 7.5 Light + dark screenshots read and verified
 - [x] 7.6 CLAUDE.md and README updated
+
+## 8. Review round 1
+
+- [x] 8.1 Scope the hotkey branch away from `[role="combobox"],[role="listbox"]`
+      (the custom `Select`'s typeahead fired tool switches) + e2e
+- [x] 8.2 `selectTimelineItem` routes through `setPaletteTool("select")`;
+      `setInteractionMode` removed from `EditorState` so one writer is a
+      compile-time fact
+- [x] 8.3 Toolbar wraps below `lg` instead of scrolling horizontally
+- [x] 8.4 `COLOR_WHEEL` built from `SWATCHES`; colour-grep claim scoped to
+      Tailwind utilities
+- [x] 8.5 6px `bg-foreground/40` core on every disc (the Ink disc still read as
+      an empty slot in dark); re-screenshotted
+- [x] 8.6 Dead `export type { EditorTool, PaletteTool }` deleted
+- [x] 8.7 Palette disabled (segments + swatches, not Zoom) until there is a
+      capture, hotkeys guarded to match + e2e

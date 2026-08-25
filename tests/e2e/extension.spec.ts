@@ -1266,6 +1266,19 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await expect(note).toHaveValue("vbatrc");
   expect(await toolIsActive(editor, "Box")).toBe(true);
 
+  // ...and so is a listbox's typeahead. `Select` is a WAI-ARIA listbox built
+  // on a button, not a form field, so the isTyping guard alone does not cover
+  // it: typing "a" to reach "Actual size" in Zoom must not pick the Arrow tool.
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("a");
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  expect(await toolIsActive(editor, "Arrow")).toBe(false);
+  // Escape closes the list and returns focus to the combobox button, which is
+  // still inside the listbox guard - so hand focus back to the page before the
+  // keyboard checks below.
+  await editor.keyboard.press("Escape");
+  await editor.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
   // V is the old Move Existing mode: it selects an existing annotation on
   // click rather than drawing over it.
   await editor.keyboard.press("Escape");
@@ -1298,6 +1311,17 @@ test("editor page renders the capture UI", async () => {
   await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });
   await expect(editor.getByRole("button", { name: "Capture Page" })).toBeVisible();
   await expect(editor.getByRole("button", { name: "Copy for Claude Code" })).toBeVisible();
+
+  // With no capture there is nothing for a tool or a swatch to act on, so the
+  // palette says so rather than offering inert controls - and the hotkeys must
+  // not be a way around that.
+  await expect(editor.getByRole("button", { name: "Box", exact: true })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "Red annotation color" })).toBeDisabled();
+  await editor.keyboard.press("r");
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  // Zoom is a property of the view, not of a gesture, so it stays live.
+  await expect(editor.getByRole("combobox", { name: "Zoom" })).toBeEnabled();
+
   await editor.close();
 });
 

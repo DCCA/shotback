@@ -398,6 +398,11 @@ export function AnnotationCanvas({
       const isTyping =
         !!target &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      // `Select` (`components/ui/select.tsx`) is a WAI-ARIA listbox built on a
+      // button, not a form field, and its typeahead reads plain keydowns off
+      // the window: without this, typing "a" for "Actual size" in Zoom would
+      // also pick the Arrow tool, and "c" for "Compact" would pick Crop.
+      const inListbox = !!target?.closest('[role="combobox"],[role="listbox"]');
 
       if ((event.ctrlKey || event.metaKey) && !isTyping) {
         const key = event.key.toLowerCase();
@@ -410,8 +415,17 @@ export function AnnotationCanvas({
       }
 
       // A bare tool letter, with no modifier: Ctrl+C is a copy, not the crop
-      // tool, and Alt combinations belong to the browser.
-      if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      // tool, and Alt combinations belong to the browser. Nothing to pick a
+      // tool for before there is a capture, either - the palette is disabled
+      // then, and the keyboard must not be a way around that.
+      if (
+        baseDataUrl &&
+        !isTyping &&
+        !inListbox &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
         const segment = hotkeyTool(event.key);
         if (segment) {
           event.preventDefault();
@@ -461,6 +475,7 @@ export function AnnotationCanvas({
     undoAnnotations,
     redoAnnotations,
     setPaletteTool,
+    baseDataUrl,
     cropDraft,
     isBusy
   ]);

@@ -30,7 +30,7 @@
 - `npm run test:e2e` green: **11/11**, including the new
   `the tool palette keeps a drawing tool active, and its hotkeys stay off the
 comment box`.
-- Colour-literal grep (`(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white|blue|amber|green|purple|gray|zinc)` over `src/`): zero hits.
+- The repo's documented colour invariant - **Tailwind colour utilities**, `grep -rnE "(text|bg|border|ring|from|to|via|fill|stroke)-(slate|emerald|red|white|blue|amber|green|purple|gray|zinc)" src/` - returns zero hits. It is deliberately not a ban on hex strings: the six annotation colours are data and live in one exported `SWATCHES` const in `src/lib/tool-palette.ts`, and the custom disc's conic-gradient is built from that same const rather than re-typed.
 - Light and dark screenshots of the toolbar and the whole editor rendered from
   the built extension and read. One defect found and fixed that way: the
   `#111827` "Ink" swatch was invisible against the dark card, so every disc now
@@ -49,6 +49,5 @@ comment box`.
   existing annotation from a list is an explicit "I want to edit this one".
 - Icons on the segments are a later pass; the palette is text plus `kbd` hints
   today.
-- The toolbar scrolls horizontally rather than wrapping below roughly 810px of
-  pane width. Fine at every tested size, but a narrower window shows a
-  scrollbar under the bar.
+- The toolbar wraps into a second row below `lg` rather than hiding segments
+  behind a horizontal scroll. Verified by screenshot at 700px.

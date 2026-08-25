@@ -8,8 +8,6 @@ import { getPrefs, setPrefs } from "@/lib/prefs";
 import { DEFAULT_ANNOTATION_COLOR, type EditorTool, type PaletteTool } from "@/lib/tool-palette";
 import type { Annotation } from "@/types/annotation";
 
-export type { EditorTool, PaletteTool };
-
 /**
  * Every piece of editor state the surrounding modules (canvas, sidebar,
  * timeline, exports) read or write. Transient pointer-gesture state stays
@@ -57,8 +55,8 @@ export interface EditorState {
   /** A crop marquee drawn but not applied yet: the sidebar offers Apply/Cancel. */
   cropDraft: Rect | null;
   setCropDraft: (crop: Rect | null) => void;
+  /** Read-only to everything outside this hook: `setPaletteTool` is the only writer. */
   interactionMode: "draw" | "move";
-  setInteractionMode: (mode: "draw" | "move") => void;
   color: string;
   setColor: (color: string) => void;
   generalFeedback: string;
@@ -254,7 +252,6 @@ export function useEditorState(): EditorState {
     cropDraft,
     setCropDraft,
     interactionMode,
-    setInteractionMode,
     color,
     setColor,
     generalFeedback,

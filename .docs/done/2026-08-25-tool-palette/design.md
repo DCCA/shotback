@@ -61,15 +61,29 @@ Bound in the canvas's existing window `keydown` listener rather than a second
 one, so there is one keymap with one `isTyping` guard. `hotkeyTool` only
 answers for single characters, which is what keeps `Escape`, `Enter` and
 `Delete` from ever colliding with a tool letter, and the call site additionally
-requires no Ctrl/Meta/Alt - `Ctrl+C` is a copy, not the crop tool.
+requires no Ctrl/Meta/Alt - `Ctrl+C` is a copy, not the crop tool - and a
+capture to act on, so the keyboard is not a way around the disabled palette.
 
 The `isTyping` guard is load-bearing here in a way it was not before: the
 inline comment editor is a `<textarea>` inside the SVG, focused automatically
 the instant a shape is committed, so an unguarded `b` would eat every letter of
 a note.
 
+It is **not sufficient on its own**, though. `Select` is a WAI-ARIA listbox
+built on a `<button>` with its own typeahead reading plain keydowns off the
+window - not an INPUT, TEXTAREA or contenteditable, so `isTyping` never sees
+it. Typing `a` to reach "Actual size" in Zoom would have picked the Arrow tool
+and `c` for "Compact" in Prompt detail would have picked Crop. The branch
+therefore also rejects a target inside
+`[role="combobox"],[role="listbox"]`; Escape and Delete keep their existing
+semantics, which the listbox needs.
+
 ## Craft
 
+- One writer for `interactionMode`. `setInteractionMode` is not exposed on
+  `EditorState` at all, so "the palette is the only way in" is a compile error
+  rather than a code-review note; the comment timeline's row click (which does
+  enter Select, deliberately) goes through `setPaletteTool("select")`.
 - One bordered group, `overflow-hidden` so the filled active segment takes the
   group's corners, `border-l` hairlines between segments (never on the first).
   Focus rings are `ring-inset` with `focus-visible:relative z-10` so a ring on
@@ -80,16 +94,26 @@ a note.
   `button, p, span, h1, h2, label`) while the button they sit in is still swept.
 - Swatches are 24px discs with a 2px `ring-ring` at `ring-offset-2
 ring-offset-card` when active. Every disc carries an inset hairline in
-  `hsl(var(--foreground)/0.25)`: without it the near-black `#111827` swatch
-  vanished into the dark card. Caught in the first dark screenshot, not by a
-  test.
+  `hsl(var(--foreground)/0.3)` **and** a 6px `bg-foreground/40` core. Both are
+  the same trick: `--foreground` is by definition the opposite end of the theme
+  from `--card`, so the rim and the dot are faint on a mid-tone swatch and
+  unmistakable on the one disc whose fill is close to the card. The rim alone
+  was not enough - `#111827` on the dark card still read as an empty ring.
+  Caught in the dark screenshots, not by a test.
+- The bar wraps below `lg` (`flex-wrap h-auto min-h-12` -> `lg:h-12
+lg:flex-nowrap`) rather than scrolling horizontally: the sub-`lg` page
+  scrolls vertically anyway, and a segment hidden off the right edge is worse
+  than a second row.
+- With no capture the segments and swatches are `disabled`, faded by one
+  `opacity-50` per group (a per-control fade leaves the dividers and the border
+  at full strength and reads as a rendering bug; `color` itself is untouched,
+  so the e2e contrast sweep still measures the real token). Zoom stays live.
 - The custom control is the native `<input type="color">` at `opacity-0` over
   the wheel disc, so the browser owns the picker dialog and the keyboard
   behaviour while the control still looks like the six beside it. `peer` /
   `peer-focus-visible` puts the focus ring on the visible disc.
-- The bar is `h-12 shrink-0 border-b border-border bg-card` with `gap-2`
-  throughout, `overflow-x-auto` so a narrow pane scrolls it rather than
-  wrapping it into two rows and shoving the capture down.
+- The bar is `min-h-12 shrink-0 border-b border-border bg-card` with `gap-2`
+  throughout.
 
 ## Test strategy
 

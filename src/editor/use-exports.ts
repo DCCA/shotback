@@ -174,6 +174,27 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     void refreshSavedShares();
   }, [refreshSavedShares]);
 
+  /**
+   * Follow the store, not just this tab's own writes. Two editor tabs are the
+   * normal way to build a batch (capture page A, capture page B), and a list
+   * read once on mount left the first tab showing one share with no way to
+   * pick up the second - the only refresh being a reload, which re-runs
+   * `autocapture=1` and throws that tab's annotations away.
+   *
+   * Only `share:` keys matter; `prefs` writes on every dropdown change and
+   * re-listing every share for that would be pure waste.
+   */
+  useEffect(() => {
+    const onChanged = (changes: Record<string, unknown>, area: string): void => {
+      if (area !== "local") return;
+      if (!Object.keys(changes).some((key) => key.startsWith("share:"))) return;
+      void refreshSavedShares();
+    };
+
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, [refreshSavedShares]);
+
   const createShareUrl = async (): Promise<void> => {
     if (!state.baseDataUrl) {
       state.setStatus({

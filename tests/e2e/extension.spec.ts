@@ -1695,6 +1695,11 @@ test("highlight and pen are drawn, pinned and carried into the prompt", async ()
   await editor.mouse.move(at(240, 80).x, at(240, 80).y, { steps: 5 });
   await editor.mouse.up();
   await editor.keyboard.type("read this");
+  // Tab first, then Escape: Escape *in the note* is a discard now (see the
+  // keyboard test at the end of this file), and this one is about keeping the
+  // note. Tab commits it and moves focus to the timeline row; Escape from
+  // there just clears the selection, so the shape draws unselected below.
+  await editor.keyboard.press("Tab");
   await editor.keyboard.press("Escape");
 
   // Pen: a freehand path, so several moves with the button down.
@@ -1711,6 +1716,7 @@ test("highlight and pen are drawn, pinned and carried into the prompt", async ()
   }
   await editor.mouse.up();
   await editor.keyboard.type("scribble");
+  await editor.keyboard.press("Tab");
   await editor.keyboard.press("Escape");
 
   // Two numbered rows, two pins on the canvas.
@@ -1927,4 +1933,99 @@ test("reduced motion drops the button press/colour animation, not the state chan
   expect(chevronDuration).toBe("none");
 
   await editor.close();
+});
+
+test("the canvas draws, nudges and recovers from the keyboard alone", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const canvas = editor.locator("#capture-viewport svg");
+  const rows = editor.locator("ol li");
+  const note = editor.locator("foreignObject textarea");
+  const box = editor.locator("#capture-viewport svg > g").first().locator("rect").first();
+  const focused = (): Promise<string> =>
+    editor.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return "body";
+      return el.getAttribute("data-annotation-row") ? "timeline-row" : el.tagName.toLowerCase();
+    });
+
+  // The canvas is in the tab order now: it is where the keyboard draws, and
+  // its accessible name says so instead of admitting a pointer is required.
+  await expect(canvas).toHaveAttribute("tabindex", "0");
+  await expect(canvas).toHaveAttribute("aria-label", /Enter places a shape/);
+
+  // Enter with the Box tool armed places one at the centre of the view, and
+  // goes through the same commit a drag does: selected, comment editor open.
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  await canvas.focus();
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(1);
+  const placed = await rectOf(box);
+  expect(placed.width).toBe(160);
+  expect(placed.height).toBe(100);
+  await expect(note).toHaveCount(1);
+
+  // Escape in the note discards the draft instead of shipping it - the one
+  // place in the editor where Escape used to mean "commit" - and hands the
+  // keyboard back to the canvas rather than dropping it on <body>.
+  await editor.keyboard.type("typed then abandoned");
+  await expect(note).toHaveValue("typed then abandoned");
+  await editor.keyboard.press("Escape");
+  await expect(note).toHaveCount(0);
+  await expect(rows.first()).toContainText("(no comment)");
+  expect(await focused()).toBe("svg");
+
+  // A committed note still commits, from every other leave path: Tab out
+  // saves it, and the keyboard lands on that annotation's timeline row rather
+  // than on <body> (where the next Tab wrapped to the top of the sidebar).
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(2);
+  await editor.keyboard.type("kept");
+  await editor.keyboard.press("Tab");
+  await expect(rows.nth(1)).toContainText("kept");
+  await expect.poll(focused).toBe("timeline-row");
+
+  // Arrow keys move the selection by 8px, Shift+arrow resizes it, and each
+  // key-up is one undo entry.
+  const second = editor.locator("#capture-viewport svg > g").nth(1).locator("rect").first();
+  const before = await rectOf(second);
+  await canvas.focus();
+  await editor.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await rectOf(second)).x).toBe(before.x + 8);
+  await editor.keyboard.press("Shift+ArrowDown");
+  await expect.poll(async () => (await rectOf(second)).height).toBe(before.height + 8);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(second)).height).toBe(before.height);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(second)).x).toBe(before.x);
+
+  // Delete, Undo and Redo say so in the editor's screen-reader-only region -
+  // the visible toast stays reserved for the exports.
+  const announcer = editor.locator("#editor-announcer");
+  await editor.keyboard.press("Delete");
+  await expect(rows).toHaveCount(1);
+  await expect(announcer).toHaveText(/Annotation deleted/);
+  await editor.keyboard.press("Control+z");
+  await expect(rows).toHaveCount(2);
+  await expect(announcer).toHaveText(/Undo/);
+  await editor.keyboard.press("Control+Shift+z");
+  await expect(announcer).toHaveText(/Redo/);
+  // Never visible: it is a second live region, not a second banner.
+  expect(await announcer.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+
+  await editor.close();
+  await page.close();
 });

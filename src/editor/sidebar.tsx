@@ -169,6 +169,24 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
           selected redaction shows what is under it.
         </p>
 
+        {/* The canvas half of the keymap, stated because none of it is
+            discoverable from a control: Escape does the opposite of a commit
+            inside a note, and the tool letters are swallowed as text there. */}
+        <p className="m-0 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd> discards
+          a note; tool keys{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">
+            V B A T H P R C
+          </kbd>{" "}
+          work outside it. With the canvas focused,{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Enter</kbd> places
+          the armed tool&apos;s shape and{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">↑ ↓ ← →</kbd> move
+          the selection (with{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Shift</kbd>, resize
+          it).
+        </p>
+
         <div className="space-y-1.5">
           <span
             id="export-format-label"

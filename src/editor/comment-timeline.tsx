@@ -40,6 +40,10 @@ export function CommentTimeline({
                 <div className="grid grid-cols-[1fr_auto] gap-2">
                   <button
                     type="button"
+                    // Where the keyboard lands when the inline comment editor
+                    // lets go - see `restoreFocusAfterNote` in
+                    // `annotation-canvas.tsx`.
+                    data-annotation-row={item.id}
                     // `min-w-0`: the row is a `1fr auto` grid, and a grid item
                     // defaults to an automatic minimum - without this the
                     // element line below refuses to shrink and pushes Remove

@@ -399,6 +399,32 @@ async function readComponentChains(tabId: number): Promise<Record<string, string
 }
 
 /**
+ * "Is this answer still wanted?" for the inspection round trip.
+ *
+ * A round trip takes as long as the page takes to answer, and anything that
+ * changes the annotations while one is out - a newer commit, an **undo**, a
+ * redo - makes its result describe geometry that is no longer on screen.
+ * Writing it back would put a confidently wrong element name under an
+ * annotation, which is the one failure this module exists to avoid, so every
+ * caller takes a ticket with `next()` before it asks and drops its answer
+ * unless `isCurrent` still holds when it lands.
+ *
+ * A counter rather than an abort: `chrome.tabs.sendMessage` has nothing to
+ * cancel, and the answer that arrives late is harmless as long as nobody
+ * stores it.
+ */
+export function createGenerationGuard(): {
+  next: () => number;
+  isCurrent: (generation: number) => boolean;
+} {
+  let current = 0;
+  return {
+    next: () => (current += 1),
+    isCurrent: (generation: number) => generation === current
+  };
+}
+
+/**
  * Ask the captured tab to describe the element under each point (page CSS px).
  * Best effort by design: it runs after every annotation commit, so a closed
  * tab or a missing content script must return "no context" (an empty array,

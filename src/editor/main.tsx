@@ -12,6 +12,7 @@ import { useExports } from "@/editor/use-exports";
 import {
   captureFullPage,
   captureOptions,
+  createGenerationGuard,
   inspectPoints,
   toPageCoords,
   type CaptureMapping,
@@ -30,7 +31,12 @@ function EditorApp(): JSX.Element {
   // share this capture follows, recorded on the share saved from here.
   const previousShareId = search.get("previousShareId") ?? undefined;
 
-  const state = useEditorState();
+  // Undo and redo replace the annotations wholesale, so an inspection already
+  // in flight would answer for geometry that has just been reverted. Handing
+  // the restore straight to `refreshContexts` settles both halves at once: its
+  // first act is to take a new inspection ticket, which retires the outstanding
+  // one, and it then re-reads the elements the restored annotations now sit on.
+  const state = useEditorState(() => void refreshContexts());
   const exports = useExports(state, previousShareId);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
@@ -38,9 +44,10 @@ function EditorApp(): JSX.Element {
   // inspection round trip. A ref, not state: nothing renders from it, and the
   // commit handler must see it at once.
   const captureMappingRef = useRef<CaptureMapping | null>(null);
-  // Bumped per inspection: only the newest response may write contexts, so a
-  // slow one cannot land on top of a newer commit's result.
-  const inspectGenRef = useRef(0);
+  // Only the newest inspection may write contexts, so a slow response cannot
+  // land on top of a newer commit - or on top of an undo. Created once per
+  // session; `createGenerationGuard` is pure and unit-tested in `capture.ts`.
+  const inspectGuard = useRef(createGenerationGuard()).current;
   const autoCaptureFiredRef = useRef(false);
   const [shouldFocusSelectedComment, setShouldFocusSelectedComment] = useState(false);
 
@@ -132,10 +139,14 @@ function EditorApp(): JSX.Element {
    * cannot leak by default.
    */
   const refreshContexts = async (): Promise<void> => {
+    // The ticket comes first, before any bail-out: calling this at all means
+    // whatever is in flight is now describing stale geometry, and that has to
+    // hold even on the paths that have nothing new to ask for.
+    const generation = inspectGuard.next();
+
     const mapping = captureMappingRef.current;
     if (!mapping || !canCapture) return;
 
-    const generation = (inspectGenRef.current += 1);
     const items = inspectableAnnotations(state.getAnnotations());
     const contexts = await inspectPoints(
       tabId,
@@ -145,7 +156,7 @@ function EditorApp(): JSX.Element {
       items.map((annotation) => toPageCoords(inspectAnchor(annotation), mapping)),
       state.pageUrl
     );
-    if (generation !== inspectGenRef.current) return;
+    if (!inspectGuard.isCurrent(generation)) return;
     if (contexts.length === 0 || contexts.length !== items.length) return;
 
     const byId = new Map(items.map((annotation, index) => [annotation.id, contexts[index]]));
@@ -201,6 +212,7 @@ function EditorApp(): JSX.Element {
         <Separator />
         <CommentTimeline
           items={state.annotations}
+          crop={state.crop}
           selectedId={state.selectedId}
           onSelect={selectTimelineItem}
           onRemove={state.removeAnnotation}

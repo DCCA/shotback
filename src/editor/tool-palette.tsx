@@ -45,14 +45,27 @@ interface ToolPaletteProps {
  * they belong where the pointer is.
  */
 export function ToolPalette({ state }: ToolPaletteProps): JSX.Element {
-  const { tool, interactionMode, setPaletteTool, color, setColor, zoom, setZoom, baseDataUrl } =
-    state;
+  const {
+    tool,
+    interactionMode,
+    setPaletteTool,
+    color,
+    setColor,
+    zoom,
+    setZoom,
+    baseDataUrl,
+    isBusy
+  } = state;
 
   // Nothing to draw on yet: the tools and swatches would be inert, so they
-  // say so. Zoom stays live - it is a property of the (empty) view, not of a
-  // gesture. The canvas keymap carries the same guard, so the hotkeys are not
-  // a way around this.
-  const disabled = !baseDataUrl;
+  // say so. `isBusy` says the same thing for the other reason: an export
+  // snapshots the annotations synchronously and then awaits the render, so
+  // anything drawn while one is in flight - a redaction above all - would be
+  // accepted on screen and absent from every file that run produces. Zoom
+  // stays live in both states: it is a property of the view, not of a
+  // gesture. The canvas keymap and the pointer handlers carry the same guard,
+  // so neither the hotkeys nor the mouse are a way around this.
+  const disabled = !baseDataUrl || isBusy;
 
   const active = activeSegment(tool, interactionMode);
   const custom = isCustomColor(color);

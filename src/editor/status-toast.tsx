@@ -108,9 +108,13 @@ interface StatusToastProps {
 }
 
 /**
- * The editor's one aria-live region, floated over the canvas instead of buried
- * in the sidebar's scroll flow - the outcome of a button press has to be
- * visible from wherever the eye already is, which is the capture.
+ * The editor's one *visible* aria-live region, floated over the canvas instead
+ * of buried in the sidebar's scroll flow - the outcome of a button press has
+ * to be visible from wherever the eye already is, which is the capture.
+ *
+ * There is a second live region, `#editor-announcer` in `main.tsx`, and it is
+ * never shown: delete, undo and redo announce there rather than blinking a
+ * banner over the capture on every keystroke of an undo run.
  *
  * A success clears itself after `SUCCESS_DISMISS_MS`; an error stays until it
  * is dismissed, because "the copy failed" is not something to blink past.

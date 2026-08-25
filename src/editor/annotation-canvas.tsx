@@ -34,8 +34,8 @@ import { placeInlineEditor } from "@/lib/editor-placement";
 import {
   annotationBounds,
   canvasScale,
-  numberAnnotations,
   redactions,
+  viewNumbering,
   viewPins
 } from "@/lib/numbering";
 import { hotkeyTool } from "@/lib/tool-palette";
@@ -228,9 +228,15 @@ export function AnnotationCanvas({
   const discardNoteDraft = (): boolean => {
     const baseline = noteBaselineRef.current;
     noteBaselineRef.current = null;
-    if (!baseline || !noteDirtyRef.current) return false;
+    if (!baseline) return false;
+    const wasDirty = noteDirtyRef.current;
     noteDirtyRef.current = false;
 
+    // The empty-text branch runs *before* the dirty check, deliberately: a
+    // text annotation that was placed and never typed into is precisely the
+    // one worth removing, and gating it on "something was typed" left an
+    // invisible shape behind with a numbered pin, a timeline row, an
+    // `[text] (empty)` line in both prompts and an entry in the sidecar.
     const item = getAnnotations().find((entry) => entry.id === baseline.id);
     if (item?.tool === "text" && baseline.value === "") {
       // Goes through `removeAnnotation` like every other delete path, so it
@@ -238,6 +244,9 @@ export function AnnotationCanvas({
       removeAnnotation(baseline.id);
       return true;
     }
+
+    // Nothing typed and nothing to remove: the note is already its baseline.
+    if (!wasDirty) return false;
 
     setAnnotations((prev) =>
       prev.map((entry) => {
@@ -372,11 +381,9 @@ export function AnnotationCanvas({
 
   // What an applied crop leaves out. The exports renumber the survivors, so
   // saying this plainly is also the answer to "why is pin 3 numbered 2 in the
-  // PNG". Counted over numbered annotations only: a redaction the crop drops
-  // hides nothing, because the crop already removed those pixels.
-  const excludedByCrop = crop
-    ? numberAnnotations(annotations).length - numberAnnotations(applyCrop(annotations, crop)).length
-    : 0;
+  // PNG". Same derivation the pins and the comment timeline read, so the three
+  // cannot disagree about which annotations the crop dropped.
+  const excludedByCrop = viewNumbering(annotations, crop).excluded;
 
   /**
    * The diagonal hatch a redaction is previewed with. In user space so the
@@ -799,7 +806,7 @@ export function AnnotationCanvas({
       // also pick the Arrow tool, and "c" for "Compact" would pick Crop.
       const inListbox = !!target?.closest('[role="combobox"],[role="listbox"]');
 
-      if ((event.ctrlKey || event.metaKey) && !isTyping) {
+      if ((event.ctrlKey || event.metaKey) && !isTyping && !isBusy) {
         const key = event.key.toLowerCase();
         if (key === "z" || key === "y") {
           event.preventDefault();
@@ -809,14 +816,25 @@ export function AnnotationCanvas({
         }
       }
 
+      // One guard for the whole keymap, not one per branch. `select.tsx`
+      // calls `preventDefault()` but never `stopPropagation()`, so every
+      // keystroke aimed at a Select still reaches this window listener - and
+      // the keys it uses are the keys the canvas uses: Escape closes the list
+      // (it must not also drop a crop marquee), Enter picks the highlighted
+      // option (it must not also apply the crop), a letter is typeahead, and
+      // Backspace pressed as a "go back" reflex on a focused trigger must not
+      // delete the selected annotation. Undo/redo above are deliberately
+      // outside it: Ctrl+Z is an app-wide shortcut the listbox never consumes.
+      if (inListbox) return;
+
       // A bare tool letter, with no modifier: Ctrl+C is a copy, not the crop
       // tool, and Alt combinations belong to the browser. Nothing to pick a
       // tool for before there is a capture, either - the palette is disabled
       // then, and the keyboard must not be a way around that.
       if (
         baseDataUrl &&
+        !isBusy &&
         !isTyping &&
-        !inListbox &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey
@@ -904,7 +922,7 @@ export function AnnotationCanvas({
         return;
       }
 
-      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping) {
+      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping && !isBusy) {
         if (!selectedId) return;
         event.preventDefault();
         removeAnnotation(selectedId);
@@ -985,8 +1003,23 @@ export function AnnotationCanvas({
     });
   };
 
+  /**
+   * Drawing is frozen while an export is in flight, and that is a safety rule
+   * rather than a nicety. Every output snapshots `exportView(state)`
+   * synchronously and then awaits the render, so an annotation drawn after
+   * that snapshot reaches no artifact the run produces - and for a
+   * **redaction** that means a region the user watched go grey is absent from
+   * the PNG, the sidecar, the prompt and the saved share the success toast is
+   * about to announce. One guard per pointer-down entry point (canvas,
+   * annotation, resize handle, crop handle) covers create, move and resize
+   * alike, the keymap above carries the same guard, and the palette's segments
+   * and swatches disable with it so nothing offers a gesture that would be
+   * dropped. The inline comment editor deliberately stays live: it is bound to
+   * the *selection*, edits no geometry, and its text is read by the next
+   * export rather than baked into the one already running.
+   */
   const onCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
-    if (!baseDataUrl) return;
+    if (!baseDataUrl || isBusy) return;
 
     if (interactionMode !== "draw") {
       setSelectedId(null);
@@ -1024,6 +1057,7 @@ export function AnnotationCanvas({
   const onAnnotationPointerDown =
     (item: Annotation) =>
     (event: React.PointerEvent<SVGElement>): void => {
+      if (isBusy) return;
       // Let the event reach the canvas: a crop or redact drag starts anywhere.
       if (drawingRegion) return;
 
@@ -1050,7 +1084,7 @@ export function AnnotationCanvas({
     (item: RectAnnotation, handle: BoxResizeHandle) =>
     (event: React.PointerEvent<SVGElement>): void => {
       event.stopPropagation();
-      if (interactionMode !== "move") return;
+      if (isBusy || interactionMode !== "move") return;
 
       event.preventDefault();
       setSelectedId(item.id);
@@ -1079,7 +1113,7 @@ export function AnnotationCanvas({
   const onCropHandlePointerDown =
     (handle: BoxResizeHandle) =>
     (event: React.PointerEvent<SVGElement>): void => {
-      if (!cropDraft) return;
+      if (!cropDraft || isBusy) return;
       event.stopPropagation();
       event.preventDefault();
 
@@ -1355,7 +1389,14 @@ export function AnnotationCanvas({
         // origin sits and where a drag usually starts, and the chip is
         // `pointer-events-none` with only its button opting back in - a chip
         // that swallowed a pointer-down would make that corner undrawable.
-        <div className="pointer-events-none absolute bottom-4 left-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]">
+        // `id`: a test affordance in the style of `#crop-region` and
+        // `data-crop`. The comment timeline states the same exclusion in its
+        // own note row, so "the text is on the page" no longer says which
+        // surface it is on.
+        <div
+          id="crop-chip"
+          className="pointer-events-none absolute bottom-4 left-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]"
+        >
           <div className="flex items-center justify-between gap-2">
             <span>
               Cropped to {crop.width}x{crop.height}

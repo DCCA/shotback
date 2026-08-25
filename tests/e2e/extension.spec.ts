@@ -955,12 +955,21 @@ for (const [name, headerHeight] of [
 
       // Only the CTA box is inside the crop; the chip over the canvas says
       // what that costs.
-      await expect(editor.getByText("outside the crop")).toContainText(
+      const chip = editor.locator("#crop-chip");
+      await expect(chip).toContainText(`Cropped to ${cropRect.width}x${cropRect.height}`);
+      await expect(chip).toContainText("2 annotations outside the crop are excluded from exports");
+
+      // ...and so does the comment timeline, which numbers the same survivors
+      // as the pins, the prompt and the PNG's legend. It used to number the
+      // stored list instead: three rows, the first of them pointing at an
+      // annotation with no pin anywhere and every later row one ahead of the
+      // legend.
+      const timeline = editor.locator("section:has(> h2:text-is('Comment Timeline'))");
+      await expect(timeline.locator("ol > li")).toHaveCount(1);
+      await expect(timeline.locator("ol > li").first()).toContainText("#1 box");
+      await expect(timeline.locator("> p")).toContainText(
         "2 annotations outside the crop are excluded from exports"
       );
-      await expect(
-        editor.getByText(`Cropped to ${cropRect.width}x${cropRect.height}`)
-      ).toBeVisible();
 
       // The canvas numbers what the export numbers: two of the three
       // annotations fall outside the crop, so exactly one pin is drawn, and it
@@ -1327,6 +1336,85 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await page.close();
 });
 
+test("editing is frozen while an export is in flight", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+  const shown = (await img.boundingBox())!;
+  const k = shown.width / natural;
+  const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
+  const drawRedaction = async (): Promise<void> => {
+    const from = onScreen(235, 155);
+    const to = onScreen(365, 210);
+    await editor.mouse.move(from.x, from.y);
+    await editor.mouse.down();
+    await editor.mouse.move(to.x, to.y, { steps: 5 });
+    await editor.mouse.up();
+  };
+  const regions = editor.locator("svg rect[stroke='#ef4444']");
+  const redactSegment = editor.getByRole("button", { name: "Redact", exact: true });
+
+  /**
+   * Hold Copy Image open on its last await, so the export is genuinely in
+   * flight for as long as this test wants it to be. Every output snapshots
+   * `exportView(state)` synchronously and then awaits the render, so anything
+   * drawn after that point reaches no artifact the run produces - and for a
+   * redaction that means a region the user watched go grey missing from the
+   * file the success toast is about to announce.
+   */
+  await editor.evaluate(() => {
+    const clipboard = navigator.clipboard;
+    const original = clipboard.write.bind(clipboard);
+    (window as unknown as { release?: () => void }).release = undefined;
+    clipboard.write = (items: ClipboardItem[]): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        (window as unknown as { release?: () => void }).release = () => {
+          original(items).then(resolve, reject);
+        };
+      });
+  });
+
+  await pickTool(editor, "Redact");
+  await editor.getByRole("button", { name: "Copy Image" }).click();
+  await expect(redactSegment).toBeDisabled();
+
+  // The pointer is the half that matters: a disabled palette still leaves the
+  // canvas underneath it, and that is where the region would have been drawn.
+  await drawRedaction();
+  await expect(regions).toHaveCount(0);
+  // The hotkeys are no way around it either.
+  await editor.keyboard.press("r");
+  await drawRedaction();
+  await expect(regions).toHaveCount(0);
+
+  await editor.evaluate(() => (window as unknown as { release: () => void }).release());
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Annotated image copied"
+  );
+  await expect(redactSegment).toBeEnabled();
+
+  // ...and it is a freeze, not a break: the very same drag lands once the
+  // export that could not have carried it is done.
+  await drawRedaction();
+  await expect(regions).toHaveCount(1);
+
+  await editor.close();
+  await page.close();
+});
+
 test("re-capture links the new share to the one it follows", async () => {
   const page = await ctx.newPage();
   await page.goto(base + "smooth", { waitUntil: "load" });
@@ -1494,6 +1582,13 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await editor.keyboard.press("a");
   expect(await toolIsActive(editor, "Box")).toBe(true);
   expect(await toolIsActive(editor, "Arrow")).toBe(false);
+  // The guard covers the *whole* keymap, not just the tool letters. `Select`
+  // calls preventDefault but never stopPropagation, so every keystroke aimed
+  // at an open list still reaches the canvas's window listener - and Backspace
+  // on a focused listbox is a "go back" reflex, which used to delete the
+  // selected annotation instead.
+  await editor.keyboard.press("Backspace");
+  await expect(rows).toHaveCount(2);
   // Escape closes the list and returns focus to the combobox button, which is
   // still inside the listbox guard - so hand focus back to the page before the
   // keyboard checks below.
@@ -1522,6 +1617,24 @@ test("the tool palette keeps a drawing tool active, and its hotkeys stay off the
   await expect(rows).toHaveCount(3);
   await expect(boxes.nth(2).locator("rect").first()).toHaveAttribute("stroke", "#ef4444");
   await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+
+  // A crop marquee is the other thing those keys reach. Escape aimed at an
+  // open Zoom list closes the list and used to silently discard the marquee
+  // with it; Enter picked the highlighted option and applied the crop in the
+  // same keystroke. The marquee has to survive both.
+  await editor.keyboard.press("Escape");
+  await editor.keyboard.press("c");
+  await drag(at(60, 60), at(300, 260));
+  const marquee = editor.locator("#crop-region");
+  await expect(marquee).toHaveCount(1);
+
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("Escape");
+  await expect(marquee).toHaveCount(1);
+
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("Enter");
+  await expect(marquee).toHaveCount(1);
 
   await editor.close();
   await page.close();
@@ -2068,6 +2181,21 @@ test("the canvas draws, nudges and recovers from the keyboard alone", async () =
   await expect(announcer).toHaveText(/Redo/);
   // Never visible: it is a second live region, not a second banner.
   expect(await announcer.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+
+  // For a text annotation the note *is* the annotation, so one placed and then
+  // abandoned is removed rather than restored to an empty baseline. It used to
+  // survive whenever nothing had been typed - which is exactly the abandon
+  // case - leaving an invisible shape holding a numbered pin, a timeline row,
+  // an `[text] (empty)` line in both prompts and an entry in the sidecar.
+  const placedRows = await rows.count();
+  await canvas.focus();
+  await editor.keyboard.press("t");
+  await editor.keyboard.press("Enter");
+  await expect(rows).toHaveCount(placedRows + 1);
+  await expect(note).toHaveCount(1);
+  await editor.keyboard.press("Escape");
+  await expect(rows).toHaveCount(placedRows);
+  await expect(note).toHaveCount(0);
 
   await editor.close();
   await page.close();

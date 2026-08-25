@@ -150,7 +150,6 @@ export interface EditorExports {
   copyBatchForClaudeCode: (ids: string[]) => Promise<void>;
   createShareUrl: () => Promise<void>;
   savedShares: LocalShareMeta[];
-  refreshSavedShares: () => Promise<void>;
   removeSavedShare: (id: string) => Promise<void>;
 }
 
@@ -167,6 +166,10 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
   // followed by an explicit refresh - see the listener below.
   const ownWrites = useRef(0);
 
+  // Deliberately private to this hook: every write here goes through
+  // `withOwnWrite` and every other tab's arrives on the `onChanged` listener
+  // below, so the list has no refresh left to ask for from outside - and an
+  // exported one only invites a caller that lists twice against the listener.
   const refreshSavedShares = useCallback(async (): Promise<void> => {
     try {
       setSavedShares(await listLocalShares());
@@ -326,6 +329,11 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       return;
     }
 
+    // `isBusy` on every output, not just the slow ones: it is what freezes the
+    // crop controls and the canvas for as long as the `exportView` snapshot
+    // taken below is being rendered, and an edit made after that snapshot is an
+    // edit missing from the file the toast then calls done.
+    state.setIsBusy(true);
     // Cleared up front: the success message is worded the same on every call,
     // so without this a second download in a row leaves stale text on screen.
     state.setStatus(null);
@@ -351,6 +359,8 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to download image"
       });
+    } finally {
+      state.setIsBusy(false);
     }
   };
 
@@ -362,6 +372,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       return;
     }
 
+    state.setIsBusy(true);
     // Cleared up front: the success message is worded the same on every call,
     // so without this a second copy in a row leaves stale text on screen.
     state.setStatus(null);
@@ -388,6 +399,8 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to copy image"
       });
+    } finally {
+      state.setIsBusy(false);
     }
   };
 
@@ -400,6 +413,7 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
       return;
     }
 
+    state.setIsBusy(true);
     // Cleared up front, like the other async exports: the success message is
     // worded the same on every call, so without this a second copy in a row
     // leaves stale text on screen with no visible sign the click did anything.
@@ -439,6 +453,8 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to prepare external LLM package"
       });
+    } finally {
+      state.setIsBusy(false);
     }
   };
 
@@ -613,7 +629,6 @@ export function useExports(state: EditorState, previousShareId?: string): Editor
     copyBatchForClaudeCode,
     createShareUrl,
     savedShares,
-    refreshSavedShares,
     removeSavedShare
   };
 }

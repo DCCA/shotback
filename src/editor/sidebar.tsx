@@ -2,10 +2,9 @@ import type * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { EditorState, EditorTool } from "@/editor/use-editor-state";
+import type { EditorState } from "@/editor/use-editor-state";
 import type { EditorExports } from "@/editor/use-exports";
 import type { Verbosity } from "@/lib/feedback";
 import { numberAnnotations, redactions } from "@/lib/numbering";
@@ -27,14 +26,6 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
     canRedo,
     removeAnnotation,
     selectedId,
-    tool,
-    setTool,
-    interactionMode,
-    setInteractionMode,
-    color,
-    setColor,
-    zoom,
-    setZoom,
     generalFeedback,
     setGeneralFeedback,
     isBusy,
@@ -72,80 +63,11 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <span
-            id="interaction-label"
-            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-          >
-            Interaction
-          </span>
-          <Select
-            aria-labelledby="interaction-label"
-            value={interactionMode}
-            onValueChange={(value) => setInteractionMode(value as "draw" | "move")}
-            options={[
-              { value: "draw", label: "Draw New" },
-              { value: "move", label: "Move Existing" }
-            ]}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <span
-            id="tool-label"
-            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-          >
-            Tool
-          </span>
-          <Select
-            aria-labelledby="tool-label"
-            value={tool}
-            onValueChange={(value) => setTool(value as EditorTool)}
-            options={[
-              { value: "box", label: "Box" },
-              { value: "arrow", label: "Arrow" },
-              { value: "text", label: "Text" },
-              { value: "redact", label: "Redact" },
-              { value: "crop", label: "Crop" }
-            ]}
-          />
-        </div>
-
-        {/* Crop has no rows here on purpose: Apply/Cancel float at the marquee
-            and the applied-crop chip sits over the canvas (see
-            `annotation-canvas.tsx`), so drawing a crop no longer shoves every
-            control below it down and back up again. */}
-
-        <div className="space-y-1.5">
-          <span
-            id="zoom-label"
-            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-          >
-            Zoom
-          </span>
-          <Select
-            aria-labelledby="zoom-label"
-            value={zoom}
-            onValueChange={(value) => setZoom(value as "fit" | "actual")}
-            options={[
-              { value: "fit", label: "Fit width" },
-              { value: "actual", label: "Actual size (100%)" }
-            ]}
-          />
-        </div>
-
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Color
-          </span>
-          <Input
-            type="color"
-            aria-label="Annotation color"
-            value={color}
-            onChange={(event) => setColor(event.target.value)}
-            className="h-10 cursor-pointer p-1"
-          />
-        </label>
+        {/* Tool, colour and zoom live on the canvas toolbar
+            (`tool-palette.tsx`), where the pointer is - they change what the
+            next gesture does, not what an export contains. Crop has no rows
+            here either: Apply/Cancel float at the marquee and the applied-crop
+            chip sits over the canvas (see `annotation-canvas.tsx`). */}
 
         <label className="block space-y-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -160,11 +82,10 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
         </label>
 
         <p className="m-0 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Draw mode creates annotations. Move mode selects or drags existing annotations. Press{" "}
-          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd> to
-          deselect and{" "}
-          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Del</kbd> to remove
-          the selected item.{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Esc</kbd>{" "}
+          deselects,{" "}
+          <kbd className="rounded border border-border bg-card px-1 text-[11px]">Del</kbd> removes
+          the selected item,{" "}
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Z</kbd> undoes
           and{" "}
           <kbd className="rounded border border-border bg-card px-1 text-[11px]">Ctrl+Shift+Z</kbd>{" "}

@@ -196,6 +196,20 @@ async function waitForInspection(editor: Page, previous: number): Promise<void> 
   await expect.poll(() => inspectGen(editor), { timeout: 10_000 }).toBeGreaterThan(previous);
 }
 
+/**
+ * Pick a segment on the canvas tool palette. `exact` matters: "Crop" would
+ * otherwise also match the marquee's own "Apply crop" button.
+ */
+async function pickTool(editor: Page, label: string): Promise<void> {
+  await editor.getByRole("button", { name: label, exact: true }).click();
+}
+
+/** True when that palette segment is the lit one. */
+const toolIsActive = (editor: Page, label: string): Promise<boolean> =>
+  editor
+    .getByRole("button", { name: label, exact: true })
+    .evaluate((el) => el.getAttribute("aria-pressed") === "true");
+
 /** The x/y/width/height of an SVG rect, in the canvas's image-px coordinate space. */
 async function rectOf(
   locator: Locator
@@ -236,12 +250,9 @@ async function boxOverCta(
   const k = shown.width / natural;
   const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
 
-  // Creating an annotation switches the editor into move mode, so either
-  // caller can arrive here in either mode.
-  await editor.getByRole("combobox", { name: "Interaction" }).click();
-  await editor.getByRole("option", { name: "Draw New" }).click();
-  await editor.getByRole("combobox", { name: "Tool" }).click();
-  await editor.getByRole("option", { name: "Box" }).click();
+  // Either caller can arrive here on any segment, so the palette is set
+  // explicitly - Box puts the canvas in draw mode by itself.
+  await pickTool(editor, "Box");
 
   const from = onScreen(250, top + 150);
   const to = onScreen(350, top + 215);
@@ -568,8 +579,7 @@ for (const [name, headerHeight] of [
       const rect = editor.locator("svg > g > rect").first();
       const originalX = (await rect.getAttribute("x"))!;
 
-      await editor.getByRole("combobox", { name: "Interaction" }).click();
-      await editor.getByRole("option", { name: "Move Existing" }).click();
+      await pickTool(editor, "Select");
 
       await editor.mouse.move(canvas.x + 140, canvas.y + 120);
       await editor.mouse.down();
@@ -610,10 +620,7 @@ for (const [name, headerHeight] of [
       // it must not reach past it into the previous edit.
       const rows = editor.locator("ol li");
       await expect(rows).toHaveCount(1);
-      await editor.getByRole("combobox", { name: "Interaction" }).click();
-      await editor.getByRole("option", { name: "Draw New" }).click();
-      await editor.getByRole("combobox", { name: "Tool" }).click();
-      await editor.getByRole("option", { name: "Text" }).click();
+      await pickTool(editor, "Text");
 
       await editor.mouse.click(canvas.x + 600, canvas.y + 500);
       await expect(rows).toHaveCount(2);
@@ -640,8 +647,10 @@ for (const [name, headerHeight] of [
 
       // The context is derived data re-read on every commit, so it must still
       // be there after the box is moved (while it still covers the button).
-      // Drawing an annotation already switched the editor into move mode.
+      // Drawing leaves the Box tool active now, so moving one is an explicit
+      // switch to Select.
       const inspectedBeforeMove = await inspectGen(editor);
+      await pickTool(editor, "Select");
       await editor.mouse.move(centre.x, centre.y);
       await editor.mouse.down();
       await editor.mouse.move(centre.x + 20, centre.y, { steps: 5 });
@@ -751,11 +760,10 @@ for (const [name, headerHeight] of [
         y: shownBox.y + py * scale
       });
 
-      // The documented path: annotate, then pick Crop and drag. No Interaction
-      // switch here on purpose - the editor is in move mode after the last
-      // commit, and picking Crop must put it back into draw mode by itself.
-      await editor.getByRole("combobox", { name: "Tool" }).click();
-      await editor.getByRole("option", { name: "Crop" }).click();
+      // The documented path: annotate, then pick Crop and drag. The canvas is
+      // in move mode after the box drag above, and picking Crop must put it
+      // back into draw mode by itself.
+      await pickTool(editor, "Crop");
 
       // Dragged bottom-right to top-left, so the marquee is normalised too.
       const cropFrom = onScreen(
@@ -1058,12 +1066,10 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   const k = shown.width / natural;
   const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
 
-  // Move mode first, and no switch back: picking Redact must put the canvas
-  // into draw mode by itself, the way picking Crop does.
-  await editor.getByRole("combobox", { name: "Interaction" }).click();
-  await editor.getByRole("option", { name: "Move Existing" }).click();
-  await editor.getByRole("combobox", { name: "Tool" }).click();
-  await editor.getByRole("option", { name: "Redact" }).click();
+  // Select first, and no switch back: picking Redact must put the canvas into
+  // draw mode by itself, the way picking Crop does.
+  await pickTool(editor, "Select");
+  await pickTool(editor, "Redact");
 
   const from = onScreen(235, 155);
   const to = onScreen(365, 210);
@@ -1201,11 +1207,121 @@ test("re-capture links the new share to the one it follows", async () => {
   await page.close();
 });
 
+test("the tool palette keeps a drawing tool active, and its hotkeys stay off the comment box", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const shown = (await img.boundingBox())!;
+  const at = (x: number, y: number) => ({ x: shown.x + x, y: shown.y + y });
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await editor.mouse.move(from.x, from.y);
+    await editor.mouse.down();
+    await editor.mouse.move(to.x, to.y, { steps: 5 });
+    await editor.mouse.up();
+  };
+  const boxes = editor.locator("#capture-viewport svg > g");
+  const rows = editor.locator("ol li");
+
+  // A fresh editor opens on Box, in draw mode.
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  expect(await toolIsActive(editor, "Select")).toBe(false);
+
+  // A swatch sets the colour the *next* annotation is drawn in.
+  await editor.getByRole("button", { name: "Blue annotation color" }).click();
+
+  // The heart of the palette: press B, then draw two boxes back to back with
+  // no click, no keypress and no mode switch between them. Committing one used
+  // to flip the canvas into move mode, which made the second drag a no-op.
+  await editor.keyboard.press("b");
+  await drag(at(40, 40), at(160, 130));
+  await expect(rows).toHaveCount(1);
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+
+  await drag(at(320, 40), at(450, 130));
+  await expect(rows).toHaveCount(2);
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+
+  // Both carry the swatch's colour, not the default red.
+  await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+  await expect(boxes.nth(1).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+
+  // The inline comment editor still opens and focuses on commit, so a note can
+  // be typed straight after the drag - and every tool letter typed into it is
+  // a letter, not a shortcut.
+  const note = editor.locator("foreignObject textarea");
+  await expect(note).toHaveCount(1);
+  await editor.keyboard.type("vbatrc");
+  await expect(note).toHaveValue("vbatrc");
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+
+  // ...and so is a listbox's typeahead. `Select` is a WAI-ARIA listbox built
+  // on a button, not a form field, so the isTyping guard alone does not cover
+  // it: typing "a" to reach "Actual size" in Zoom must not pick the Arrow tool.
+  await editor.getByRole("combobox", { name: "Zoom" }).click();
+  await editor.keyboard.press("a");
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  expect(await toolIsActive(editor, "Arrow")).toBe(false);
+  // Escape closes the list and returns focus to the combobox button, which is
+  // still inside the listbox guard - so hand focus back to the page before the
+  // keyboard checks below.
+  await editor.keyboard.press("Escape");
+  await editor.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  // V is the old Move Existing mode: it selects an existing annotation on
+  // click rather than drawing over it.
+  await editor.keyboard.press("Escape");
+  await editor.keyboard.press("v");
+  expect(await toolIsActive(editor, "Select")).toBe(true);
+  expect(await toolIsActive(editor, "Box")).toBe(false);
+
+  await editor.mouse.click(at(100, 85).x, at(100, 85).y);
+  await expect(rows).toHaveCount(2);
+  await expect(note).toHaveCount(1);
+  // The first box is the selected one: the canvas draws a selected box thicker.
+  await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke-width", "4");
+
+  // A swatch picked now changes the next annotation, and leaves the drawn ones
+  // alone.
+  await editor.keyboard.press("Escape");
+  await editor.keyboard.press("b");
+  await editor.getByRole("button", { name: "Red annotation color" }).click();
+  await drag(at(40, 260), at(160, 350));
+  await expect(rows).toHaveCount(3);
+  await expect(boxes.nth(2).locator("rect").first()).toHaveAttribute("stroke", "#ef4444");
+  await expect(boxes.nth(0).locator("rect").first()).toHaveAttribute("stroke", "#3b82f6");
+
+  await editor.close();
+  await page.close();
+});
+
 test("editor page renders the capture UI", async () => {
   const editor = await ctx.newPage();
   await editor.goto(`chrome-extension://${extId}/editor.html`, { waitUntil: "load" });
   await expect(editor.getByRole("button", { name: "Capture Page" })).toBeVisible();
   await expect(editor.getByRole("button", { name: "Copy for Claude Code" })).toBeVisible();
+
+  // With no capture there is nothing for a tool or a swatch to act on, so the
+  // palette says so rather than offering inert controls - and the hotkeys must
+  // not be a way around that.
+  await expect(editor.getByRole("button", { name: "Box", exact: true })).toBeDisabled();
+  await expect(editor.getByRole("button", { name: "Red annotation color" })).toBeDisabled();
+  await editor.keyboard.press("r");
+  expect(await toolIsActive(editor, "Box")).toBe(true);
+  // Zoom is a property of the view, not of a gesture, so it stays live.
+  await expect(editor.getByRole("combobox", { name: "Zoom" })).toBeEnabled();
+
   await editor.close();
 });
 
@@ -1259,7 +1375,7 @@ test("reduced motion drops the button press/colour animation, not the state chan
   expect(style.transitionDuration).toBe("0s");
 
   const chevronDuration = await editor
-    .getByRole("combobox", { name: "Interaction" })
+    .getByRole("combobox", { name: "Zoom" })
     .locator("svg")
     .evaluate((el) => getComputedStyle(el).transitionProperty);
   // The select chevron's rotation animation is removed outright.

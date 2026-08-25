@@ -142,9 +142,12 @@ function EditorApp(): JSX.Element {
     document.body.dataset.sbInspectGen = String(generation);
   };
 
+  // Picking a row is an explicit "edit this one", so it enters Select - through
+  // the palette's own setter, so `interactionMode` keeps exactly one writer and
+  // the toolbar cannot be left showing a drawing tool the canvas is not using.
   const selectTimelineItem = (id: string): void => {
     state.setSelectedId(id);
-    state.setInteractionMode("move");
+    state.setPaletteTool("select");
     setShouldFocusSelectedComment(true);
   };
 

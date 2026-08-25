@@ -161,6 +161,13 @@ export function SavedShares({
                       <input
                         type="checkbox"
                         className="size-4 accent-primary"
+                        // The batch reads each ticked share out of storage as it
+                        // goes, so a row changed mid-export changes what the
+                        // export is still writing: untick one and it is written
+                        // anyway, delete one and the whole all-or-nothing loop
+                        // throws on a share that is no longer there, leaving a
+                        // half-written batch folder and no prompt.
+                        disabled={isBusy}
                         checked={selected.has(share.id)}
                         aria-label={`Select saved share for ${title}`}
                         onChange={() => toggle(share.id)}
@@ -202,6 +209,7 @@ export function SavedShares({
                         variant="secondary"
                         size="sm"
                         aria-label={`Re-capture ${title}`}
+                        disabled={isBusy}
                         onClick={() => onRecapture(share)}
                       >
                         Re-capture
@@ -220,6 +228,7 @@ export function SavedShares({
                             size="sm"
                             autoFocus
                             aria-label={`Confirm deleting saved share for ${title}`}
+                            disabled={isBusy}
                             onClick={remove.onConfirm(() => onDelete(share.id))}
                           >
                             Confirm
@@ -241,6 +250,7 @@ export function SavedShares({
                           size="sm"
                           className="text-destructive hover:bg-destructive/10"
                           aria-label={`Delete saved share for ${title}`}
+                          disabled={isBusy}
                           onClick={() => remove.arm(share.id)}
                         >
                           Delete

@@ -1327,6 +1327,85 @@ test("a redaction is pixelated in the export and in the saved share", async () =
   await page.close();
 });
 
+test("editing is frozen while an export is in flight", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "smooth", { waitUntil: "load" });
+  const { tabId, windowId } = await sw.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url });
+    return { tabId: tab.id, windowId: tab.windowId };
+  }, base + "smooth");
+
+  const editor = await ctx.newPage();
+  await editor.goto(
+    `chrome-extension://${extId}/editor.html?tabId=${tabId}&windowId=${windowId}&autocapture=1`
+  );
+  const img = editor.locator("img[src^='data:image/png']");
+  await expect(img).toHaveJSProperty("complete", true, { timeout: 30_000 });
+  await editor.setViewportSize({ width: 1280, height: 900 });
+
+  const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth);
+  const shown = (await img.boundingBox())!;
+  const k = shown.width / natural;
+  const onScreen = (px: number, py: number) => ({ x: shown.x + px * k, y: shown.y + py * k });
+  const drawRedaction = async (): Promise<void> => {
+    const from = onScreen(235, 155);
+    const to = onScreen(365, 210);
+    await editor.mouse.move(from.x, from.y);
+    await editor.mouse.down();
+    await editor.mouse.move(to.x, to.y, { steps: 5 });
+    await editor.mouse.up();
+  };
+  const regions = editor.locator("svg rect[stroke='#ef4444']");
+  const redactSegment = editor.getByRole("button", { name: "Redact", exact: true });
+
+  /**
+   * Hold Copy Image open on its last await, so the export is genuinely in
+   * flight for as long as this test wants it to be. Every output snapshots
+   * `exportView(state)` synchronously and then awaits the render, so anything
+   * drawn after that point reaches no artifact the run produces - and for a
+   * redaction that means a region the user watched go grey missing from the
+   * file the success toast is about to announce.
+   */
+  await editor.evaluate(() => {
+    const clipboard = navigator.clipboard;
+    const original = clipboard.write.bind(clipboard);
+    (window as unknown as { release?: () => void }).release = undefined;
+    clipboard.write = (items: ClipboardItem[]): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        (window as unknown as { release?: () => void }).release = () => {
+          original(items).then(resolve, reject);
+        };
+      });
+  });
+
+  await pickTool(editor, "Redact");
+  await editor.getByRole("button", { name: "Copy Image" }).click();
+  await expect(redactSegment).toBeDisabled();
+
+  // The pointer is the half that matters: a disabled palette still leaves the
+  // canvas underneath it, and that is where the region would have been drawn.
+  await drawRedaction();
+  await expect(regions).toHaveCount(0);
+  // The hotkeys are no way around it either.
+  await editor.keyboard.press("r");
+  await drawRedaction();
+  await expect(regions).toHaveCount(0);
+
+  await editor.evaluate(() => (window as unknown as { release: () => void }).release());
+  await expect(editor.locator('[aria-live="polite"] p.font-medium')).toContainText(
+    "Annotated image copied"
+  );
+  await expect(redactSegment).toBeEnabled();
+
+  // ...and it is a freeze, not a break: the very same drag lands once the
+  // export that could not have carried it is done.
+  await drawRedaction();
+  await expect(regions).toHaveCount(1);
+
+  await editor.close();
+  await page.close();
+});
+
 test("re-capture links the new share to the one it follows", async () => {
   const page = await ctx.newPage();
   await page.goto(base + "smooth", { waitUntil: "load" });

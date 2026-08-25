@@ -799,7 +799,7 @@ export function AnnotationCanvas({
       // also pick the Arrow tool, and "c" for "Compact" would pick Crop.
       const inListbox = !!target?.closest('[role="combobox"],[role="listbox"]');
 
-      if ((event.ctrlKey || event.metaKey) && !isTyping) {
+      if ((event.ctrlKey || event.metaKey) && !isTyping && !isBusy) {
         const key = event.key.toLowerCase();
         if (key === "z" || key === "y") {
           event.preventDefault();
@@ -904,7 +904,7 @@ export function AnnotationCanvas({
         return;
       }
 
-      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping) {
+      if ((event.key === "Delete" || event.key === "Backspace") && !isTyping && !isBusy) {
         if (!selectedId) return;
         event.preventDefault();
         removeAnnotation(selectedId);
@@ -985,8 +985,23 @@ export function AnnotationCanvas({
     });
   };
 
+  /**
+   * Drawing is frozen while an export is in flight, and that is a safety rule
+   * rather than a nicety. Every output snapshots `exportView(state)`
+   * synchronously and then awaits the render, so an annotation drawn after
+   * that snapshot reaches no artifact the run produces - and for a
+   * **redaction** that means a region the user watched go grey is absent from
+   * the PNG, the sidecar, the prompt and the saved share the success toast is
+   * about to announce. One guard per pointer-down entry point (canvas,
+   * annotation, resize handle, crop handle) covers create, move and resize
+   * alike, the keymap above carries the same guard, and the palette's segments
+   * and swatches disable with it so nothing offers a gesture that would be
+   * dropped. The inline comment editor deliberately stays live: it is bound to
+   * the *selection*, edits no geometry, and its text is read by the next
+   * export rather than baked into the one already running.
+   */
   const onCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
-    if (!baseDataUrl) return;
+    if (!baseDataUrl || isBusy) return;
 
     if (interactionMode !== "draw") {
       setSelectedId(null);
@@ -1024,6 +1039,7 @@ export function AnnotationCanvas({
   const onAnnotationPointerDown =
     (item: Annotation) =>
     (event: React.PointerEvent<SVGElement>): void => {
+      if (isBusy) return;
       // Let the event reach the canvas: a crop or redact drag starts anywhere.
       if (drawingRegion) return;
 
@@ -1050,7 +1066,7 @@ export function AnnotationCanvas({
     (item: RectAnnotation, handle: BoxResizeHandle) =>
     (event: React.PointerEvent<SVGElement>): void => {
       event.stopPropagation();
-      if (interactionMode !== "move") return;
+      if (isBusy || interactionMode !== "move") return;
 
       event.preventDefault();
       setSelectedId(item.id);
@@ -1079,7 +1095,7 @@ export function AnnotationCanvas({
   const onCropHandlePointerDown =
     (handle: BoxResizeHandle) =>
     (event: React.PointerEvent<SVGElement>): void => {
-      if (!cropDraft) return;
+      if (!cropDraft || isBusy) return;
       event.stopPropagation();
       event.preventDefault();
 

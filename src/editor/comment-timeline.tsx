@@ -1,10 +1,13 @@
 import { Button } from "@/components/ui/button";
+import type { Rect } from "@/lib/crop";
 import { annotationSummary, describeElement } from "@/lib/feedback";
-import { numberAnnotations } from "@/lib/numbering";
+import { viewNumbering } from "@/lib/numbering";
 import type { Annotation } from "@/types/annotation";
 
 interface CommentTimelineProps {
   items: Annotation[];
+  /** The applied crop, so the rows are numbered as every export will number them. */
+  crop: Rect | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
@@ -12,14 +15,19 @@ interface CommentTimelineProps {
 
 export function CommentTimeline({
   items,
+  crop,
   selectedId,
   onSelect,
   onRemove
 }: CommentTimelineProps): JSX.Element {
   // The one numbering, shared with the pins, the prompt and the export - it
-  // drops redactions (no note to number) and orders by creation, so nothing
-  // upstream has to filter or sort before handing over its annotations.
-  const rows = numberAnnotations(items);
+  // drops redactions (no note to number), orders by creation, and with a crop
+  // applied lists that crop's survivors renumbered. Numbering the stored list
+  // instead left row #1 with no pin anywhere and every later row one ahead of
+  // the PNG's legend. `applyCrop` only moves coordinates, which no row renders,
+  // so ids, comments and contexts here are the stored ones and the row actions
+  // below still address the stored annotation.
+  const { rows, excluded } = viewNumbering(items, crop);
 
   return (
     <section className="space-y-2">
@@ -91,6 +99,12 @@ export function CommentTimeline({
           })}
         </ol>
       )}
+      {excluded > 0 ? (
+        <p className="m-0 text-[11px] text-muted-foreground">
+          {excluded} annotation{excluded === 1 ? "" : "s"} outside the crop{" "}
+          {excluded === 1 ? "is" : "are"} excluded from exports
+        </p>
+      ) : null}
     </section>
   );
 }

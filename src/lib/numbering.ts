@@ -204,6 +204,28 @@ export function pinCenter(
   };
 }
 
+/**
+ * The numbering every surface that shows the *view* must use: the canvas pins,
+ * the comment timeline, and - through `exportView` - the PNG legend, both
+ * prompts and the sidecar. With no crop it is the plain list; with one applied
+ * it is `applyCrop`'s survivors renumbered, plus how many numbered annotations
+ * the crop leaves out, so the chip on the canvas and the note in the timeline
+ * are counting the same thing.
+ *
+ * Redactions never count towards `excluded`: one the crop drops hides nothing,
+ * because the crop already removed those pixels.
+ */
+export function viewNumbering(
+  annotations: Annotation[],
+  crop: Rect | null
+): { rows: NumberedAnnotation[]; excluded: number } {
+  const all = numberAnnotations(annotations);
+  if (!crop) return { rows: all, excluded: 0 };
+
+  const rows = numberAnnotations(applyCrop(annotations, crop));
+  return { rows, excluded: all.length - rows.length };
+}
+
 /** One pin, ready to draw on the canvas overlay. */
 export interface ViewPin {
   n: number;
@@ -234,13 +256,12 @@ export function viewPins(
   crop: Rect | null,
   image: { width: number; height: number }
 ): { radius: number; pins: Map<string, ViewPin> } {
-  const source = crop ? applyCrop(annotations, crop) : annotations;
   const bounds = crop ? { width: crop.width, height: crop.height } : image;
   const origin = crop ?? { x: 0, y: 0 };
   const radius = pinRadius(bounds.width);
 
   const pins = new Map<string, ViewPin>();
-  for (const { n, annotation } of numberAnnotations(source)) {
+  for (const { n, annotation } of viewNumbering(annotations, crop).rows) {
     const center = pinCenter(annotation, radius, bounds);
     pins.set(annotation.id, {
       n,

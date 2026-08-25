@@ -10,6 +10,7 @@ import {
   pinAnchor,
   pinCenter,
   pinRadius,
+  viewNumbering,
   viewPins
 } from "../src/lib/numbering";
 import type { HighlightAnnotation, PenAnnotation } from "../src/types/annotation";
@@ -314,6 +315,80 @@ describe("viewPins", () => {
     // the reason a pin numbered 3 on the canvas used to be 2 in the PNG.
     expect(pins.get("inside")?.n).toBe(1);
     expect(pins.get("alsoInside")?.n).toBe(2);
+  });
+});
+
+describe("viewNumbering", () => {
+  const image = { width: 1200, height: 2000 };
+  const crop = { x: 500, y: 400, width: 300, height: 240 };
+  const box = (id: string, x: number, y: number, createdAt: string) => ({
+    id,
+    tool: "box" as const,
+    color: "#f00",
+    createdAt,
+    x,
+    y,
+    width: 20,
+    height: 20,
+    comment: ""
+  });
+  const list = [
+    box("outside", 0, 0, "2026-08-23T00:00:01Z"),
+    box("inside", 600, 500, "2026-08-23T00:00:02Z"),
+    box("alsoInside", 650, 550, "2026-08-23T00:00:03Z")
+  ];
+
+  it("is the plain numbering with no crop, and excludes nothing", () => {
+    const { rows, excluded } = viewNumbering(list, null);
+    expect(rows.map((row) => [row.n, row.annotation.id])).toEqual([
+      [1, "outside"],
+      [2, "inside"],
+      [3, "alsoInside"]
+    ]);
+    expect(excluded).toBe(0);
+  });
+
+  /**
+   * The comment timeline's rows and the canvas pins read this one derivation,
+   * so a row can no longer say #1 for an annotation the crop dropped while the
+   * PNG's legend numbers the next one 1.
+   */
+  it("renumbers the survivors and counts what the crop left out", () => {
+    const { rows, excluded } = viewNumbering(list, crop);
+    expect(rows.map((row) => [row.n, row.annotation.id])).toEqual([
+      [1, "inside"],
+      [2, "alsoInside"]
+    ]);
+    expect(excluded).toBe(1);
+  });
+
+  it("agrees with viewPins on both the numbering and the survivors", () => {
+    const { pins } = viewPins(list, crop, image);
+    for (const { n, annotation } of viewNumbering(list, crop).rows) {
+      expect(pins.get(annotation.id)?.n).toBe(n);
+    }
+    expect(pins.size).toBe(viewNumbering(list, crop).rows.length);
+  });
+
+  /**
+   * A redaction the crop drops hides nothing - the crop already removed those
+   * pixels - so it must not be counted as an exclusion the user should worry
+   * about, and it is never a numbered row in the first place.
+   */
+  it("never counts a dropped redaction as excluded", () => {
+    const redaction = {
+      id: "secret",
+      tool: "redact" as const,
+      color: "#111827",
+      createdAt: "2026-08-23T00:00:04Z",
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 40
+    };
+    const { rows, excluded } = viewNumbering([...list, redaction], crop);
+    expect(rows.map((row) => row.annotation.id)).toEqual(["inside", "alsoInside"]);
+    expect(excluded).toBe(1);
   });
 });
 

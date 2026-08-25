@@ -34,8 +34,8 @@ import { placeInlineEditor } from "@/lib/editor-placement";
 import {
   annotationBounds,
   canvasScale,
-  numberAnnotations,
   redactions,
+  viewNumbering,
   viewPins
 } from "@/lib/numbering";
 import { hotkeyTool } from "@/lib/tool-palette";
@@ -381,11 +381,9 @@ export function AnnotationCanvas({
 
   // What an applied crop leaves out. The exports renumber the survivors, so
   // saying this plainly is also the answer to "why is pin 3 numbered 2 in the
-  // PNG". Counted over numbered annotations only: a redaction the crop drops
-  // hides nothing, because the crop already removed those pixels.
-  const excludedByCrop = crop
-    ? numberAnnotations(annotations).length - numberAnnotations(applyCrop(annotations, crop)).length
-    : 0;
+  // PNG". Same derivation the pins and the comment timeline read, so the three
+  // cannot disagree about which annotations the crop dropped.
+  const excludedByCrop = viewNumbering(annotations, crop).excluded;
 
   /**
    * The diagonal hatch a redaction is previewed with. In user space so the
@@ -1391,7 +1389,14 @@ export function AnnotationCanvas({
         // origin sits and where a drag usually starts, and the chip is
         // `pointer-events-none` with only its button opting back in - a chip
         // that swallowed a pointer-down would make that corner undrawable.
-        <div className="pointer-events-none absolute bottom-4 left-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]">
+        // `id`: a test affordance in the style of `#crop-region` and
+        // `data-crop`. The comment timeline states the same exclusion in its
+        // own note row, so "the text is on the page" no longer says which
+        // surface it is on.
+        <div
+          id="crop-chip"
+          className="pointer-events-none absolute bottom-4 left-4 z-20 max-w-[min(20rem,calc(100%-2rem))] space-y-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-[0_8px_20px_-8px_hsl(var(--card-shadow))]"
+        >
           <div className="flex items-center justify-between gap-2">
             <span>
               Cropped to {crop.width}x{crop.height}

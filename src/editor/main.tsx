@@ -201,6 +201,7 @@ function EditorApp(): JSX.Element {
         <Separator />
         <CommentTimeline
           items={state.annotations}
+          crop={state.crop}
           selectedId={state.selectedId}
           onSelect={selectTimelineItem}
           onRemove={state.removeAnnotation}

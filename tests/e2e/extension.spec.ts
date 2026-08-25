@@ -955,12 +955,21 @@ for (const [name, headerHeight] of [
 
       // Only the CTA box is inside the crop; the chip over the canvas says
       // what that costs.
-      await expect(editor.getByText("outside the crop")).toContainText(
+      const chip = editor.locator("#crop-chip");
+      await expect(chip).toContainText(`Cropped to ${cropRect.width}x${cropRect.height}`);
+      await expect(chip).toContainText("2 annotations outside the crop are excluded from exports");
+
+      // ...and so does the comment timeline, which numbers the same survivors
+      // as the pins, the prompt and the PNG's legend. It used to number the
+      // stored list instead: three rows, the first of them pointing at an
+      // annotation with no pin anywhere and every later row one ahead of the
+      // legend.
+      const timeline = editor.locator("section:has(> h2:text-is('Comment Timeline'))");
+      await expect(timeline.locator("ol > li")).toHaveCount(1);
+      await expect(timeline.locator("ol > li").first()).toContainText("#1 box");
+      await expect(timeline.locator("> p")).toContainText(
         "2 annotations outside the crop are excluded from exports"
       );
-      await expect(
-        editor.getByText(`Cropped to ${cropRect.width}x${cropRect.height}`)
-      ).toBeVisible();
 
       // The canvas numbers what the export numbers: two of the three
       // annotations fall outside the crop, so exactly one pin is drawn, and it

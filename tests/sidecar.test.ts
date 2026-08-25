@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CaptureEnvironment, PageDiagnostics } from "../src/lib/capture";
+import { applyCrop } from "../src/lib/crop";
+import { describeGeometry } from "../src/lib/numbering";
 import { buildBatchSidecar, buildSidecar } from "../src/lib/sidecar";
-import type { Annotation } from "../src/types/annotation";
+import type { Annotation, PenAnnotation } from "../src/types/annotation";
 
 const image = { width: 1000, height: 2000 };
 
@@ -315,5 +317,54 @@ describe("buildBatchSidecar", () => {
 
   it("has no captures for an empty batch", () => {
     expect(buildBatchSidecar([])).toEqual({ version: 1, captures: [] });
+  });
+});
+
+describe("a cropped pen stroke reads the same in the sidecar and the prompt", () => {
+  // `applyCrop` keeps a pen stroke whole when any point is inside - shifted,
+  // never clamped - so a stroke that ran off the crop's edges still carries
+  // out-of-image points in state. Both outputs report where it is *on the
+  // exported image*, so both go through `clampToImage` and must agree.
+  const crop = { x: 200, y: 100, width: 400, height: 300 };
+  const pen: Annotation = {
+    id: "p",
+    tool: "pen",
+    color: "#f00",
+    createdAt: "2026-08-24T00:00:00.000Z",
+    comment: "this ran off the edge",
+    points: [
+      { x: 120, y: 60 },
+      { x: 300, y: 200 },
+      { x: 700, y: 480 }
+    ]
+  };
+  const cropped = applyCrop([pen], crop);
+  const cropImage = { width: crop.width, height: crop.height };
+
+  it("keeps the stored geometry outside the crop", () => {
+    // The stroke itself is untouched apart from the shift: (-80, -40) and
+    // (500, 380) both sit outside a 400x300 image.
+    expect((cropped[0] as PenAnnotation).points).toEqual([
+      { x: -80, y: -40 },
+      { x: 100, y: 100 },
+      { x: 500, y: 380 }
+    ]);
+  });
+
+  it("prints and reports the same clamped rectangle", () => {
+    const printed = describeGeometry(cropped[0], cropImage);
+    const [reported] = buildSidecar({
+      capturedAt: "2026-08-24T00:00:00.000Z",
+      pageUrl: "https://example.com/",
+      generalFeedback: "",
+      annotations: cropped,
+      image: cropImage,
+      imagePath: "cap-1.png"
+    }).annotations;
+
+    expect(printed).toBe("pen path of 3 points from (0, 0) to (400, 300) px [0%, 0% of page]");
+    expect(reported.rect).toEqual({ x: 0, y: 0, width: 400, height: 300 });
+    // The prompt's own origin is the rect's origin, not the raw (-80, -40).
+    expect(printed).toContain(`(${reported.rect.x}, ${reported.rect.y})`);
   });
 });

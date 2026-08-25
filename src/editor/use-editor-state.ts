@@ -5,15 +5,10 @@ import type { Rect } from "@/lib/crop";
 import type { Verbosity } from "@/lib/feedback";
 import { commit, createHistory, redo, undo, type History } from "@/lib/history";
 import { getPrefs, setPrefs } from "@/lib/prefs";
-import type { Annotation, AnnotationTool } from "@/types/annotation";
+import { DEFAULT_ANNOTATION_COLOR, type EditorTool, type PaletteTool } from "@/lib/tool-palette";
+import type { Annotation } from "@/types/annotation";
 
-/**
- * What the canvas does with a pointer drag. The four annotation tools (box,
- * arrow, text, redact) plus `crop`, which draws a region marquee instead of an
- * annotation - hence a separate type: nothing stored in an `Annotation` can
- * ever be a crop.
- */
-export type EditorTool = AnnotationTool | "crop";
+export type { EditorTool, PaletteTool };
 
 /**
  * Every piece of editor state the surrounding modules (canvas, sidebar,
@@ -45,7 +40,12 @@ export interface EditorState {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
   tool: EditorTool;
-  setTool: (tool: EditorTool) => void;
+  /**
+   * Pick a palette segment: `select` is move mode, anything else is that tool
+   * in draw mode. The only way the UI changes either field, so a drawing tool
+   * can never be picked into a mode that cannot draw it.
+   */
+  setPaletteTool: (segment: PaletteTool) => void;
   /**
    * The region every output renders, in capture px, or `null` for the whole
    * capture. Deliberately outside the annotation history (like `zoom`): it is
@@ -115,16 +115,22 @@ export function useEditorState(): EditorState {
   const [cropDraft, setCropDraft] = useState<Rect | null>(null);
   const [interactionMode, setInteractionMode] = useState<"draw" | "move">("draw");
 
-  // Committing an annotation (and picking one in the timeline) switches to move
-  // mode, so a crop or redact chosen afterwards would be inert: both are drawn
-  // by dragging out a region. Picking either puts the canvas back in draw mode.
-  const setTool = (next: EditorTool): void => {
-    setToolState(next);
-    if (next === "crop" || next === "redact") setInteractionMode("draw");
+  // The palette is one control, so picking from it sets one thing: Select is
+  // move mode, and every other segment is that tool *in draw mode*. This is
+  // what the old "picking crop or redact forces draw mode" special case
+  // becomes once every tool lives on the same segmented control - a tool that
+  // could be picked into a mode that cannot draw it was only ever a bug.
+  const setPaletteTool = (segment: PaletteTool): void => {
+    if (segment === "select") {
+      setInteractionMode("move");
+      return;
+    }
+    setToolState(segment);
+    setInteractionMode("draw");
   };
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [color, setColor] = useState("#ff3333");
+  const [color, setColor] = useState(DEFAULT_ANNOTATION_COLOR);
   const [generalFeedback, setGeneralFeedback] = useState("");
   const [progress, setProgress] = useState<string>("");
   const [status, setStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
@@ -242,7 +248,7 @@ export function useEditorState(): EditorState {
     selectedId,
     setSelectedId,
     tool,
-    setTool,
+    setPaletteTool,
     crop,
     setCrop,
     cropDraft,

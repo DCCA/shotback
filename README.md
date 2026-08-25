@@ -35,8 +35,9 @@ This keeps human feedback and AI review grounded in the same visual evidence.
 - 📷 **Full-page capture** (`scroll + stitch`) with an on-page "Capturing…" notice so you know not to switch tabs or scroll
 - 🔍 **Fit-to-width by default** (shrink to fit, never upscale a narrower capture), with a **1:1 zoom toggle** for pixel-exact inspection - a capture wider than the pane never runs off the edge or scrolls the page; 1:1 mode scrolls its own pane instead
 - ✏️ **Area annotations**: box, arrow, text
-- 🕶️ **Redact before sharing** - drag the Redact tool over anything private and it is pixelated into every export _and_ into the saved share, before either is written. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
-- ✂️ **Crop before export** - draw a region with the Crop tool and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
+- 🎛️ **Canvas tool palette** - a segmented control above the capture holds every drawing tool plus six stroke swatches (and a custom colour picker) and the zoom toggle. Each tool has a one-key shortcut - `V` select, `B` box, `A` arrow, `T` text, `R` redact, `C` crop - and a drawing tool **stays active after each shape**, so five boxes are five drags. Shortcuts are ignored while you are typing a comment
+- 🕶️ **Redact before sharing** - drag the Redact tool (`R`) over anything private and it is pixelated into every export _and_ into the saved share, before either is written. It carries no comment and is never numbered; the prompts say only `Redacted regions: N`. The unredacted capture lives only in that editor tab, so closing it is final
+- ✂️ **Crop before export** - draw a region with the Crop tool (`C`) and every output (image, prompts, JSON sidecar, share) covers just that region, with annotation coordinates measured from it; annotations outside it drop out, and **Clear** brings the whole capture back
 - 🔗 **Linked comments** tied to selected annotation
 - ⏱️ **Comment timeline** with per-item remove
 - ↩️ **Undo / redo** for every edit (draw, move, resize, comment, delete) - sidebar buttons or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (`Ctrl+Y` also redoes)
@@ -86,9 +87,28 @@ npm run build
 
 1. **Open** a target webpage.
 2. **Click** the Shotback extension icon, or press `Alt+Shift+S` - the editor opens and captures the page automatically. (You can rebind the shortcut at `chrome://extensions/shortcuts`.)
-3. **Draw** annotations and add comments. Undo or redo any step with the sidebar buttons or `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z`.
-4. **Crop** (optional) - pick `Crop` in the Tool select, drag the region you
-   want to hand over, then **Apply crop**. Everything below is then about that
+3. **Draw** annotations and add comments. Pick a tool on the palette above
+   the capture, or press its key:
+
+   | Key | Tool                                                      |
+   | --- | --------------------------------------------------------- |
+   | `V` | Select - move, resize and comment on existing annotations |
+   | `B` | Box                                                       |
+   | `A` | Arrow                                                     |
+   | `T` | Text                                                      |
+   | `R` | Redact                                                    |
+   | `C` | Crop                                                      |
+
+   A drawing tool stays selected after each shape, so you can draw several in a
+   row without going back to the palette; the comment box for the shape you
+   just drew is focused, and tool keys typed into it are text, not shortcuts.
+   `Esc` deselects, `Del` removes the selected item, and `Ctrl/Cmd+Z` /
+   `Ctrl/Cmd+Shift+Z` undo and redo any step (the sidebar has buttons too).
+   The six swatches beside the tools set the colour of the **next** annotation;
+   the last disc opens the system colour picker.
+
+4. **Crop** (optional) - press `C` (or pick `Crop` on the palette), drag the
+   region you want to hand over, then **Apply crop**. Everything below is then about that
    region only; **Clear** restores the full capture (nothing is thrown away -
    annotations are kept in capture coordinates and only shifted on export).
 5. **Use** one of the outputs:

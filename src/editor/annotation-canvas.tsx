@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { moveAnnotation, uid } from "@/editor/annotation-geometry";
 import { StatusToast } from "@/editor/status-toast";
+import { ToolPalette } from "@/editor/tool-palette";
 import type { EditorState } from "@/editor/use-editor-state";
 import { arrowHeadPoints } from "@/lib/annotate";
 import {
@@ -17,6 +18,7 @@ import {
 import { applyCrop, clampCrop, cropViewMetrics, MIN_CROP_SIZE, type Rect } from "@/lib/crop";
 import { placeInlineEditor } from "@/lib/editor-placement";
 import { annotationBounds, canvasScale, numberAnnotations, viewPins } from "@/lib/numbering";
+import { hotkeyTool } from "@/lib/tool-palette";
 import type { Annotation, BoxAnnotation, RectAnnotation } from "@/types/annotation";
 
 interface DraftShape {
@@ -114,7 +116,7 @@ export function AnnotationCanvas({
     setStatus,
     progress,
     interactionMode,
-    setInteractionMode,
+    setPaletteTool,
     color,
     baseDataUrl,
     imageSize,
@@ -384,10 +386,12 @@ export function AnnotationCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // Editor keyboard shortcuts, all on one window listener: Escape clears
-  // selection/in-progress gestures, Delete/Backspace removes the selected
-  // annotation, Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes.
-  // Everything but Escape is ignored while typing in a field.
+  // Editor keyboard shortcuts, all on one window listener: V/B/A/T/R/C pick a
+  // tool from the palette, Escape clears selection/in-progress gestures,
+  // Delete/Backspace removes the selected annotation, Ctrl/Cmd+Z undoes and
+  // Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) redoes. Everything but Escape is ignored
+  // while typing in a field - the comment editor is a textarea on the canvas,
+  // so an unguarded "b" would swallow every letter of a note.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
@@ -401,6 +405,17 @@ export function AnnotationCanvas({
           event.preventDefault();
           if (key === "y" || event.shiftKey) redoAnnotations();
           else undoAnnotations();
+          return;
+        }
+      }
+
+      // A bare tool letter, with no modifier: Ctrl+C is a copy, not the crop
+      // tool, and Alt combinations belong to the browser.
+      if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const segment = hotkeyTool(event.key);
+        if (segment) {
+          event.preventDefault();
+          setPaletteTool(segment);
           return;
         }
       }
@@ -445,6 +460,7 @@ export function AnnotationCanvas({
     removeAnnotation,
     undoAnnotations,
     redoAnnotations,
+    setPaletteTool,
     cropDraft,
     isBusy
   ]);
@@ -472,12 +488,16 @@ export function AnnotationCanvas({
    *
    * A redaction takes no comment, so it asks for no focus: it is selected only
    * so it can be dragged, resized or deleted straight after being drawn.
+   *
+   * The tool deliberately stays selected: drawing five boxes is five drags,
+   * not five drags with a mode switch between each. Selection is what changes,
+   * not the mode - the inline comment editor mounts for the new annotation and
+   * the next drag on empty canvas draws the next one.
    */
   const commitNewAnnotation = (item: Annotation): void => {
     flushSync(() => {
       setAnnotations((prev) => [...prev, item]);
       setSelectedId(item.id);
-      setInteractionMode("move");
       setShouldFocusSelectedComment(item.tool !== "redact");
     });
   };
@@ -783,6 +803,11 @@ export function AnnotationCanvas({
     // scrollport below take the pane's leftover height in the fixed shell.
     <Card className="relative order-1 flex flex-col overflow-hidden lg:order-2 lg:min-h-0">
       <StatusToast status={status} setStatus={setStatus} progress={progress} />
+
+      {/* Docked above the scrollport, inside the card: every control on it
+          changes what the next pointer gesture does, so it belongs where the
+          pointer is rather than in the sidebar. */}
+      <ToolPalette state={state} />
 
       {/* An applied crop is stated where it is visible - over the canvas that
           is now showing only that region - not in the sidebar's scroll flow. */}

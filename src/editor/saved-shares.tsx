@@ -132,7 +132,11 @@ export function SavedShares({
               size="sm"
               onClick={() => setShowSavedShares((value) => !value)}
             >
-              {showSavedShares ? "Hide" : "Show"}
+              {/* The count rides on the toggle while the list is collapsed:
+                  after saving a share the answer to "did that work?" is at the
+                  bottom of a scrolling sidebar, and a lone badge beside a
+                  "Show" link was not enough of one. */}
+              {showSavedShares ? "Hide" : `Show (${shares.length})`}
             </Button>
           ) : null}
         </div>

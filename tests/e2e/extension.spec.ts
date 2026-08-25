@@ -1810,9 +1810,13 @@ test("editor page renders the capture UI", async () => {
   const primary = editor.locator("#editor-actions button.bg-primary");
   await expect(primary).toHaveCount(1);
   await expect(primary).toHaveText("Copy for Claude Code");
-  // Format-aware: the caption must name the file the export actually writes.
+  // Format-aware: the caption must name the file the export actually writes -
+  // and whose Downloads folder it lands in, since a bare "Downloads/shotback"
+  // reads as a path relative to something to anyone who has not exported yet.
   await expect(
-    editor.getByText(/^Saves (PNG|JPEG) \+ JSON to Downloads\/shotback and copies the prompt\.$/)
+    editor.getByText(
+      /^Saves (PNG|JPEG) \+ JSON to your Downloads folder \(Downloads\/shotback\), copies the prompt and keeps a copy in Saved Shares\.$/
+    )
   ).toBeVisible();
   // The order the column reads in: edit, then send, then take the file.
   // The download's format suffix is a persisted pref, so it is normalised out.

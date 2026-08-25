@@ -233,10 +233,14 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
             Copy for Claude Code
           </Button>
           {/* Names the format actually in force: with the pref on JPEG,
-              "Saves PNG" was simply wrong about the file it writes. */}
+              "Saves PNG" was simply wrong about the file it writes. And it
+              says whose Downloads folder: a bare "Downloads/shotback" reads as
+              a path relative to something - the project? the extension? - to
+              anyone who has not exported yet, which is exactly who this line
+              is for. */}
           <p className="m-0 -mt-1 text-xs text-muted-foreground">
-            Saves {exportFormat === "jpeg" ? "JPEG" : "PNG"} + JSON to Downloads/shotback and copies
-            the prompt.
+            Saves {exportFormat === "jpeg" ? "JPEG" : "PNG"} + JSON to your Downloads folder
+            (Downloads/shotback), copies the prompt and keeps a copy in Saved Shares.
           </p>
           <Button
             variant="secondary"

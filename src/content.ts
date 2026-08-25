@@ -9,6 +9,7 @@ interface PageMetrics {
   devicePixelRatio: number;
   pageUrl: string;
   scrollerTop: number;
+  scrollTop: number;
   title: string;
   colorScheme: "light" | "dark";
   scroller: "document" | "element";
@@ -207,6 +208,41 @@ function removeCaptureOverlay(): void {
 }
 
 /**
+ * How long the capture UI may sit on the page with no word from the editor.
+ * A running capture talks far more often than this - the countdown is one
+ * message a second, the frame loop several - so silence this long means the
+ * editor tab is gone (closed, crashed, navigated away mid-capture). Its notice
+ * and its hidden scrollbars must not be left behind with it, and only the page
+ * itself can notice that nobody is coming back.
+ */
+const CAPTURE_WATCHDOG_MS = 8000;
+let captureWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Put the page back the way a capture found it: no notice, scrollbars visible,
+ * no remembered scroller. The end of every capture and the watchdog's expiry
+ * both land here, so an abandoned capture cleans up exactly like a finished
+ * one. It deliberately does **not** scroll: 8 seconds is long enough for the
+ * user to have scrolled somewhere themselves, and yanking them back would be
+ * worse than the offset the capture left behind.
+ */
+function endCapture(): void {
+  if (captureWatchdog !== null) {
+    clearTimeout(captureWatchdog);
+    captureWatchdog = null;
+  }
+  scroller = null;
+  showScrollbars();
+  removeCaptureOverlay();
+}
+
+/** Re-arm on every message a live capture sends. One timer, replaced. */
+function armCaptureWatchdog(): void {
+  if (captureWatchdog !== null) clearTimeout(captureWatchdog);
+  captureWatchdog = setTimeout(endCapture, CAPTURE_WATCHDOG_MS);
+}
+
+/**
  * Run after the next paint. A single rAF fires *before* the frame is painted,
  * so the overlay's display change would not yet be on screen; a second rAF
  * guarantees the change has been painted before we report back — otherwise the
@@ -348,6 +384,7 @@ function inspectPoints(points: Array<{ x: number; y: number }>): Array<ElementCo
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SB_CAPTURE_BEGIN") {
+    armCaptureWatchdog();
     const overlay = ensureCaptureOverlay();
     // An optional heading is what makes the delayed mode's countdown work:
     // the orchestrator owns the timing and re-sends this once a second, so the
@@ -363,6 +400,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_SET_OVERLAY") {
+    armCaptureWatchdog();
     setCaptureOverlayDisplay(Boolean(message.visible));
     // Wait for the hide/show to actually paint before the orchestrator captures.
     afterPaint(() => sendResponse({ ok: true }));
@@ -370,8 +408,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_CAPTURE_END") {
-    showScrollbars();
-    removeCaptureOverlay();
+    endCapture();
     sendResponse({ ok: true });
     return true;
   }
@@ -391,6 +428,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_GET_PAGE_METRICS") {
+    // The first message of every capture, and the one that hides the
+    // scrollbars - so it is where the watchdog starts.
+    armCaptureWatchdog();
     scroller = findScroller();
     scroller?.setAttribute("data-shotback-scroller", "");
     hideScrollbars();
@@ -414,6 +454,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           fullHeight: scroller.scrollHeight,
           viewportHeight: scroller.clientHeight,
           scrollerTop: Math.max(0, Math.round(scroller.getBoundingClientRect().top)),
+          scrollTop: originalScrollY,
           scroller: "element"
         }
       : {
@@ -424,6 +465,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           ),
           viewportHeight: window.innerHeight,
           scrollerTop: 0,
+          scrollTop: originalScrollY,
           scroller: "document"
         };
 
@@ -432,6 +474,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SB_SCROLL_TO") {
+    armCaptureWatchdog();
     const y = Number(message.y ?? 0);
     scrollCaptureTargetTo(y);
     // Re-show the notice between capture frames (it was hidden for the shot).
@@ -445,9 +488,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SB_RESTORE_SCROLL") {
     scrollCaptureTargetTo(originalScrollY);
-    scroller = null;
-    showScrollbars();
-    removeCaptureOverlay();
+    endCapture();
     sendResponse({ ok: true });
     return true;
   }

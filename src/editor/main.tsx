@@ -9,7 +9,14 @@ import { SavedShares } from "@/editor/saved-shares";
 import { Sidebar } from "@/editor/sidebar";
 import { useEditorState } from "@/editor/use-editor-state";
 import { useExports } from "@/editor/use-exports";
-import { captureFullPage, captureOptions, inspectPoints, type CaptureMode } from "@/lib/capture";
+import {
+  captureFullPage,
+  captureOptions,
+  inspectPoints,
+  toPageCoords,
+  type CaptureMapping,
+  type CaptureMode
+} from "@/lib/capture";
 import { buildLocalShareUrl } from "@/lib/localStore";
 import { inspectableAnnotations, inspectAnchor } from "@/lib/numbering";
 import "@/styles/globals.css";
@@ -27,9 +34,10 @@ function EditorApp(): JSX.Element {
   const exports = useExports(state, previousShareId);
 
   const inlineCommentRef = useRef<HTMLTextAreaElement | null>(null);
-  // Stitched image px per page CSS px, set by the last capture. A ref, not
-  // state: nothing renders from it, and the commit handler must see it at once.
-  const captureScaleRef = useRef<number | null>(null);
+  // How the last capture's image px map back onto the live page, for the
+  // inspection round trip. A ref, not state: nothing renders from it, and the
+  // commit handler must see it at once.
+  const captureMappingRef = useRef<CaptureMapping | null>(null);
   // Bumped per inspection: only the newest response may write contexts, so a
   // slow one cannot land on top of a newer commit's result.
   const inspectGenRef = useRef(0);
@@ -50,7 +58,7 @@ function EditorApp(): JSX.Element {
 
     state.setIsBusy(true);
     state.setStatus(null);
-    captureScaleRef.current = null;
+    captureMappingRef.current = null;
     state.setShareUrl("");
     state.setEnvironment(undefined);
     state.setDiagnostics(undefined);
@@ -76,7 +84,11 @@ function EditorApp(): JSX.Element {
       state.setPageUrl(result.pageUrl);
       state.setEnvironment(result.environment);
       state.setDiagnostics(result.diagnostics);
-      captureScaleRef.current = result.scale;
+      captureMappingRef.current = {
+        scale: result.scale,
+        scrollerTop: result.scrollerTop,
+        scrollOffset: result.scrollOffset
+      };
     } catch (error) {
       state.setStatus({
         kind: "error",
@@ -120,17 +132,17 @@ function EditorApp(): JSX.Element {
    * cannot leak by default.
    */
   const refreshContexts = async (): Promise<void> => {
-    const scale = captureScaleRef.current;
-    if (!scale || !canCapture) return;
+    const mapping = captureMappingRef.current;
+    if (!mapping || !canCapture) return;
 
     const generation = (inspectGenRef.current += 1);
     const items = inspectableAnnotations(state.getAnnotations());
     const contexts = await inspectPoints(
       tabId,
-      items.map((annotation) => {
-        const { x, y } = inspectAnchor(annotation);
-        return { x: x / scale, y: y / scale };
-      }),
+      // `toPageCoords`, not a bare unscale: a visible-area capture's image
+      // starts at the scroll position it was taken from, so every point on it
+      // is that much further down the page than its image coordinate says.
+      items.map((annotation) => toPageCoords(inspectAnchor(annotation), mapping)),
       state.pageUrl
     );
     if (generation !== inspectGenRef.current) return;

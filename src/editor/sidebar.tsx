@@ -129,7 +129,7 @@ export function Sidebar({ state, exports, onCapture, children }: SidebarProps): 
                 onValueChange={(value) => setCaptureMode(value as CaptureMode)}
                 options={CAPTURE_MODES.map((mode) => ({ value: mode.value, label: mode.label }))}
                 disabled={isBusy}
-                className="h-full text-[13px]"
+                className="text-[13px]"
               />
             </div>
           </div>

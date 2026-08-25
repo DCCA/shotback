@@ -1,10 +1,11 @@
 import type { ElementContext } from "@/types/annotation";
 
 /**
- * Geometry of whatever actually scrolls: the document, or - for SPA shells
- * with `html,body{overflow:hidden}` - the largest scrollable element.
+ * Geometry of whatever would scroll the page: the document, or - for SPA
+ * shells with `html,body{overflow:hidden}` - the largest scrollable element.
  * `fullHeight`/`viewportHeight` are that scroller's scrollHeight/clientHeight;
- * `scrollerTop` is where it starts in the viewport (0 for the document).
+ * `scrollerTop` is where it starts in the viewport (0 for the document), and
+ * `scrollTop` is how far down it already is when the metrics are read.
  */
 export interface PageMetrics {
   fullHeight: number;
@@ -13,9 +14,11 @@ export interface PageMetrics {
   devicePixelRatio: number;
   pageUrl: string;
   scrollerTop: number;
+  /** The scroller's own scroll position when the metrics were read, in CSS px. */
+  scrollTop: number;
   title: string;
   colorScheme: "light" | "dark";
-  /** What the content script scrolled: the document, or an inner element. */
+  /** Which scroller this geometry describes: the document, or an inner element. */
   scroller: "document" | "element";
 }
 
@@ -58,6 +61,13 @@ export interface CaptureResult {
   scale: number;
   /** Page CSS px above the scroller on the stitched image (0 for the document). */
   scrollerTop: number;
+  /**
+   * Page CSS px between the top of the stitched image and the page's own
+   * origin. 0 for a full-page capture, which starts by scrolling to the top;
+   * the scroller's live `scrollTop` for a visible-area one, which starts
+   * wherever the user already was. Feed it to `toPageCoords`.
+   */
+  scrollOffset: number;
   /** What the captured page reported going wrong; empty when nothing did. */
   diagnostics: PageDiagnostics;
 }
@@ -128,6 +138,36 @@ export function captureOptions(mode: CaptureMode): Required<CaptureOptions> {
  */
 export function captureNoticeHeading(secondsRemaining: number): string {
   return secondsRemaining > 0 ? `Capturing in ${secondsRemaining}...` : "Capturing full page…";
+}
+
+/** How a stitched capture's image px map back onto the live page's CSS px. */
+export interface CaptureMapping {
+  /** Stitched image px per page CSS px. */
+  scale: number;
+  /** Page CSS px above the scroller on the stitched image (0 for the document). */
+  scrollerTop: number;
+  /** Page CSS px the capture already started scrolled by. See `CaptureResult`. */
+  scrollOffset: number;
+}
+
+/**
+ * A point on the stitched image, as the page's own CSS px - which is the space
+ * the content script hit-tests in. Pure, because getting it wrong is silent:
+ * every element context, and so every selector in a prompt, is read at this
+ * point, and a confidently wrong one is worse than none.
+ *
+ * A visible-area capture starts wherever the user was, so its image is the
+ * page shifted up by `scrollOffset`. A band above the scroller (the header an
+ * inner-scroller page keeps whole in the first frame) did not move with it, so
+ * the offset must not apply there.
+ */
+export function toPageCoords(
+  point: { x: number; y: number },
+  mapping: CaptureMapping
+): { x: number; y: number } {
+  const x = point.x / mapping.scale;
+  const y = point.y / mapping.scale;
+  return { x, y: y < mapping.scrollerTop ? y : y + mapping.scrollOffset };
 }
 
 export function buildScrollSteps(fullHeight: number, viewportHeight: number): number[] {
@@ -479,12 +519,18 @@ export async function captureFullPage(
 
     if (mode === "full") {
       // Show an on-page notice (the user is looking at this tab, not the
-      // editor) and give them a moment to read it.
-      await notify(tabId, { type: "SB_CAPTURE_BEGIN" });
+      // editor) and give them a moment to read it. The heading is always
+      // supplied, never left to whatever the notice happens to be saying:
+      // without it a countdown's last frame ("Capturing in 1...") stayed on
+      // screen for the whole stitch.
+      await notify(tabId, { type: "SB_CAPTURE_BEGIN", heading: captureNoticeHeading(0) });
       await wait(450);
-    } else if (delaySeconds > 0) {
-      // Nothing else will hide it: visible mode takes its one frame straight
-      // away, and the countdown put the notice on screen.
+    } else {
+      // Visible mode grabs its one frame straight away, so this is both the
+      // hide for a notice a countdown may have put up and the paint barrier
+      // before the grab: the content script acks this only after the next
+      // paint, which is what guarantees the hidden scrollbars have landed.
+      // Harmless with no notice up - the hide no-ops and the ack still waits.
       await notify(tabId, { type: "SB_SET_OVERLAY", visible: false });
       await wait(60);
     }
@@ -546,6 +592,10 @@ export async function captureFullPage(
       environment: buildEnvironment(metrics, navigator.userAgent, new Date()),
       scale,
       scrollerTop: metrics.scrollerTop,
+      // A full capture scrolls to the top before its first frame; a visible
+      // one never scrolls at all, so its image starts where the user already
+      // was and every point on it is that much further down the page.
+      scrollOffset: mode === "visible" ? metrics.scrollTop : 0,
       diagnostics
     };
   } finally {

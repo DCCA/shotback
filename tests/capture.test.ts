@@ -9,6 +9,7 @@ import {
   CAPTURE_MODES,
   captureNoticeHeading,
   captureOptions,
+  toPageCoords,
   isNoReceiverError,
   isTabsBusyError,
   segmentPlacement,
@@ -62,6 +63,32 @@ describe("captureNoticeHeading", () => {
   });
 });
 
+describe("toPageCoords", () => {
+  // A full-page capture starts by scrolling to the top, so image space and
+  // page space share an origin.
+  const full = { scale: 2, scrollerTop: 0, scrollOffset: 0 };
+
+  it("is a plain unscale for a full-page capture", () => {
+    expect(toPageCoords({ x: 200, y: 400 }, full)).toEqual({ x: 100, y: 200 });
+  });
+
+  it("adds the scroll the capture started from, for a visible-area one", () => {
+    // The page was 1200 CSS px down when the one frame was taken, so the top
+    // of the image is page y 1200 - not page y 0.
+    expect(
+      toPageCoords({ x: 200, y: 400 }, { scale: 2, scrollerTop: 0, scrollOffset: 1200 })
+    ).toEqual({ x: 100, y: 1400 });
+  });
+
+  it("leaves a band above the scroller alone: it never scrolled", () => {
+    // Inner-scroller page: the 64px header is kept whole in the first frame
+    // and does not move with the scroller, so the offset must not apply to it.
+    const inner = { scale: 1, scrollerTop: 64, scrollOffset: 900 };
+    expect(toPageCoords({ x: 10, y: 20 }, inner)).toEqual({ x: 10, y: 20 });
+    expect(toPageCoords({ x: 10, y: 100 }, inner)).toEqual({ x: 10, y: 1000 });
+  });
+});
+
 describe("buildEnvironment", () => {
   const metrics = {
     fullHeight: 2400,
@@ -70,6 +97,7 @@ describe("buildEnvironment", () => {
     devicePixelRatio: 2,
     pageUrl: "https://example.test/page",
     scrollerTop: 0,
+    scrollTop: 0,
     title: "Acme Dashboard",
     colorScheme: "dark" as const,
     scroller: "document" as const

@@ -1399,7 +1399,7 @@ export function AnnotationCanvas({
                         {...draftRect(draft)}
                         fill="none"
                         stroke={color}
-                        strokeWidth="2"
+                        strokeWidth={HIGHLIGHT_EDGE_WIDTH}
                         strokeDasharray="6 4"
                       />
                     </g>

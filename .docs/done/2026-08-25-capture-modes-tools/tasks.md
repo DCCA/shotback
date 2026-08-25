@@ -45,3 +45,17 @@
 - [x] 5.2 Tailwind colour-utility grep at zero
 - [x] 5.3 Both themes screenshot-verified, over light and dark page content
 - [x] 5.4 CLAUDE.md and README updated; this change folder written
+
+## 6. Review fixes (see `review-fixes.md`)
+
+- [x] 6.1 Post-countdown `SB_CAPTURE_BEGIN` supplies `captureNoticeHeading(0)`;
+      e2e asserts the notice returns to the standard heading
+- [x] 6.2 `PageMetrics.scrollTop` -> `CaptureResult.scrollOffset` -> the pure
+      `toPageCoords`, so visible-mode inspection reads the right element
+- [x] 6.3 `buildSidecar` clamps the reported rect to the image, so
+      `normalizedRect` cannot leave 0..1
+- [x] 6.4 Content-script watchdog: an abandoned capture cleans itself up
+- [x] 6.5 Folds: visible-mode paint barrier, layout guard in the palette e2e,
+      the chooser's `h-full`, the highlight draft's edge width, the
+      `PageMetrics.scroller` comment
+- [x] 6.6 Sabotage run proving the two new guards fail without their fixes

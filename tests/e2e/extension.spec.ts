@@ -1,5 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+// @ts-expect-error - a plain .mjs build script with no types of its own; it
+// owns the one predicate the build guard fails on, reused here rather than
+// restated so the test and the gate cannot drift.
+import { hasModuleSyntax } from "../../scripts/check-content-script.mjs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -303,8 +307,11 @@ test("extension loads with no popup and the downloads permission", async () => {
   // - which a classic content script cannot execute. It then never loads at
   // all, and every capture dies with "Receiving end does not exist", far from
   // the change that caused it. Cheaper to fail here, on the built file.
-  const content = await readFile(path.join(EXT, "content.js"), "utf8");
-  expect(content).not.toMatch(/(^|[;}\s])import\s*[{*"']/);
+  // `hasModuleSyntax` is the build guard's own predicate - it already fails
+  // `npm run build`, and so `npm run check`, before this test can run.
+  // Imported rather than restated so the two cannot drift, and asserted here
+  // too because this is the file the loaded extension is actually running.
+  expect(hasModuleSyntax(await readFile(path.join(EXT, "content.js"), "utf8"))).toBe(false);
 });
 
 test("capture notice shows, hides for the frame, and is removed", async () => {
@@ -711,8 +718,12 @@ for (const [name, headerHeight] of [
         "#app > section.hero > button.cta"
       );
       // The text annotation landed on nothing named, and says that rather than
-      // showing nothing at all.
-      await expect(rows.nth(1)).toContainText(/div|body|main|span/);
+      // showing nothing at all - asserted on the descriptor element itself
+      // (the one node in the row carrying the full path as its `title`), so
+      // unrelated note text elsewhere in the row cannot satisfy it.
+      const anonymous = rows.nth(1).locator("[title]");
+      await expect(anonymous).toHaveText(/^[a-z]+(:nth-of-type\(\d+\)|[#.][\w-]+)?$/);
+      await expect(anonymous).toHaveAttribute("title", /^html > body/);
 
       await copyCloudPrompt(editor);
       expect(await readClipboard(editor)).toContain(
@@ -1978,15 +1989,44 @@ test("the canvas draws, nudges and recovers from the keyboard alone", async () =
   expect(placed.height).toBe(100);
   await expect(note).toHaveCount(1);
 
+  // The comment editor is a <textarea> inside this same SVG, so the canvas's
+  // own keys must not reach it: Enter is a newline, not a second annotation,
+  // and an arrow key moves the caret, not the shape.
+  await editor.keyboard.type("first line");
+  const beforeTyping = await rectOf(box);
+  await editor.keyboard.press("Enter");
+  await editor.keyboard.type("second line");
+  await expect(note).toHaveValue("first line\nsecond line");
+  await expect(rows).toHaveCount(1);
+  await editor.keyboard.press("ArrowLeft");
+  await editor.keyboard.press("Shift+ArrowUp");
+  expect(await rectOf(box)).toEqual(beforeTyping);
+
   // Escape in the note discards the draft instead of shipping it - the one
   // place in the editor where Escape used to mean "commit" - and hands the
   // keyboard back to the canvas rather than dropping it on <body>.
-  await editor.keyboard.type("typed then abandoned");
-  await expect(note).toHaveValue("typed then abandoned");
   await editor.keyboard.press("Escape");
-  await expect(note).toHaveCount(0);
   await expect(rows.first()).toContainText("(no comment)");
   expect(await focused()).toBe("svg");
+
+  // ...with the annotation still selected, so the very next arrow key moves
+  // the shape that was just drawn. Deliberately no programmatic focus and no
+  // second annotation here: this is the whole Enter -> type -> Escape -> nudge
+  // run a keyboard user actually performs.
+  await editor.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await rectOf(box)).x).toBe(beforeTyping.x + 8);
+  await expect(rows).toHaveCount(1);
+  await editor.keyboard.press("Control+z");
+  await expect.poll(async () => (await rectOf(box)).x).toBe(beforeTyping.x);
+
+  // The keyboard focus ring is on the scrollport, not on the SVG's own edges:
+  // the SVG is as tall as the capture, so a ring drawn on it is off screen on
+  // anything taller than the pane (measured: box -775..1625 against a
+  // 124..863 scrollport, and no indicator visible anywhere).
+  await expect(editor.locator("#capture-viewport")).toHaveCSS(
+    "box-shadow",
+    /inset|0px 0px 0px 2px/
+  );
 
   // A committed note still commits, from every other leave path: Tab out
   // saves it, and the keyboard lands on that annotation's timeline row rather

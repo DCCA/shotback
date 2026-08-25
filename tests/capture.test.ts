@@ -9,6 +9,7 @@ import {
   CAPTURE_MODES,
   captureNoticeHeading,
   captureOptions,
+  createGenerationGuard,
   toPageCoords,
   isNoReceiverError,
   isTabsBusyError,
@@ -455,5 +456,40 @@ describe("activateTab", () => {
       "Tabs cannot be edited right now"
     );
     expect(update).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("createGenerationGuard", () => {
+  it("only ever calls the newest ticket current", () => {
+    const guard = createGenerationGuard();
+    const first = guard.next();
+    expect(guard.isCurrent(first)).toBe(true);
+
+    const second = guard.next();
+    expect(guard.isCurrent(second)).toBe(true);
+    // The inspection started before the newer one may not write back.
+    expect(guard.isCurrent(first)).toBe(false);
+  });
+
+  /**
+   * The undo case this exists for: an inspection is in flight, the user undoes
+   * (which restores different geometry and takes a ticket of its own), and the
+   * older round trip then lands. Its answer describes annotations that are no
+   * longer on screen, so it must be dropped rather than written back.
+   */
+  it("retires an in-flight inspection when a snapshot restore takes a ticket", () => {
+    const guard = createGenerationGuard();
+    const inFlight = guard.next();
+    const afterUndo = guard.next();
+
+    expect(guard.isCurrent(inFlight)).toBe(false);
+    expect(guard.isCurrent(afterUndo)).toBe(true);
+  });
+
+  it("starts before any ticket, so a stale zero can never look current", () => {
+    const guard = createGenerationGuard();
+    expect(guard.isCurrent(0)).toBe(true);
+    expect(guard.next()).toBe(1);
+    expect(guard.isCurrent(0)).toBe(false);
   });
 });

@@ -106,7 +106,15 @@ export interface EditorState {
   setLastExportSize: (size: number | null) => void;
 }
 
-export function useEditorState(): EditorState {
+/**
+ * `onRestore` runs whenever undo or redo really moves the snapshot. The
+ * annotations are replaced wholesale there, so anything derived from them
+ * asynchronously - the DOM-context inspection above all - is answering for
+ * geometry that no longer exists and has to be retired and re-asked. It is a
+ * parameter rather than a call inside this hook because the inspection round
+ * trip belongs to `main.tsx`, which owns the captured tab.
+ */
+export function useEditorState(onRestore?: () => void): EditorState {
   const [baseDataUrl, setBaseDataUrl] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
   const [environment, setEnvironment] = useState<CaptureEnvironment | undefined>(undefined);
@@ -234,11 +242,15 @@ export function useEditorState(): EditorState {
   };
 
   const undoAnnotations = (): void => {
-    if (applySnapshot(undo(historyRef.current))) announce("Undo");
+    if (!applySnapshot(undo(historyRef.current))) return;
+    announce("Undo");
+    onRestore?.();
   };
 
   const redoAnnotations = (): void => {
-    if (applySnapshot(redo(historyRef.current))) announce("Redo");
+    if (!applySnapshot(redo(historyRef.current))) return;
+    announce("Redo");
+    onRestore?.();
   };
 
   const removeAnnotation = (id: string): void => {
